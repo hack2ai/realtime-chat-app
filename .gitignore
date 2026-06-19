@@ -1,0 +1,48 @@
+# ============================================================
+# Real-Time Chat Application — .gitignore
+# ============================================================
+
+# ---------------- Maven build output ----------------
+target/
+*.jar
+*.war
+*.class
+
+# ---------------- Local configuration (NEVER COMMIT) ----------------
+# config.properties contains DB credentials. Only config.properties.example
+# (the template, with no real secrets) is meant to be tracked.
+src/main/resources/config.properties
+
+# ---------------- IDE files ----------------
+# IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+out/
+
+# Eclipse
+.classpath
+.project
+.settings/
+bin/
+
+# VS Code
+.vscode/
+
+# NetBeans
+nbproject/
+nb-configuration.xml
+
+# ---------------- OS junk ----------------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---------------- Logs ----------------
+*.log
+logs/
+
+# ---------------- Misc ----------------
+*.bak
+*.tmp
+.env

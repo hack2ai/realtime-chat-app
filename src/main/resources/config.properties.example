@@ -1,0 +1,33 @@
+# ============================================================
+# Real-Time Chat Application — Configuration
+# ============================================================
+# Copy this file to `config.properties` (same directory) and
+# adjust values for your local environment. `config.properties`
+# itself should be gitignored — never commit real credentials.
+
+# ---------------- Database ----------------
+db.host=localhost
+db.port=3306
+db.name=chatapp_db
+db.user=chatapp_user
+db.password=CHANGE_ME
+# Connection pool sizing
+db.pool.minIdle=2
+db.pool.maxSize=10
+db.pool.connectionTimeoutMs=5000
+
+# ---------------- Server ----------------
+server.port=5050
+# Max simultaneous client connections accepted by the thread pool
+server.maxClients=200
+# Heartbeat interval — server pings idle clients to detect dead sockets
+server.heartbeatIntervalSeconds=30
+server.heartbeatTimeoutSeconds=90
+
+# ---------------- Auth ----------------
+# BCrypt cost factor (work factor). 10-12 is the standard range;
+# higher = slower to hash = more resistant to brute force, but
+# slower logins. 12 is a reasonable default for 2026 hardware.
+auth.bcrypt.strength=12
+# Session token validity
+auth.session.expiryHours=24
