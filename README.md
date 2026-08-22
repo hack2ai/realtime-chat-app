@@ -1,126 +1,157 @@
-# Real-Time Chat Application (Java Socket Programming)
+# Real-Time Chat Application — Java Socket Programming
 
-A real-time chat application supporting private and group messaging, built with **Java Socket Programming**, **JavaFX**, and **MySQL**.
+> A Java networking project exploring secure authentication, TCP message framing, multithreaded socket handling, and a MySQL-backed chat architecture.
 
-> **Project status: Phase 1 of 5 — Foundation.**
-> This repo currently contains the project skeleton, database layer, JSON wire protocol, and a fully working **authentication system** (register / login / logout) over raw sockets. There is **no chat UI yet** — private messaging, group messaging, and the JavaFX client are planned for later phases (see [Roadmap](#roadmap) below). If you're looking at this repo expecting a finished chat app, it isn't one yet.
+[![Java](https://img.shields.io/badge/Java-21-ED8B00?style=for-the-badge&logo=openjdk&logoColor=white)](https://www.java.com/)
+[![Maven](https://img.shields.io/badge/Maven-3.8%2B-C71A36?style=for-the-badge&logo=apachemaven&logoColor=white)](https://maven.apache.org/)
+[![MySQL](https://img.shields.io/badge/MySQL-8-4479A1?style=for-the-badge&logo=mysql&logoColor=white)](https://www.mysql.com/)
 
-### ✅ Verified end-to-end (not just "should work")
+## Project Status
 
-Phase 1 was actually run, not just compiled: a real `ChatServer` process, against a real MySQL-protocol-compatible database, exercised with a real client. Confirmed working:
+**Phase 1 of 5 — Foundation complete.**
 
-- Register a new user → password hashed with real bcrypt → row written to a real database
-- Login with correct password → success + session token
-- Login with wrong password → correctly rejected
-- Login with a username that doesn't exist → rejected with the **same generic message** as wrong password (prevents account enumeration)
-- Duplicate registration → correctly rejected
-- Seeded `admin` account logs in with the password documented in this README
-- Full server-side connect → authenticate → online/offline tracking → disconnect lifecycle, no errors in the logs
+The current release focuses on the server foundation, database layer, TCP/JSON protocol, and end-to-end authentication. Private messaging, group messaging, and the JavaFX client are planned for subsequent phases.
 
-> **One known caveat:** this verification used Bouncy Castle (bcrypt) and the MariaDB JDBC driver as stand-ins for the exact libraries declared in `pom.xml` (Spring Security Crypto, MySQL Connector/J), because Maven Central wasn't reachable in the sandbox used to build this. Both pairs implement the same algorithms/wire protocols, and the bcrypt hashes were cross-checked against an independently-generated Python bcrypt hash to confirm compatibility — but the *exact* dependency versions in `pom.xml` have not yet been compiled together in one run. **If you run `mvn compile` on your own machine and it doesn't work cleanly, please open an issue** — that's the one gap this hasn't closed yet.
+This status is intentionally explicit so the repository does not present planned functionality as already implemented.
 
----
+## What Is Implemented
 
-## Table of Contents
+- Java 21 Maven project structure
+- MySQL schema for users and chat entities
+- JDBC database access with parameterized queries
+- Hand-rolled connection pool
+- Length-prefixed JSON protocol over TCP
+- Multithreaded socket server
+- Registration, login, and logout
+- bcrypt password hashing
+- Secure random session tokens
+- Generic authentication errors to reduce account enumeration
+- CLI test client for exercising the authentication flow
 
-- [What's implemented so far](#whats-implemented-so-far)
-- [Tech stack](#tech-stack)
-- [Project structure](#project-structure)
-- [Getting started](#getting-started)
-- [Trying it out](#trying-it-out)
-- [Wire protocol](#wire-protocol)
-- [Security notes](#security-notes)
-- [Roadmap](#roadmap)
-- [License](#license)
+## Architecture
 
----
+```text
+CLI / Future JavaFX Client
+          │
+          │ TCP + JSON
+          ▼
+   ChatServer / ClientHandler
+          │
+          ├── AuthenticationService
+          │
+          ├── MessageCodec
+          │
+          └── DAO Layer
+                  │
+                  ▼
+               MySQL 8
+```
 
-## What's implemented so far
+## Authentication Flow
 
-- ✅ Maven project structure (Java 21)
-- ✅ MySQL 8 schema: `users`, `private_messages`, `chat_groups`, `group_members`, `group_messages`
-- ✅ JDBC connection pool (hand-rolled, no external pooling library)
-- ✅ `UserDAO` — fully parameterized queries (SQL-injection safe)
-- ✅ Length-prefixed JSON wire protocol (`Envelope` + `MessageCodec`) — solves the classic "TCP is a stream, not a sequence of messages" framing bug
-- ✅ `AuthenticationService` — registration, login, logout, session tokens
-  - Passwords hashed with **bcrypt** (`BCryptPasswordEncoder`, cost factor 12)
-  - Generic "invalid username/email or password" error on failed login (prevents username enumeration), with a constant-time-ish comparison path even when the identifier doesn't exist
-- ✅ `ChatServer` / `ClientHandler` — multithreaded socket server, one thread per connected client, full register/login/logout message dispatch
-- ✅ `TestClient` — bare CLI client for exercising the auth flow without needing the (not-yet-built) JavaFX UI
+```text
+Client
+  ↓
+Register / Login Request
+  ↓
+Input Validation
+  ↓
+AuthenticationService
+  ↓
+bcrypt verification
+  ↓
+Session Token
+  ↓
+Authenticated Connection
+```
 
-**Not yet implemented:** private messaging delivery, group chat, JavaFX client/UI, message history retrieval, typing indicators, read receipts, file sharing, emoji picker, search, notifications, admin panel, UML diagrams, deployment guide. See [Roadmap](#roadmap).
+## Security Engineering
 
----
+The current implementation includes several defensive patterns:
 
-## Tech stack
+- SQL statements use `PreparedStatement` parameter binding.
+- Passwords are hashed with bcrypt before persistence.
+- Authentication failures use a generic response to reduce username enumeration.
+- Session tokens use cryptographically secure randomness.
+- Application credentials are expected to remain outside version control.
+- The project explicitly distinguishes development functionality from production security requirements.
+
+### Production Security Gap
+
+This is a portfolio/learning project and **has not been presented as a security-audited production system**. A production deployment would still require, at minimum:
+
+- TLS for socket communication
+- Login rate limiting / lockout controls
+- Persisted and revocable sessions
+- Secret rotation
+- Stronger operational logging and monitoring
+- Dependency and vulnerability scanning
+- Hardened database permissions
+- Security testing and threat modeling
+
+## Tech Stack
 
 | Layer | Technology |
 |---|---|
 | Language | Java 21 |
-| Networking | Java Socket Programming (`java.net.Socket`, `ServerSocket`), multithreaded |
-| Wire format | JSON (Gson), length-prefixed framing |
+| Networking | `Socket` / `ServerSocket` |
+| Protocol | Length-prefixed JSON |
+| Serialization | Gson |
 | Database | MySQL 8 |
-| Data access | Plain JDBC (no ORM), hand-rolled connection pool |
-| Password hashing | bcrypt via Spring Security Crypto (`spring-security-crypto`, standalone — not full Spring Framework) |
+| Data access | JDBC |
+| Password hashing | bcrypt / Spring Security Crypto |
 | Build | Maven |
-| Frontend *(planned)* | JavaFX + CSS |
+| Planned UI | JavaFX + CSS |
 
----
+## Project Structure
 
-## Project structure
-
-```
+```text
 realtime-chat-app/
 ├── pom.xml
 ├── src/main/java/com/chatapp/
-│   ├── client/            # ChatClient / TestClient (CLI test client for now)
-│   ├── server/             # ChatServer, ClientHandler
-│   ├── service/             # AuthenticationService (business logic)
-│   ├── database/            # ConnectionPool, DatabaseManager, *DAO classes
-│   ├── model/                # Domain objects: User, PrivateMessage, ChatGroup, ...
-│   │   └── dto/                # Wire-format request/response payload classes
-│   ├── socket/protocol/       # MessageType enum, Envelope, MessageCodec
-│   ├── util/                    # ValidationUtil
-│   ├── exception/                # ValidationException, AuthenticationException
-│   └── config/                    # AppConfig (reads config.properties)
+│   ├── client/              # CLI client / future UI client
+│   ├── server/              # ChatServer and ClientHandler
+│   ├── service/             # Authentication/business logic
+│   ├── database/            # Connection pool and DAOs
+│   ├── model/               # Domain and DTO models
+│   ├── socket/protocol/     # Message types and framing
+│   ├── util/                # Validation helpers
+│   ├── exception/           # Application exceptions
+│   └── config/              # Runtime configuration
 └── src/main/resources/
-    ├── config.properties.example  # Copy to config.properties and fill in
-    └── sql/schema.sql               # Run this against MySQL before first use
+    ├── config.properties.example
+    └── sql/schema.sql
 ```
 
----
-
-## Getting started
+## Getting Started
 
 ### Prerequisites
 
-- **Java 21** (JDK, not just JRE — you need `javac` to build)
-- **Maven 3.8+**
-- **MySQL 8** running locally (or reachable over network)
+- JDK 21+
+- Maven 3.8+
+- MySQL 8+
 
-### 1. Set up the database
+### 1. Configure MySQL
+
+Run the schema supplied with the repository:
 
 ```bash
 mysql -u root -p < src/main/resources/sql/schema.sql
 ```
 
-This creates the `chatapp_db` database, a dedicated `chatapp_user` MySQL user, all five tables, and seeds one admin account:
+**Do not use any seed credentials from the repository outside local development.** For a real deployment, create a dedicated database user with a unique password and minimum required privileges.
 
-| Username | Password | Role |
-|---|---|---|
-| `admin` | `Admin@123` | ADMIN |
+### 2. Configure the application
 
-> ⚠️ This seed password is published in this repo's `schema.sql` for local development convenience. **Do not use this account or password if you deploy anywhere beyond your own machine** — change it immediately, or delete the seed `INSERT` from the script.
-
-### 2. Configure the app
+Copy the example configuration:
 
 ```bash
 cp src/main/resources/config.properties.example src/main/resources/config.properties
 ```
 
-Edit `config.properties` if your MySQL host/port/credentials differ from the defaults (`localhost:3306`, user `chatapp_user`, password `chatapp_pass` — matching what `schema.sql` creates out of the box).
+Update the local database connection values as required.
 
-> `config.properties` is gitignored on purpose — it's where real credentials live once you have any. Never commit it.
+`config.properties` should remain gitignored and must never contain production secrets committed to Git.
 
 ### 3. Build
 
@@ -128,89 +159,52 @@ Edit `config.properties` if your MySQL host/port/credentials differ from the def
 mvn compile
 ```
 
-> **Note on verification:** this project was developed and structurally verified (`javac` clean compile with all lint warnings enabled, plus targeted runtime tests of the validation logic and the message-framing protocol) in a sandboxed environment without direct access to Maven Central. If `mvn compile` surfaces anything unexpected on your machine — e.g. a dependency version conflict — please open an issue; it would be genuinely useful to know about.
-
-### 4. Run the server
+### 4. Start the server
 
 ```bash
 mvn exec:java -Dexec.mainClass="com.chatapp.server.ChatServer"
 ```
 
-or, after packaging:
+## Test the Authentication Flow
+
+With the server running, use the CLI client to exercise registration and login:
 
 ```bash
-mvn package
-java -jar target/chatapp-server.jar
-```
-
-You should see:
-```
-Chat server started on port 5050. Max concurrent clients: 200
-```
-
----
-
-## Trying it out
-
-With the server running, use the bundled CLI test client to register and log in — no JavaFX UI needed yet:
-
-```bash
-# Register a new user
-java -cp target/classes com.chatapp.client.TestClient register alice alice@example.com Passw0rd1 Passw0rd1
-
-# Log in
-java -cp target/classes com.chatapp.client.TestClient login alice Passw0rd1
-
-# Basic connectivity check
+java -cp target/classes com.chatapp.client.TestClient register alice alice@example.com YOUR_LOCAL_PASSWORD YOUR_LOCAL_PASSWORD
+java -cp target/classes com.chatapp.client.TestClient login alice YOUR_LOCAL_PASSWORD
 java -cp target/classes com.chatapp.client.TestClient ping
 ```
 
-A successful login prints the user ID, username, role, and a session token — proving the full register → hash → store → retrieve → verify → issue-token pipeline works end to end.
+Never replace `YOUR_LOCAL_PASSWORD` with a real production credential in documentation or source control.
 
----
+## TCP Message Framing
 
-## Wire protocol
+The project uses a length-prefixed JSON envelope:
 
-Every message between client and server is a length-prefixed JSON **envelope**:
-
-```
-[ 4 bytes: payload length N (big-endian int) ][ N bytes: UTF-8 JSON ]
+```text
+[ 4-byte payload length ][ UTF-8 JSON payload ]
 ```
 
-```json
-{
-  "type": "C2S_LOGIN",
-  "payload": { "usernameOrEmail": "alice", "password": "Passw0rd1" },
-  "timestamp": 1750000000000
-}
-```
-
-The 4-byte length prefix exists because raw TCP is a byte stream, not a message stream — without it, two quick messages can arrive concatenated in a single read, or one message can split across reads, either of which breaks naive JSON parsing intermittently and unpredictably. See `MessageCodec.java` for the full explanation and implementation.
-
-All message types are defined once, canonically, in `MessageType.java` — shared by both client and server so they can never drift out of sync.
-
----
-
-## Security notes
-
-- All SQL queries use `PreparedStatement` parameter binding — no string-concatenated SQL anywhere in this codebase.
-- Passwords are hashed with bcrypt (cost factor 12, configurable in `config.properties`) before ever reaching the database. Plaintext passwords are never logged or persisted.
-- Login failures return an intentionally generic message regardless of whether the username/email didn't exist or the password was wrong, to avoid leaking which accounts exist.
-- Session tokens are 256 bits of `SecureRandom` entropy, not `java.util.Random`.
-
-This is a learning/portfolio project, not an audited production system — treat it accordingly if you extend it toward real deployment (e.g. you'd want persisted/revocable sessions, rate limiting on login attempts, and TLS on the socket layer, none of which are in scope yet).
-
----
+This framing is important because TCP is a byte stream rather than a message-oriented protocol. A single read may contain multiple application messages, or only part of one message. The explicit length prefix allows the receiver to reconstruct complete messages reliably.
 
 ## Roadmap
 
-- [x] **Phase 1 — Foundation**: project structure, database, JSON protocol, authentication *(this release)*
-- [ ] **Phase 2 — Private Chat**: real-time 1:1 messaging, online/offline presence, typing indicators, read receipts, message history
-- [ ] **Phase 3 — Group Chat**: group creation/membership, group messaging, group admin controls
-- [ ] **Phase 4 — JavaFX Client**: login/register screens, dashboard, chat windows, CSS styling
-- [ ] **Phase 5 — Extras & polish**: file sharing, emoji support, search, notifications, UML diagrams, deployment guide
+- [x] Phase 1 — Foundation and authentication
+- [ ] Phase 2 — Private messaging and presence
+- [ ] Phase 3 — Group chat and membership controls
+- [ ] Phase 4 — JavaFX client
+- [ ] Phase 5 — File sharing, search, notifications, diagrams and deployment documentation
 
----
+## Project Value
+
+This project demonstrates practical **Java backend engineering, TCP networking, protocol design, authentication, database access, secure password handling, and incremental system architecture**.
+
+## Author
+
+**Pankaj (Tony) Kumar**  
+AI Engineer • Full Stack Developer • Generative AI & RAG Specialist
+
+[GitHub](https://github.com/hack2ai) • [LinkedIn](https://www.linkedin.com/in/pankaj-kumar-ab591a216)
 
 ## License
 
