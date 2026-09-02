@@ -27,6 +27,7 @@ import java.io.EOFException;
 import java.io.IOException;
 import java.net.Socket;
 import java.util.OptionalInt;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /** Handles one client's connection lifecycle and protocol dispatch. */
 public class ClientHandler implements Runnable {
@@ -35,11 +36,12 @@ public class ClientHandler implements Runnable {
     private final ChatService chatService; private final GroupService groupService; private final MessageSearchService messageSearchService=new MessageSearchService();
     private final AttachmentService attachmentService=new AttachmentService();
     private final MessageCodec codec=new MessageCodec(); private DataInputStream in; private DataOutputStream out;
+    private final AtomicBoolean closed=new AtomicBoolean();
     private volatile int authenticatedUserId=-1; private volatile String authenticatedUsername; private volatile String sessionToken;
     public ClientHandler(Socket socket,ChatServer server,AuthenticationService authService){this(socket,server,authService,new ChatService(),new GroupService());}
     public ClientHandler(Socket socket,ChatServer server,AuthenticationService authService,ChatService chatService){this(socket,server,authService,chatService,new GroupService());}
     public ClientHandler(Socket socket,ChatServer server,AuthenticationService authService,ChatService chatService,GroupService groupService){this.socket=socket;this.server=server;this.authService=authService;this.chatService=chatService;this.groupService=groupService;}
-    @Override public void run(){try{in=new DataInputStream(socket.getInputStream());out=new DataOutputStream(socket.getOutputStream());messageLoop();}catch(IOException e){logger.warn("I/O error on {}: {}",socket.getRemoteSocketAddress(),e.getMessage());}finally{cleanup();}}
+    @Override public void run(){try{in=new DataInputStream(socket.getInputStream());out=new DataOutputStream(socket.getOutputStream());messageLoop();}catch(IOException e){if(!closed.get())logger.warn("I/O error on {}: {}",socket.getRemoteSocketAddress(),e.getMessage());}finally{cleanup();}}
     private void messageLoop()throws IOException{while(!socket.isClosed()){final Envelope envelope;try{envelope=codec.read(in);}catch(EOFException e){logger.info("Client disconnected: {}",socket.getRemoteSocketAddress());return;}catch(RuntimeException e){logger.warn("Invalid protocol message from {}; closing connection: {}",socket.getRemoteSocketAddress(),e.getMessage());return;}if(envelope==null||envelope.getType()==null){sendError("Invalid message envelope.");continue;}try{dispatch(envelope);}catch(Exception e){logger.error("Error handling {} from {}",envelope.getType(),socket.getRemoteSocketAddress(),e);sendError("An internal error occurred processing your request.");}}}
     private void dispatch(Envelope envelope)throws Exception{switch(envelope.getType()){
         case PING->send(MessageType.PONG,null); case C2S_REGISTER->handleRegister(envelope); case C2S_LOGIN->handleLogin(envelope); case C2S_LOGOUT->handleLogout();
@@ -71,6 +73,7 @@ public class ClientHandler implements Runnable {
     void sendAsync(MessageType type,Object payload){Thread.startVirtualThread(()->{try{send(type,payload);}catch(IOException e){logger.debug("Unable to push {} to user {}",type,authenticatedUserId);}});}
     private void sendError(String message){try{send(MessageType.S2C_ERROR,new AuthFailedResponse(message));}catch(IOException e){logger.debug("Unable to send error response to {}",socket.getRemoteSocketAddress());}}
     public int getAuthenticatedUserId(){return authenticatedUserId;} public String getUsername(){return authenticatedUsername;}
-    private void cleanup(){int userId=authenticatedUserId;String token=sessionToken;if(userId!=-1){server.deregisterClient(userId,this);authService.logout(token);}authenticatedUserId=-1;authenticatedUsername=null;sessionToken=null;try{socket.close();}catch(IOException e){logger.debug("Error closing socket for {}",socket.getRemoteSocketAddress());}}
+    void closeConnection(){cleanup();}
+    private void cleanup(){if(!closed.compareAndSet(false,true))return;int userId=authenticatedUserId;String token=sessionToken;if(userId!=-1){server.deregisterClient(userId,this);authService.logout(token);}authenticatedUserId=-1;authenticatedUsername=null;sessionToken=null;server.handlerClosed(this);try{socket.close();}catch(IOException e){logger.debug("Error closing socket for {}",socket.getRemoteSocketAddress());}}
     private void handleLogout(){cleanup();}
 }
