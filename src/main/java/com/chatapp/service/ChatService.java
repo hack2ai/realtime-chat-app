@@ -8,6 +8,7 @@ import com.chatapp.model.dto.ChatDTOs.PrivateMessageEvent;
 import com.chatapp.model.dto.ChatDTOs.UserSummary;
 
 import java.util.List;
+import java.util.OptionalInt;
 
 /** Business rules for presence and one-to-one chat. */
 public class ChatService {
@@ -56,6 +57,17 @@ public class ChatService {
             throw new ValidationException("User does not exist.");
         }
         return privateMessageDAO.findConversation(currentUserId, otherUserId, limit, beforeMessageId);
+    }
+
+    public boolean markDelivered(int receiverId, long messageId) throws ValidationException {
+        if (messageId <= 0) throw new ValidationException("Invalid message id.");
+        privateMessageDAO.markDelivered(messageId, receiverId);
+        return true;
+    }
+
+    public OptionalInt findMessageSender(int receiverId, long messageId) throws ValidationException {
+        if (messageId <= 0) throw new ValidationException("Invalid message id.");
+        return privateMessageDAO.findSenderId(messageId, receiverId);
     }
 
     public boolean markRead(int receiverId, long messageId) throws ValidationException {
