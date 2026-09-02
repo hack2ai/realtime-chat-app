@@ -9,58 +9,39 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketException;
 import java.util.Map;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
-/**
- * Main server process: binds a listening socket and accepts incoming
- * client connections, handing each one off to a dedicated
- * {@link ClientHandler} running on a pooled thread.
- *
- * <h2>Concurrency model</h2>
- * One thread per connected client (via a bounded thread pool), not a
- * single-threaded event loop. For a project at this scale (a JavaFX
- * desktop chat client, not a web-scale service expecting tens of
- * thousands of concurrent connections), thread-per-client is simpler
- * to reason about and debug than an async/NIO event loop, and the
- * blocking I/O model maps directly onto plain {@link java.net.Socket}
- * + {@link java.io.DataInputStream}/{@link java.io.DataOutputStream},
- * which is what the spec calls for ("Java Socket Programming").
- * {@code server.maxClients} in config bounds the pool size so a flood
- * of connection attempts can't exhaust server threads/memory.
- *
- * <p>This class is intentionally a thin shell in Phase 1: it owns the
- * accept loop and the registry of connected handlers (needed so one
- * client's handler can find another client's handler to deliver a
- * private message — wired up in Phase 2), and delegates all actual
- * protocol logic to {@link ClientHandler}.
- */
+/** Main TCP server: accepts connections and dispatches them to client handlers. */
 public class ChatServer {
 
     private static final Logger logger = LoggerFactory.getLogger(ChatServer.class);
 
     private final int port;
-    private final ExecutorService clientThreadPool;
+    private final int maxClients;
+    private final ThreadPoolExecutor clientThreadPool;
     private final AuthenticationService authenticationService;
-
-    /**
-     * Registry of currently-connected, authenticated clients, keyed by
-     * user ID. Used by Phase 2's message-routing logic to look up "is
-     * this recipient currently online, and if so, which handler/socket
-     * do I push their message through". A {@link ConcurrentHashMap}
-     * since handlers register/deregister themselves concurrently from
-     * different threads as clients connect and disconnect.
-     */
     private final Map<Integer, ClientHandler> connectedClients = new ConcurrentHashMap<>();
 
     private ServerSocket serverSocket;
-    private volatile boolean running = false;
+    private volatile boolean running;
 
     public ChatServer() {
         this.port = AppConfig.getServerPort();
-        this.clientThreadPool = Executors.newFixedThreadPool(AppConfig.getServerMaxClients());
+        this.maxClients = AppConfig.getServerMaxClients();
+        this.clientThreadPool = new ThreadPoolExecutor(
+                maxClients,
+                maxClients,
+                0L,
+                TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<>(maxClients),
+                new ThreadPoolExecutor.AbortPolicy()
+        );
         this.authenticationService = new AuthenticationService();
     }
 
@@ -68,19 +49,13 @@ public class ChatServer {
         try {
             serverSocket = new ServerSocket(port);
             running = true;
-            logger.info("Chat server started on port {}. Max concurrent clients: {}",
-                    port, AppConfig.getServerMaxClients());
+            logger.info("Chat server started on port {} (max active/queued clients: {})", port, maxClients);
 
-            // Ensure the connection pool and any other resources are
-            // released cleanly on JVM shutdown (Ctrl+C, kill signal),
-            // not just on a graceful stop() call.
-            Runtime.getRuntime().addShutdownHook(new Thread(this::stop));
-
+            Runtime.getRuntime().addShutdownHook(new Thread(this::stop, "chat-server-shutdown"));
             acceptLoop();
-
         } catch (IOException e) {
-            logger.error("Failed to start server on port {}: {}", port, e.getMessage(), e);
-            throw new RuntimeException("Server startup failed", e);
+            logger.error("Failed to start server on port {}", port, e);
+            throw new IllegalStateException("Server startup failed", e);
         }
     }
 
@@ -88,41 +63,52 @@ public class ChatServer {
         while (running) {
             try {
                 Socket clientSocket = serverSocket.accept();
-                logger.info("New connection from {}", clientSocket.getRemoteSocketAddress());
+                configureSocket(clientSocket);
 
-                ClientHandler handler = new ClientHandler(clientSocket, this, authenticationService);
-                clientThreadPool.submit(handler);
-
+                try {
+                    clientThreadPool.execute(new ClientHandler(clientSocket, this, authenticationService));
+                } catch (RejectedExecutionException e) {
+                    logger.warn("Rejecting connection from {} because the server is at capacity",
+                            clientSocket.getRemoteSocketAddress());
+                    closeQuietly(clientSocket);
+                }
+            } catch (SocketException e) {
+                if (running) {
+                    logger.error("Server socket error while accepting clients", e);
+                }
             } catch (IOException e) {
                 if (running) {
-                    // Only log as an error if we weren't deliberately
-                    // shutting down — a closed ServerSocket during
-                    // stop() also throws IOException from accept(),
-                    // which is expected, not a failure.
-                    logger.error("Error accepting client connection: {}", e.getMessage(), e);
+                    logger.error("Error accepting client connection", e);
                 }
             }
         }
     }
 
-    /**
-     * Registers a handler as belonging to an authenticated user.
-     * Called by {@link ClientHandler} once login succeeds.
-     */
-    public void registerClient(int userId, ClientHandler handler) {
-        connectedClients.put(userId, handler);
-        logger.info("User {} registered as online. Total connected: {}", userId, connectedClients.size());
+    private void configureSocket(Socket socket) throws SocketException {
+        socket.setTcpNoDelay(true);
+        int readTimeout = AppConfig.getSocketReadTimeoutMs();
+        if (readTimeout > 0) {
+            socket.setSoTimeout(readTimeout);
+        }
     }
 
-    /**
-     * Deregisters a handler, e.g. on disconnect or logout.
-     */
-    public void deregisterClient(int userId) {
-        connectedClients.remove(userId);
-        logger.info("User {} deregistered. Total connected: {}", userId, connectedClients.size());
+    /** Registers a handler only when the user is not already connected. */
+    public boolean registerClient(int userId, ClientHandler handler) {
+        ClientHandler previous = connectedClients.putIfAbsent(userId, handler);
+        if (previous != null && previous != handler) {
+            logger.warn("Rejected duplicate active connection for user {}", userId);
+            return false;
+        }
+        logger.info("User {} is online. Connected users: {}", userId, connectedClients.size());
+        return true;
     }
 
-    /** Looks up the handler for a currently-online user, if any. Used for message routing in Phase 2. */
+    /** Removes a handler only if it is still the handler registered for that user. */
+    public void deregisterClient(int userId, ClientHandler handler) {
+        connectedClients.remove(userId, handler);
+        logger.info("User {} disconnected. Connected users: {}", userId, connectedClients.size());
+    }
+
     public ClientHandler getHandler(int userId) {
         return connectedClients.get(userId);
     }
@@ -133,22 +119,37 @@ public class ChatServer {
 
     public void stop() {
         if (!running) {
-            return; // already stopped; shutdown hook + explicit stop() both calling this is fine
+            return;
         }
         running = false;
         logger.info("Shutting down chat server...");
 
-        try {
-            if (serverSocket != null && !serverSocket.isClosed()) {
-                serverSocket.close();
-            }
-        } catch (IOException e) {
-            logger.warn("Error closing server socket: {}", e.getMessage());
-        }
-
-        clientThreadPool.shutdown();
+        closeQuietly(serverSocket);
+        clientThreadPool.shutdownNow();
         ConnectionPool.getInstance().shutdown();
         logger.info("Chat server stopped.");
+    }
+
+    private static void closeQuietly(ServerSocket socket) {
+        if (socket == null) {
+            return;
+        }
+        try {
+            socket.close();
+        } catch (IOException e) {
+            logger.warn("Error closing server socket", e);
+        }
+    }
+
+    private static void closeQuietly(Socket socket) {
+        if (socket == null) {
+            return;
+        }
+        try {
+            socket.close();
+        } catch (IOException e) {
+            logger.debug("Error closing rejected client socket", e);
+        }
     }
 
     public static void main(String[] args) {

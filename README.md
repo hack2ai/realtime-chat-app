@@ -1,127 +1,67 @@
-# Real-Time Chat Application — Java Socket Programming
+# Real-Time Chat Application
 
-> A Java networking project exploring secure authentication, TCP message framing, multithreaded socket handling, and a MySQL-backed chat architecture.
+> A professional Java 21 networking project for building a secure, database-backed real-time chat system over TCP.
 
 [![Java](https://img.shields.io/badge/Java-21-ED8B00?style=for-the-badge&logo=openjdk&logoColor=white)](https://www.java.com/)
 [![Maven](https://img.shields.io/badge/Maven-3.8%2B-C71A36?style=for-the-badge&logo=apachemaven&logoColor=white)](https://maven.apache.org/)
 [![MySQL](https://img.shields.io/badge/MySQL-8-4479A1?style=for-the-badge&logo=mysql&logoColor=white)](https://www.mysql.com/)
 
-## Project Status
+## Status
 
-**Phase 1 of 5 — Foundation complete.**
+**Phase 1 — foundation and authentication.**
 
-The current release focuses on the server foundation, database layer, TCP/JSON protocol, and end-to-end authentication. Private messaging, group messaging, and the JavaFX client are planned for subsequent phases.
+The current build provides a runnable TCP server, length-prefixed JSON protocol, MySQL persistence, registration/login/logout, bcrypt password hashing, session tokens, connection pooling, bounded client capacity, and a CLI test client. Private messaging, groups, and the JavaFX UI remain roadmap work.
 
-This status is intentionally explicit so the repository does not present planned functionality as already implemented.
+The repository intentionally does not advertise planned features as implemented features.
 
-## What Is Implemented
+## Highlights
 
-- Java 21 Maven project structure
-- MySQL schema for users and chat entities
-- JDBC database access with parameterized queries
-- Hand-rolled connection pool
-- Length-prefixed JSON protocol over TCP
-- Multithreaded socket server
-- Registration, login, and logout
-- bcrypt password hashing
-- Secure random session tokens
-- Generic authentication errors to reduce account enumeration
-- CLI test client for exercising the authentication flow
+- Java 21 + Maven build
+- TCP sockets with explicit 4-byte length-prefixed UTF-8 JSON frames
+- Bounded server thread pool with connection back-pressure
+- Defensive maximum frame size (10 MB)
+- BCrypt password hashing with configurable work factor
+- Cryptographically random 256-bit session tokens
+- Generic authentication failure responses to reduce account enumeration
+- MySQL 8 / JDBC persistence with prepared statements
+- Lightweight connection pool with validation and timeout handling
+- Environment-variable and JVM-property configuration overrides
+- Graceful resource cleanup on server shutdown and client disconnect
+- JUnit protocol tests and GitHub Actions CI
 
 ## Architecture
 
 ```text
-CLI / Future JavaFX Client
-          │
-          │ TCP + JSON
-          ▼
-   ChatServer / ClientHandler
-          │
-          ├── AuthenticationService
-          │
-          ├── MessageCodec
-          │
-          └── DAO Layer
-                  │
-                  ▼
-               MySQL 8
+                 TCP + JSON
+Client ─────────────────────────► ChatServer
+                                    │
+                              ClientHandler
+                                    │
+                 ┌──────────────────┼──────────────────┐
+                 ▼                  ▼                  ▼
+       AuthenticationService   Protocol/Codec       DAO layer
+                 │                                      │
+                 └────────────── MySQL 8 ───────────────┘
 ```
 
-## Authentication Flow
+The code is deliberately separated into configuration, networking, protocol, service, persistence, domain models, and validation packages so the project can grow without turning the socket handler into a monolith.
 
-```text
-Client
-  ↓
-Register / Login Request
-  ↓
-Input Validation
-  ↓
-AuthenticationService
-  ↓
-bcrypt verification
-  ↓
-Session Token
-  ↓
-Authenticated Connection
-```
+## Security
 
-## Security Engineering
+Current defensive controls include:
 
-The current implementation includes several defensive patterns:
+- parameterized SQL via JDBC
+- bcrypt password hashing
+- secure random session tokens
+- generic login failures
+- bounded message frames
+- bounded server work queues
+- no application password or admin seed account in the database schema
+- secrets can be supplied through environment variables or JVM system properties
 
-- SQL statements use `PreparedStatement` parameter binding.
-- Passwords are hashed with bcrypt before persistence.
-- Authentication failures use a generic response to reduce username enumeration.
-- Session tokens use cryptographically secure randomness.
-- Application credentials are expected to remain outside version control.
-- The project explicitly distinguishes development functionality from production security requirements.
+**Important:** this is a portfolio/learning project, not a security-audited production service. A production deployment still needs TLS, rate limiting, stronger session persistence/revocation, secret rotation, hardened database permissions, dependency scanning, monitoring, threat modeling, and security testing.
 
-### Production Security Gap
-
-This is a portfolio/learning project and **has not been presented as a security-audited production system**. A production deployment would still require, at minimum:
-
-- TLS for socket communication
-- Login rate limiting / lockout controls
-- Persisted and revocable sessions
-- Secret rotation
-- Stronger operational logging and monitoring
-- Dependency and vulnerability scanning
-- Hardened database permissions
-- Security testing and threat modeling
-
-## Tech Stack
-
-| Layer | Technology |
-|---|---|
-| Language | Java 21 |
-| Networking | `Socket` / `ServerSocket` |
-| Protocol | Length-prefixed JSON |
-| Serialization | Gson |
-| Database | MySQL 8 |
-| Data access | JDBC |
-| Password hashing | bcrypt / Spring Security Crypto |
-| Build | Maven |
-| Planned UI | JavaFX + CSS |
-
-## Project Structure
-
-```text
-realtime-chat-app/
-├── pom.xml
-├── src/main/java/com/chatapp/
-│   ├── client/              # CLI client / future UI client
-│   ├── server/              # ChatServer and ClientHandler
-│   ├── service/             # Authentication/business logic
-│   ├── database/            # Connection pool and DAOs
-│   ├── model/               # Domain and DTO models
-│   ├── socket/protocol/     # Message types and framing
-│   ├── util/                # Validation helpers
-│   ├── exception/           # Application exceptions
-│   └── config/              # Runtime configuration
-└── src/main/resources/
-    ├── config.properties.example
-    └── sql/schema.sql
-```
+See [SECURITY.md](SECURITY.md) for reporting guidance.
 
 ## Getting Started
 
@@ -131,32 +71,39 @@ realtime-chat-app/
 - Maven 3.8+
 - MySQL 8+
 
-### 1. Configure MySQL
+### 1. Create the database
 
-Run the schema supplied with the repository:
+Run:
 
 ```bash
 mysql -u root -p < src/main/resources/sql/schema.sql
 ```
 
-**Do not use any seed credentials from the repository outside local development.** For a real deployment, create a dedicated database user with a unique password and minimum required privileges.
+The schema creates tables only. It intentionally does **not** create a default application user or publish a password.
+
+For local development, create a dedicated MySQL account with only the privileges the application needs, then put those credentials in your local configuration.
 
 ### 2. Configure the application
-
-Copy the example configuration:
 
 ```bash
 cp src/main/resources/config.properties.example src/main/resources/config.properties
 ```
 
-Update the local database connection values as required.
+Edit the local values. `config.properties` is ignored by Git and must never be committed.
 
-`config.properties` should remain gitignored and must never contain production secrets committed to Git.
-
-### 3. Build
+For deployment, secrets can be supplied without a config file. For example:
 
 ```bash
-mvn compile
+export CHATAPP_DB_PASSWORD='your-secret'
+export CHATAPP_DB_USER='chatapp_user'
+```
+
+The precedence is: **JVM system property → environment variable → config file**.
+
+### 3. Verify the build
+
+```bash
+mvn verify
 ```
 
 ### 4. Start the server
@@ -165,9 +112,9 @@ mvn compile
 mvn exec:java -Dexec.mainClass="com.chatapp.server.ChatServer"
 ```
 
-## Test the Authentication Flow
+## CLI Authentication Test
 
-With the server running, use the CLI client to exercise registration and login:
+With the server running:
 
 ```bash
 java -cp target/classes com.chatapp.client.TestClient register alice alice@example.com YOUR_LOCAL_PASSWORD YOUR_LOCAL_PASSWORD
@@ -175,36 +122,64 @@ java -cp target/classes com.chatapp.client.TestClient login alice YOUR_LOCAL_PAS
 java -cp target/classes com.chatapp.client.TestClient ping
 ```
 
-Never replace `YOUR_LOCAL_PASSWORD` with a real production credential in documentation or source control.
+Never put real credentials into documentation, source code, CI configuration, or commit history.
 
-## TCP Message Framing
+## Protocol
 
-The project uses a length-prefixed JSON envelope:
+Every message is encoded as:
 
 ```text
-[ 4-byte payload length ][ UTF-8 JSON payload ]
+[ 4-byte big-endian payload length ][ UTF-8 JSON payload ]
 ```
 
-This framing is important because TCP is a byte stream rather than a message-oriented protocol. A single read may contain multiple application messages, or only part of one message. The explicit length prefix allows the receiver to reconstruct complete messages reliably.
+This framing makes message boundaries deterministic even when TCP splits or combines packets. The server rejects negative or oversized frames before allocating the payload buffer.
+
+## Project Structure
+
+```text
+realtime-chat-app/
+├── .github/workflows/ci.yml
+├── pom.xml
+├── README.md
+├── CONTRIBUTING.md
+├── SECURITY.md
+├── LICENSE
+└── src/
+    ├── main/java/com/chatapp/
+    │   ├── client/              # CLI and future JavaFX client
+    │   ├── config/              # Runtime configuration
+    │   ├── database/            # Pool, database manager, DAOs
+    │   ├── exception/            # Application exceptions
+    │   ├── model/                # Domain and DTO models
+    │   ├── server/               # Server and connection handlers
+    │   ├── service/              # Authentication/business logic
+    │   ├── socket/protocol/      # Envelope, framing, message types
+    │   └── util/                 # Validation helpers
+    ├── main/resources/
+    │   ├── config.properties.example
+    │   └── sql/schema.sql
+    └── test/java/com/chatapp/    # Automated tests
+```
 
 ## Roadmap
 
-- [x] Phase 1 — Foundation and authentication
-- [ ] Phase 2 — Private messaging and presence
-- [ ] Phase 3 — Group chat and membership controls
-- [ ] Phase 4 — JavaFX client
-- [ ] Phase 5 — File sharing, search, notifications, diagrams and deployment documentation
+- [x] Phase 1 — foundation and authentication
+- [ ] Phase 2 — private messaging and presence
+- [ ] Phase 3 — group chat and membership controls
+- [ ] Phase 4 — JavaFX desktop client
+- [ ] Phase 5 — file sharing, search, notifications, observability, deployment docs
 
-## Project Value
+## Development
 
-This project demonstrates practical **Java backend engineering, TCP networking, protocol design, authentication, database access, secure password handling, and incremental system architecture**.
+Run the complete verification suite before submitting changes:
 
-## Author
+```bash
+mvn verify
+```
 
-**Pankaj (Tony) Kumar**  
-AI Engineer • Full Stack Developer • Generative AI & RAG Specialist
+GitHub Actions runs the same Maven verification on pushes and pull requests targeting `main`.
 
-[GitHub](https://github.com/hack2ai) • [LinkedIn](https://www.linkedin.com/in/pankaj-kumar-ab591a216)
+See [CONTRIBUTING.md](CONTRIBUTING.md) for project conventions.
 
 ## License
 
