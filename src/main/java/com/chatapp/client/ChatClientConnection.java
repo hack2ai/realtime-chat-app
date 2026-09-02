@@ -22,6 +22,7 @@ import java.util.function.Consumer;
 public final class ChatClientConnection implements AutoCloseable {
     private final MessageCodec codec = new MessageCodec();
     private final Consumer<Envelope> eventListener;
+    private final Consumer<Boolean> connectionListener;
     private final Object authLock = new Object();
     private CompletableFuture<?> pendingAuth;
     private Class<?> pendingAuthType;
@@ -32,24 +33,36 @@ public final class ChatClientConnection implements AutoCloseable {
     private volatile boolean running;
 
     public ChatClientConnection(Consumer<Envelope> eventListener) {
+        this(eventListener, ignored -> { });
+    }
+
+    public ChatClientConnection(Consumer<Envelope> eventListener, Consumer<Boolean> connectionListener) {
         this.eventListener = eventListener;
+        this.connectionListener = connectionListener;
     }
 
     public synchronized void connect(String host, int port) throws IOException {
         if (running) return;
         Socket newSocket = new Socket();
-        newSocket.connect(new InetSocketAddress(host, port), 5_000);
-        newSocket.setTcpNoDelay(true);
-        socket = newSocket;
-        in = new DataInputStream(socket.getInputStream());
-        out = new DataOutputStream(socket.getOutputStream());
-        running = true;
-        Thread.ofVirtual().name("chat-client-reader").start(this::readLoop);
+        try {
+            newSocket.connect(new InetSocketAddress(host, port), 5_000);
+            newSocket.setTcpNoDelay(true);
+            socket = newSocket;
+            in = new DataInputStream(socket.getInputStream());
+            out = new DataOutputStream(socket.getOutputStream());
+            running = true;
+            connectionListener.accept(true);
+            Thread.ofVirtual().name("chat-client-reader").start(this::readLoop);
+        } catch (IOException | RuntimeException e) {
+            try { newSocket.close(); } catch (IOException ignored) { }
+            socket = null; in = null; out = null; running = false;
+            throw e;
+        }
     }
 
     public CompletableFuture<LoginSuccessResponse> login(String usernameOrEmail, String password) {
         CompletableFuture<LoginSuccessResponse> future = new CompletableFuture<>();
-        registerPendingAuth(future, LoginSuccessResponse.class);
+        if (!registerPendingAuth(future, LoginSuccessResponse.class)) return future;
         try {
             send(MessageType.C2S_LOGIN, new LoginRequest(usernameOrEmail, password));
         } catch (IOException e) {
@@ -62,7 +75,7 @@ public final class ChatClientConnection implements AutoCloseable {
     public CompletableFuture<RegisterSuccessResponse> register(String username, String email,
                                                                  String password, String confirmPassword) {
         CompletableFuture<RegisterSuccessResponse> future = new CompletableFuture<>();
-        registerPendingAuth(future, RegisterSuccessResponse.class);
+        if (!registerPendingAuth(future, RegisterSuccessResponse.class)) return future;
         try {
             send(MessageType.C2S_REGISTER, new RegisterRequest(username, email, password, confirmPassword));
         } catch (IOException e) {
@@ -72,14 +85,15 @@ public final class ChatClientConnection implements AutoCloseable {
         return future;
     }
 
-    private void registerPendingAuth(CompletableFuture<?> future, Class<?> responseType) {
+    private boolean registerPendingAuth(CompletableFuture<?> future, Class<?> responseType) {
         synchronized (authLock) {
             if (pendingAuth != null && !pendingAuth.isDone()) {
                 future.completeExceptionally(new IllegalStateException("Another authentication request is in progress."));
-                return;
+                return false;
             }
             pendingAuth = future;
             pendingAuthType = responseType;
+            return true;
         }
     }
 
@@ -90,6 +104,16 @@ public final class ChatClientConnection implements AutoCloseable {
                 pendingAuthType = null;
             }
         }
+    }
+
+    private void failPendingAuth(Throwable error) {
+        CompletableFuture<?> future;
+        synchronized (authLock) {
+            future = pendingAuth;
+            pendingAuth = null;
+            pendingAuthType = null;
+        }
+        if (future != null && !future.isDone()) future.completeExceptionally(error);
     }
 
     private void handleAuthResponse(Envelope envelope) {
@@ -105,14 +129,12 @@ public final class ChatClientConnection implements AutoCloseable {
             eventListener.accept(envelope);
             return;
         }
-
         if (envelope.getType() == MessageType.S2C_LOGIN_FAILED || envelope.getType() == MessageType.S2C_REGISTER_FAILED) {
             AuthFailedResponse error = codec.unwrap(envelope, AuthFailedResponse.class);
             future.completeExceptionally(new IllegalStateException(
                     error == null ? "Authentication request failed." : error.getReason()));
             return;
         }
-
         Object response = codec.unwrap(envelope, responseType);
         complete(future, response);
     }
@@ -136,11 +158,15 @@ public final class ChatClientConnection implements AutoCloseable {
             }
         } catch (IOException e) {
             if (running) {
+                failPendingAuth(new IOException("Connection lost while waiting for authentication response.", e));
                 eventListener.accept(codec.wrap(MessageType.S2C_ERROR,
-                        new AuthFailedResponse("Connection lost: " + e.getMessage())));
+                        new AuthFailedResponse("Connection lost: " + (e.getMessage() == null ? "network error" : e.getMessage()))));
             }
         } finally {
+            boolean wasRunning = running;
             running = false;
+            failPendingAuth(new IOException("Connection closed."));
+            if (wasRunning) connectionListener.accept(false);
         }
     }
 
@@ -151,11 +177,8 @@ public final class ChatClientConnection implements AutoCloseable {
 
     public CompletableFuture<Void> sendAsync(MessageType type, Object payload) {
         return CompletableFuture.runAsync(() -> {
-            try {
-                send(type, payload);
-            } catch (IOException e) {
-                throw new CompletionException(e);
-            }
+            try { send(type, payload); }
+            catch (IOException e) { throw new CompletionException(e); }
         });
     }
 
@@ -163,9 +186,13 @@ public final class ChatClientConnection implements AutoCloseable {
 
     @Override
     public synchronized void close() {
+        boolean wasRunning = running;
         running = false;
+        failPendingAuth(new IOException("Connection closed."));
         if (socket != null) {
             try { socket.close(); } catch (IOException ignored) { }
         }
+        socket = null; in = null; out = null;
+        if (wasRunning) connectionListener.accept(false);
     }
 }
