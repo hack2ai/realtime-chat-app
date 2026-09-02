@@ -1,10 +1,6 @@
 # Real-Time Chat Application configuration template
 # Copy to config.properties for local development.
-#
-# Deployment overrides are supported without a config file:
-#   JVM:  -Dchatapp.db.password=...
-#   ENV:  CHATAPP_DB_PASSWORD=...
-# System properties and environment variables take precedence over this file.
+# JVM properties and environment variables override this file.
 
 # ---------------- Database ----------------
 db.host=localhost
@@ -18,13 +14,13 @@ db.pool.connectionTimeoutMs=5000
 
 # ---------------- Server ----------------
 server.port=5050
-# Total active handlers plus queued connection jobs.
 server.maxClients=200
-# 0 disables the socket read timeout. Set a positive value for deployments
-# that want idle connections closed automatically (milliseconds).
 server.socketReadTimeoutMs=0
 
 # ---------------- Authentication ----------------
-# BCrypt cost factor. Increase only after measuring login latency.
 auth.bcrypt.strength=12
 auth.session.expiryHours=24
+
+# ---------------- Attachments ----------------
+# Files are stored outside the repository and are never committed to Git.
+attachments.storagePath=data/attachments
