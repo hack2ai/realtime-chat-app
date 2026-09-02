@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
+import java.util.Collection;
 import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
@@ -23,14 +24,12 @@ import java.util.concurrent.TimeUnit;
 /** Main TCP server: accepts connections and dispatches them to client handlers. */
 public class ChatServer {
     private static final Logger logger = LoggerFactory.getLogger(ChatServer.class);
-
     private final int port;
     private final int maxClients;
     private final ThreadPoolExecutor clientThreadPool;
     private final AuthenticationService authenticationService;
     private final ChatService chatService;
     private final Map<Integer, ClientHandler> connectedClients = new ConcurrentHashMap<>();
-
     private ServerSocket serverSocket;
     private volatile boolean running;
 
@@ -81,7 +80,6 @@ public class ChatServer {
         if (readTimeout > 0) socket.setSoTimeout(readTimeout);
     }
 
-    /** Registers a handler only when the user is not already connected. */
     public boolean registerClient(int userId, ClientHandler handler) {
         ClientHandler previous = connectedClients.putIfAbsent(userId, handler);
         if (previous != null && previous != handler) {
@@ -93,7 +91,6 @@ public class ChatServer {
         return true;
     }
 
-    /** Removes a handler only if it is still the handler registered for that user. */
     public void deregisterClient(int userId, ClientHandler handler) {
         if (connectedClients.remove(userId, handler)) {
             logger.info("User {} disconnected. Connected users: {}", userId, connectedClients.size());
@@ -109,6 +106,7 @@ public class ChatServer {
         }
     }
 
+    public Collection<ClientHandler> connectedHandlers() { return connectedClients.values(); }
     public ClientHandler getHandler(int userId) { return connectedClients.get(userId); }
     public boolean isUserOnline(int userId) { return connectedClients.containsKey(userId); }
     public ChatService getChatService() { return chatService; }
