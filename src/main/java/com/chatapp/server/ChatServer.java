@@ -17,6 +17,7 @@ import java.net.Socket;
 import java.net.SocketException;
 import java.util.Collection;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.RejectedExecutionException;
@@ -34,6 +35,7 @@ public class ChatServer {
     private final ChatService chatService;
     private final GroupService groupService;
     private final Map<Integer, ClientHandler> connectedClients = new ConcurrentHashMap<>();
+    private final Set<ClientHandler> activeHandlers = ConcurrentHashMap.newKeySet();
     private ServerSocket serverSocket;
     private volatile boolean running;
 
@@ -66,9 +68,12 @@ public class ChatServer {
             try {
                 Socket clientSocket = serverSocket.accept();
                 configureSocket(clientSocket);
+                ClientHandler handler = new ClientHandler(clientSocket, this, authenticationService, chatService, groupService);
+                activeHandlers.add(handler);
                 try {
-                    clientThreadPool.execute(new ClientHandler(clientSocket, this, authenticationService, chatService, groupService));
+                    clientThreadPool.execute(handler);
                 } catch (RejectedExecutionException e) {
+                    activeHandlers.remove(handler);
                     logger.warn("Rejecting connection from {} because the server is at capacity", clientSocket.getRemoteSocketAddress());
                     closeQuietly(clientSocket);
                 }
@@ -82,6 +87,7 @@ public class ChatServer {
 
     private void configureSocket(Socket socket) throws SocketException {
         socket.setTcpNoDelay(true);
+        socket.setKeepAlive(true);
         int readTimeout = AppConfig.getSocketReadTimeoutMs();
         if (readTimeout > 0) socket.setSoTimeout(readTimeout);
     }
@@ -104,6 +110,10 @@ public class ChatServer {
         }
     }
 
+    void handlerClosed(ClientHandler handler) {
+        activeHandlers.remove(handler);
+    }
+
     private void broadcastPresence(int userId, ClientHandler source, boolean online) {
         UserPresenceEvent event = new UserPresenceEvent(userId, source.getUsername(), online ? "ONLINE" : "OFFLINE");
         MessageType type = online ? MessageType.S2C_USER_ONLINE : MessageType.S2C_USER_OFFLINE;
@@ -121,9 +131,19 @@ public class ChatServer {
     public void stop() {
         if (!running) return;
         running = false;
-        logger.info("Shutting down chat server...");
+        logger.info("Shutting down chat server ({} active connections)...", activeHandlers.size());
         closeQuietly(serverSocket);
+        for (ClientHandler handler : activeHandlers.toArray(ClientHandler[]::new)) {
+            handler.closeConnection();
+        }
         clientThreadPool.shutdownNow();
+        try {
+            if (!clientThreadPool.awaitTermination(5, TimeUnit.SECONDS)) {
+                logger.warn("Client handler pool did not terminate within 5 seconds");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
         ConnectionPool.getInstance().shutdown();
         logger.info("Chat server stopped.");
     }
@@ -134,7 +154,7 @@ public class ChatServer {
     }
     private static void closeQuietly(Socket socket) {
         if (socket == null) return;
-        try { socket.close(); } catch (IOException e) { logger.debug("Error closing rejected client socket", e); }
+        try { socket.close(); } catch (IOException e) { logger.debug("Error closing client socket", e); }
     }
 
     public static void main(String[] args) { new ChatServer().start(); }
