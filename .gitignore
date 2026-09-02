@@ -2,47 +2,38 @@
 # Real-Time Chat Application — .gitignore
 # ============================================================
 
-# ---------------- Maven build output ----------------
 target/
 *.jar
 *.war
 *.class
 
-# ---------------- Local configuration (NEVER COMMIT) ----------------
-# config.properties contains DB credentials. Only config.properties.example
-# (the template, with no real secrets) is meant to be tracked.
+# Local configuration / secrets
 src/main/resources/config.properties
 
-# ---------------- IDE files ----------------
-# IntelliJ IDEA
+# Runtime attachment data — never commit user files
+/data/
+
+# IDEs
 .idea/
 *.iml
 *.iws
 out/
-
-# Eclipse
 .classpath
 .project
 .settings/
 bin/
-
-# VS Code
 .vscode/
-
-# NetBeans
 nbproject/
 nb-configuration.xml
 
-# ---------------- OS junk ----------------
+# OS junk
 .DS_Store
 Thumbs.db
 desktop.ini
 
-# ---------------- Logs ----------------
+# Logs / temporary files
 *.log
 logs/
-
-# ---------------- Misc ----------------
 *.bak
 *.tmp
 .env
