@@ -8,6 +8,7 @@ import com.chatapp.model.dto.AuthDTOs.LoginRequest;
 import com.chatapp.model.dto.AuthDTOs.LoginSuccessResponse;
 import com.chatapp.model.dto.AuthDTOs.RegisterRequest;
 import com.chatapp.model.dto.AuthDTOs.RegisterSuccessResponse;
+import com.chatapp.model.dto.ChatDTOs.MessageReadRequest;
 import com.chatapp.model.dto.ChatDTOs.PrivateHistoryRequest;
 import com.chatapp.model.dto.ChatDTOs.PrivateHistoryResponse;
 import com.chatapp.model.dto.ChatDTOs.PrivateMessageEvent;
@@ -27,6 +28,7 @@ import java.io.DataOutputStream;
 import java.io.EOFException;
 import java.io.IOException;
 import java.net.Socket;
+import java.util.OptionalInt;
 
 /** Handles one client's connection lifecycle and protocol dispatch. */
 public class ClientHandler implements Runnable {
@@ -104,8 +106,8 @@ public class ClientHandler implements Runnable {
             case C2S_PRIVATE_MESSAGE -> requireAuth(() -> handlePrivateMessage(envelope));
             case C2S_REQUEST_PRIVATE_HISTORY -> requireAuth(() -> handlePrivateHistory(envelope));
             case C2S_MESSAGE_READ -> requireAuth(() -> handleMessageRead(envelope));
-            case C2S_TYPING_START -> requireAuth(() -> handleTyping(MessageType.S2C_TYPING_START));
-            case C2S_TYPING_STOP -> requireAuth(() -> handleTyping(MessageType.S2C_TYPING_STOP));
+            case C2S_TYPING_START -> requireAuth(() -> handleTyping(envelope, MessageType.S2C_TYPING_START));
+            case C2S_TYPING_STOP -> requireAuth(() -> handleTyping(envelope, MessageType.S2C_TYPING_STOP));
             case C2S_CREATE_GROUP, C2S_JOIN_GROUP, C2S_LEAVE_GROUP, C2S_GROUP_MESSAGE,
                  C2S_REQUEST_GROUP_LIST, C2S_REQUEST_GROUP_HISTORY ->
                     requireAuth(() -> sendError("Group messaging is scheduled for the next phase."));
@@ -169,8 +171,8 @@ public class ClientHandler implements Runnable {
         ClientHandler recipient = server.getHandler(event.getReceiverId());
 
         if (recipient != null) {
-            chatService.markRead(event.getMessageId(), event.getReceiverId());
-            event.setStatus("READ");
+            chatService.markDelivered(event.getReceiverId(), event.getMessageId());
+            event.setStatus("DELIVERED");
             recipient.sendAsync(MessageType.S2C_PRIVATE_MESSAGE, event);
             send(MessageType.S2C_MESSAGE_DELIVERED, event);
         } else {
@@ -187,17 +189,26 @@ public class ClientHandler implements Runnable {
     }
 
     private void handleMessageRead(Envelope envelope) throws IOException, ValidationException {
-        var req = codec.unwrap(envelope, com.chatapp.model.dto.ChatDTOs.MessageReadRequest.class);
+        MessageReadRequest req = codec.unwrap(envelope, MessageReadRequest.class);
         if (req == null) { sendError("Invalid read receipt."); return; }
-        if (chatService.markRead(authenticatedUserId, req.getMessageId())) {
-            send(MessageType.S2C_MESSAGE_READ, req);
+        if (!chatService.markRead(authenticatedUserId, req.getMessageId())) return;
+
+        OptionalInt senderId = chatService.findMessageSender(authenticatedUserId, req.getMessageId());
+        if (senderId.isPresent()) {
+            ClientHandler sender = server.getHandler(senderId.getAsInt());
+            if (sender != null) sender.sendAsync(MessageType.S2C_MESSAGE_READ, req);
         }
     }
 
-    private void handleTyping(MessageType type) {
-        TypingEvent event = new TypingEvent(authenticatedUserId, authenticatedUsername);
-        for (ClientHandler handler : server.connectedHandlers()) {
-            if (handler != this) handler.sendAsync(type, event);
+    private void handleTyping(Envelope envelope, MessageType type) throws IOException, ValidationException {
+        PrivateMessageRequest req = codec.unwrap(envelope, PrivateMessageRequest.class);
+        if (req == null || req.getReceiverId() <= 0 || req.getReceiverId() == authenticatedUserId) {
+            sendError("Invalid typing recipient.");
+            return;
+        }
+        ClientHandler recipient = server.getHandler(req.getReceiverId());
+        if (recipient != null) {
+            recipient.sendAsync(type, new TypingEvent(authenticatedUserId, authenticatedUsername, req.getReceiverId()));
         }
     }
 
@@ -226,14 +237,18 @@ public class ClientHandler implements Runnable {
     private void cleanup() {
         int userId = authenticatedUserId;
         String token = sessionToken;
-        authenticatedUserId = -1;
-        authenticatedUsername = null;
-        sessionToken = null;
         if (userId != -1) {
             server.deregisterClient(userId, this);
             authService.logout(token);
         }
+        authenticatedUserId = -1;
+        authenticatedUsername = null;
+        sessionToken = null;
         try { socket.close(); }
         catch (IOException e) { logger.debug("Error closing socket for {}", socket.getRemoteSocketAddress()); }
+    }
+
+    private void handleLogout() {
+        cleanup();
     }
 }
