@@ -17,9 +17,7 @@ public class ChatService {
     private final UserDAO userDAO;
     private final PrivateMessageDAO privateMessageDAO;
 
-    public ChatService() {
-        this(new UserDAO(), new PrivateMessageDAO());
-    }
+    public ChatService() { this(new UserDAO(), new PrivateMessageDAO()); }
 
     public ChatService(UserDAO userDAO, PrivateMessageDAO privateMessageDAO) {
         this.userDAO = userDAO;
@@ -33,17 +31,15 @@ public class ChatService {
                 .toList();
     }
 
+    public boolean userExists(int userId) {
+        return userId > 0 && userDAO.findById(userId).isPresent();
+    }
+
     public PrivateMessageEvent sendPrivateMessage(int senderId, int receiverId, String message)
             throws ValidationException {
-        if (receiverId <= 0 || receiverId == senderId) {
-            throw new ValidationException("Choose a valid recipient.");
-        }
-        if (userDAO.findById(receiverId).isEmpty()) {
-            throw new ValidationException("Recipient does not exist.");
-        }
-        if (message == null || message.isBlank()) {
-            throw new ValidationException("Message cannot be empty.");
-        }
+        if (receiverId <= 0 || receiverId == senderId) throw new ValidationException("Choose a valid recipient.");
+        if (!userExists(receiverId)) throw new ValidationException("Recipient does not exist.");
+        if (message == null || message.isBlank()) throw new ValidationException("Message cannot be empty.");
         String normalized = message.strip();
         if (normalized.length() > MAX_MESSAGE_LENGTH) {
             throw new ValidationException("Message exceeds the " + MAX_MESSAGE_LENGTH + " character limit.");
@@ -53,9 +49,7 @@ public class ChatService {
 
     public List<PrivateMessageEvent> history(int currentUserId, int otherUserId, int limit, long beforeMessageId)
             throws ValidationException {
-        if (otherUserId <= 0 || userDAO.findById(otherUserId).isEmpty()) {
-            throw new ValidationException("User does not exist.");
-        }
+        if (!userExists(otherUserId)) throw new ValidationException("User does not exist.");
         return privateMessageDAO.findConversation(currentUserId, otherUserId, limit, beforeMessageId);
     }
 
