@@ -11,6 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
@@ -27,6 +28,7 @@ public class ChatServer {
     private static final Logger logger = LoggerFactory.getLogger(ChatServer.class);
     private final int port;
     private final int maxClients;
+    private final String bindAddress;
     private final ThreadPoolExecutor clientThreadPool;
     private final AuthenticationService authenticationService;
     private final ChatService chatService;
@@ -38,6 +40,7 @@ public class ChatServer {
     public ChatServer() {
         this.port = AppConfig.getServerPort();
         this.maxClients = AppConfig.getServerMaxClients();
+        this.bindAddress = AppConfig.getServerBindAddress();
         this.clientThreadPool = new ThreadPoolExecutor(maxClients, maxClients, 0L, TimeUnit.MILLISECONDS,
                 new ArrayBlockingQueue<>(maxClients), new ThreadPoolExecutor.AbortPolicy());
         this.authenticationService = new AuthenticationService();
@@ -47,13 +50,13 @@ public class ChatServer {
 
     public void start() {
         try {
-            serverSocket = new ServerSocket(port);
+            serverSocket = new ServerSocket(port, maxClients, InetAddress.getByName(bindAddress));
             running = true;
-            logger.info("Chat server started on port {} (max active/queued clients: {})", port, maxClients);
+            logger.info("Chat server started on {}:{} (max active/queued clients: {})", bindAddress, port, maxClients);
             Runtime.getRuntime().addShutdownHook(new Thread(this::stop, "chat-server-shutdown"));
             acceptLoop();
         } catch (IOException e) {
-            logger.error("Failed to start server on port {}", port, e);
+            logger.error("Failed to start server on {}:{}", bindAddress, port, e);
             throw new IllegalStateException("Server startup failed", e);
         }
     }
