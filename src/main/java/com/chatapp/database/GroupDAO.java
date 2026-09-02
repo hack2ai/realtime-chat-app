@@ -16,30 +16,26 @@ import java.util.List;
 /** Persistence operations for groups, membership, and group messages. */
 public class GroupDAO {
     public GroupSummary create(int ownerId, String name) {
-        return DatabaseManager.execute(conn -> {
-            boolean originalAutoCommit = conn.getAutoCommit();
-            try {
-                conn.setAutoCommit(false);
-                int id;
-                try (PreparedStatement stmt = conn.prepareStatement("INSERT INTO chat_groups (group_name, created_by) VALUES (?, ?)", Statement.RETURN_GENERATED_KEYS)) {
-                    stmt.setString(1, name); stmt.setInt(2, ownerId); stmt.executeUpdate();
-                    try (ResultSet keys = stmt.getGeneratedKeys()) {
-                        if (!keys.next()) throw new SQLException("Database did not return a group id.");
-                        id = keys.getInt(1);
-                    }
+        return DatabaseManager.executeTransaction(conn -> {
+            int id;
+            try (PreparedStatement stmt = conn.prepareStatement(
+                    "INSERT INTO chat_groups (group_name, created_by) VALUES (?, ?)",
+                    Statement.RETURN_GENERATED_KEYS)) {
+                stmt.setString(1, name);
+                stmt.setInt(2, ownerId);
+                stmt.executeUpdate();
+                try (ResultSet keys = stmt.getGeneratedKeys()) {
+                    if (!keys.next()) throw new SQLException("Database did not return a group id.");
+                    id = keys.getInt(1);
                 }
-                try (PreparedStatement member = conn.prepareStatement("INSERT INTO group_members (group_id, user_id, role) VALUES (?, ?, 'ADMIN')")) {
-                    member.setInt(1, id); member.setInt(2, ownerId); member.executeUpdate();
-                }
-                conn.commit();
-                return new GroupSummary(id, name, ownerId, 1);
-            } catch (Exception e) {
-                try { conn.rollback(); } catch (SQLException rollbackError) { e.addSuppressed(rollbackError); }
-                if (e instanceof RuntimeException runtime) throw runtime;
-                throw new SQLException("Unable to create group.", e);
-            } finally {
-                try { conn.setAutoCommit(originalAutoCommit); } catch (SQLException ignored) { }
             }
+            try (PreparedStatement member = conn.prepareStatement(
+                    "INSERT INTO group_members (group_id, user_id, role) VALUES (?, ?, 'ADMIN')")) {
+                member.setInt(1, id);
+                member.setInt(2, ownerId);
+                member.executeUpdate();
+            }
+            return new GroupSummary(id, name, ownerId, 1);
         });
     }
 
