@@ -128,11 +128,16 @@ public final class ChatDTOs {
     public static class TypingEvent {
         private int userId;
         private String username;
+        private int recipientId;
         public TypingEvent() {}
-        public TypingEvent(int userId, String username) { this.userId = userId; this.username = username; }
+        public TypingEvent(int userId, String username, int recipientId) {
+            this.userId = userId; this.username = username; this.recipientId = recipientId;
+        }
         public int getUserId() { return userId; }
         public String getUsername() { return username; }
+        public int getRecipientId() { return recipientId; }
         public void setUserId(int v) { userId = v; }
         public void setUsername(String v) { username = v; }
+        public void setRecipientId(int v) { recipientId = v; }
     }
 }
