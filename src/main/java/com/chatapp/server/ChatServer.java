@@ -5,6 +5,7 @@ import com.chatapp.database.ConnectionPool;
 import com.chatapp.model.dto.ChatDTOs.UserPresenceEvent;
 import com.chatapp.service.AuthenticationService;
 import com.chatapp.service.ChatService;
+import com.chatapp.service.GroupService;
 import com.chatapp.socket.protocol.MessageType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,6 +30,7 @@ public class ChatServer {
     private final ThreadPoolExecutor clientThreadPool;
     private final AuthenticationService authenticationService;
     private final ChatService chatService;
+    private final GroupService groupService;
     private final Map<Integer, ClientHandler> connectedClients = new ConcurrentHashMap<>();
     private ServerSocket serverSocket;
     private volatile boolean running;
@@ -40,6 +42,7 @@ public class ChatServer {
                 new ArrayBlockingQueue<>(maxClients), new ThreadPoolExecutor.AbortPolicy());
         this.authenticationService = new AuthenticationService();
         this.chatService = new ChatService();
+        this.groupService = new GroupService();
     }
 
     public void start() {
@@ -61,7 +64,7 @@ public class ChatServer {
                 Socket clientSocket = serverSocket.accept();
                 configureSocket(clientSocket);
                 try {
-                    clientThreadPool.execute(new ClientHandler(clientSocket, this, authenticationService, chatService));
+                    clientThreadPool.execute(new ClientHandler(clientSocket, this, authenticationService, chatService, groupService));
                 } catch (RejectedExecutionException e) {
                     logger.warn("Rejecting connection from {} because the server is at capacity", clientSocket.getRemoteSocketAddress());
                     closeQuietly(clientSocket);
@@ -110,6 +113,7 @@ public class ChatServer {
     public ClientHandler getHandler(int userId) { return connectedClients.get(userId); }
     public boolean isUserOnline(int userId) { return connectedClients.containsKey(userId); }
     public ChatService getChatService() { return chatService; }
+    public GroupService getGroupService() { return groupService; }
 
     public void stop() {
         if (!running) return;
