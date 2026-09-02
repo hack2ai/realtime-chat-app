@@ -73,7 +73,6 @@ public class AuthenticationService {
         String token = generateSessionToken();
         LocalDateTime expiry = LocalDateTime.now().plusHours(AppConfig.getSessionExpiryHours());
         Session session = new Session(user.getId(), expiry);
-
         if (activeTokenByUser.putIfAbsent(user.getId(), token) != null) {
             throw new AuthenticationException("This account is already connected.");
         }
@@ -85,7 +84,7 @@ public class AuthenticationService {
             activeTokenByUser.remove(user.getId(), token);
             throw e;
         }
-        return new LoginResult(user, token);
+        return new LoginResult(user, token, expiry);
     }
 
     public void logout(String sessionToken) {
@@ -128,5 +127,5 @@ public class AuthenticationService {
     }
 
     private record Session(int userId, LocalDateTime expiresAt) {}
-    public record LoginResult(User user, String sessionToken) {}
+    public record LoginResult(User user, String sessionToken, LocalDateTime expiresAt) {}
 }
