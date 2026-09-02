@@ -70,6 +70,7 @@ public final class AppConfig {
                 + "&serverTimezone=UTC&characterEncoding=utf8mb4&useUnicode=true";
     }
     public static int getServerPort() { return requireInt("server.port"); }
+    public static String getServerBindAddress() { return optional("server.bindAddress", "127.0.0.1"); }
     public static int getServerMaxClients() { return requireInt("server.maxClients"); }
     public static int getSocketReadTimeoutMs() { return requireInt("server.socketReadTimeoutMs"); }
     public static int getBcryptStrength() { return requireInt("auth.bcrypt.strength"); }
