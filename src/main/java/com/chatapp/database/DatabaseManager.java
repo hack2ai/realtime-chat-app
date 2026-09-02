@@ -5,54 +5,33 @@ import org.slf4j.LoggerFactory;
 
 import java.sql.Connection;
 import java.sql.SQLException;
-import java.util.function.Function;
 
 /**
- * Facade over {@link ConnectionPool} that DAOs use to execute database
- * operations without each DAO having to manually manage
- * borrow/return/exception-wrapping boilerplate.
- *
- * <p>The {@link #execute} method guarantees the borrowed connection is
- * always returned to the pool exactly once, even if the operation
- * throws — this is the single place that pattern is implemented, so
- * individual DAO methods can't forget a {@code finally} block and leak
- * a connection out of the pool.
+ * Facade over {@link ConnectionPool} that centralizes JDBC connection
+ * lifecycle, exception handling, and transaction boundaries for DAOs.
  */
 public final class DatabaseManager {
-
     private static final Logger logger = LoggerFactory.getLogger(DatabaseManager.class);
 
     private DatabaseManager() {
     }
 
-    /**
-     * Functional interface for a unit of work that needs a {@link Connection}
-     * and may throw {@link SQLException}. Distinct from
-     * {@link java.util.function.Function} because {@code Function}
-     * doesn't allow checked exceptions in its signature, and forcing
-     * every DAO method to wrap SQLException in a try/catch just to
-     * satisfy the functional interface would defeat the point of this
-     * abstraction.
-     */
     @FunctionalInterface
     public interface SqlOperation<T> {
         T apply(Connection conn) throws SQLException;
     }
 
-    /**
-     * Borrows a connection, runs {@code operation} with it, and
-     * guarantees the connection is returned to the pool afterward
-     * regardless of success or failure.
-     *
-     * @throws RuntimeException wrapping the original {@link SQLException},
-     *         so callers further up the stack (service layer) aren't
-     *         forced to declare {@code throws SQLException} on every
-     *         method just to satisfy the compiler — database failures
-     *         at this layer are treated as unexpected/exceptional,
-     *         distinct from expected validation/auth failures which use
-     *         checked exceptions (see {@code exception} package).
-     */
+    @FunctionalInterface
+    public interface VoidSqlOperation {
+        void apply(Connection conn) throws SQLException;
+    }
+
+    /** Borrows a connection, executes the operation, and always returns it. */
     public static <T> T execute(SqlOperation<T> operation) {
+        if (operation == null) {
+            throw new IllegalArgumentException("SQL operation must not be null.");
+        }
+
         Connection conn = null;
         try {
             conn = ConnectionPool.getInstance().borrowConnection();
@@ -67,20 +46,48 @@ public final class DatabaseManager {
         }
     }
 
-    /**
-     * Variant of {@link #execute} for operations that don't return a
-     * value (e.g. a bare UPDATE/DELETE where the caller only cares
-     * about success/failure, not a result).
-     */
+    /** Executes a database operation that does not return a value. */
     public static void executeVoid(VoidSqlOperation operation) {
+        if (operation == null) {
+            throw new IllegalArgumentException("SQL operation must not be null.");
+        }
         execute(conn -> {
             operation.apply(conn);
             return null;
         });
     }
 
-    @FunctionalInterface
-    public interface VoidSqlOperation {
-        void apply(Connection conn) throws SQLException;
+    /**
+     * Executes a unit of work in a single transaction and restores the
+     * connection's original auto-commit mode before it is returned to the pool.
+     * The transaction is committed on success and rolled back on failure.
+     */
+    public static <T> T executeTransaction(SqlOperation<T> operation) {
+        if (operation == null) {
+            throw new IllegalArgumentException("SQL transaction must not be null.");
+        }
+
+        return execute(conn -> {
+            boolean originalAutoCommit = conn.getAutoCommit();
+            try {
+                conn.setAutoCommit(false);
+                T result = operation.apply(conn);
+                conn.commit();
+                return result;
+            } catch (SQLException | RuntimeException e) {
+                try {
+                    conn.rollback();
+                } catch (SQLException rollbackError) {
+                    e.addSuppressed(rollbackError);
+                }
+                throw e;
+            } finally {
+                try {
+                    conn.setAutoCommit(originalAutoCommit);
+                } catch (SQLException restoreError) {
+                    logger.warn("Failed to restore JDBC auto-commit state: {}", restoreError.getMessage());
+                }
+            }
+        });
     }
 }
