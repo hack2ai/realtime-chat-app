@@ -1,0 +1,27 @@
+.root { -fx-font-family: "Segoe UI", "Inter", sans-serif; -fx-background-color: #f7f8fb; }
+.auth-shell { -fx-background-color: linear-gradient(to bottom right, #f7f8fb, #e9edf5); }
+.brand-title { -fx-font-size: 34px; -fx-font-weight: 800; -fx-text-fill: #172033; }
+.brand-subtitle { -fx-font-size: 15px; -fx-text-fill: #687386; }
+.auth-card { -fx-background-color: white; -fx-background-radius: 16; -fx-border-radius: 16; -fx-border-color: #e0e5ee; -fx-effect: dropshadow(gaussian, rgba(30,40,60,.12), 18, .18, 0, 5); }
+.auth-card .text-field, .auth-card .password-field { -fx-pref-height: 42px; -fx-background-radius: 9; -fx-border-radius: 9; -fx-border-color: #d7dce5; -fx-background-color: #fbfcfe; }
+.tab-pane { -fx-background-color: transparent; }
+.primary { -fx-background-color: #2563eb; -fx-text-fill: white; -fx-font-weight: 700; -fx-padding: 10 18; -fx-background-radius: 9; }
+.primary:hover { -fx-background-color: #1d4ed8; }
+.error { -fx-text-fill: #c2410c; -fx-wrap-text: true; }
+.muted { -fx-text-fill: #7a8495; }
+.dashboard { -fx-background-color: #f7f8fb; }
+.top-bar { -fx-background-color: white; -fx-border-color: #e1e5ec; -fx-border-width: 0 0 1 0; }
+.top-title { -fx-font-size: 20px; -fx-font-weight: 800; -fx-text-fill: #172033; }
+.account { -fx-font-weight: 700; -fx-text-fill: #344054; }
+.connected { -fx-text-fill: #16a34a; -fx-font-weight: 700; }
+.sidebar { -fx-background-color: #ffffff; -fx-border-color: #e1e5ec; -fx-border-width: 0 1 0 0; }
+.section-label { -fx-font-size: 11px; -fx-font-weight: 800; -fx-text-fill: #8a94a6; -fx-padding: 8 4 2 4; }
+.sidebar .list-view { -fx-background-color: transparent; -fx-border-color: transparent; }
+.sidebar .list-cell { -fx-padding: 10 8; -fx-background-radius: 8; -fx-text-fill: #344054; }
+.sidebar .list-cell:selected { -fx-background-color: #e8f0ff; -fx-text-fill: #1d4ed8; }
+.chat-pane { -fx-background-color: #f9fafc; }
+.chat-title { -fx-font-size: 21px; -fx-font-weight: 800; -fx-text-fill: #172033; }
+.chat-pane .list-view { -fx-background-color: transparent; -fx-border-color: transparent; -fx-padding: 12 18; }
+.chat-pane .list-cell { -fx-background-color: transparent; -fx-padding: 9 4; -fx-font-size: 14px; -fx-text-fill: #344054; }
+.chat-pane .text-field { -fx-pref-height: 44px; -fx-background-color: white; -fx-border-color: #d8dee8; -fx-border-radius: 10; -fx-background-radius: 10; }
+.button { -fx-cursor: hand; -fx-background-radius: 8; }
