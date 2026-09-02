@@ -18,19 +18,18 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.function.Consumer;
 
-/**
- * Thread-safe client transport for the length-prefixed JSON chat protocol.
- * The reader runs independently so unsolicited presence/message events can
- * arrive while the JavaFX application remains responsive.
- */
+/** Thread-safe asynchronous transport for the chat application's wire protocol. */
 public final class ChatClientConnection implements AutoCloseable {
     private final MessageCodec codec = new MessageCodec();
     private final Consumer<Envelope> eventListener;
+    private final Object authLock = new Object();
+    private CompletableFuture<?> pendingAuth;
+    private Class<?> pendingAuthType;
+
     private Socket socket;
     private DataInputStream in;
     private DataOutputStream out;
     private volatile boolean running;
-    private Thread readerThread;
 
     public ChatClientConnection(Consumer<Envelope> eventListener) {
         this.eventListener = eventListener;
@@ -45,77 +44,109 @@ public final class ChatClientConnection implements AutoCloseable {
         in = new DataInputStream(socket.getInputStream());
         out = new DataOutputStream(socket.getOutputStream());
         running = true;
-
-        readerThread = Thread.ofVirtual().name("chat-client-reader").start(this::readLoop);
+        Thread.ofVirtual().name("chat-client-reader").start(this::readLoop);
     }
 
     public CompletableFuture<LoginSuccessResponse> login(String usernameOrEmail, String password) {
         CompletableFuture<LoginSuccessResponse> future = new CompletableFuture<>();
-        sendAsync(MessageType.C2S_LOGIN, new LoginRequest(usernameOrEmail, password))
-                .exceptionally(error -> { future.completeExceptionally(error); return null; });
-        awaitResponse(future, MessageType.S2C_LOGIN_SUCCESS, MessageType.S2C_LOGIN_FAILED);
+        registerPendingAuth(future, LoginSuccessResponse.class);
+        try {
+            send(MessageType.C2S_LOGIN, new LoginRequest(usernameOrEmail, password));
+        } catch (IOException e) {
+            clearPendingAuth(future);
+            future.completeExceptionally(e);
+        }
         return future;
     }
 
-    public CompletableFuture<RegisterSuccessResponse> register(String username, String email, String password, String confirmPassword) {
+    public CompletableFuture<RegisterSuccessResponse> register(String username, String email,
+                                                                 String password, String confirmPassword) {
         CompletableFuture<RegisterSuccessResponse> future = new CompletableFuture<>();
-        sendAsync(MessageType.C2S_REGISTER, new RegisterRequest(username, email, password, confirmPassword))
-                .exceptionally(error -> { future.completeExceptionally(error); return null; });
-        awaitResponse(future, MessageType.S2C_REGISTER_SUCCESS, MessageType.S2C_REGISTER_FAILED);
+        registerPendingAuth(future, RegisterSuccessResponse.class);
+        try {
+            send(MessageType.C2S_REGISTER, new RegisterRequest(username, email, password, confirmPassword));
+        } catch (IOException e) {
+            clearPendingAuth(future);
+            future.completeExceptionally(e);
+        }
         return future;
     }
 
-    private <T> void awaitResponse(CompletableFuture<T> future, MessageType success, MessageType failure) {
-        Consumer<Envelope> previous = event -> {
-            if (event.getType() == success) {
-                future.complete(codec.unwrap(event, success == MessageType.S2C_LOGIN_SUCCESS
-                        ? com.chatapp.model.dto.AuthDTOs.LoginSuccessResponse.class
-                        : com.chatapp.model.dto.AuthDTOs.RegisterSuccessResponse.class));
-            } else if (event.getType() == failure) {
-                AuthFailedResponse error = codec.unwrap(event, AuthFailedResponse.class);
-                future.completeExceptionally(new IllegalStateException(error == null ? "Request failed." : error.getReason()));
-            } else {
-                eventListener.accept(event);
+    private void registerPendingAuth(CompletableFuture<?> future, Class<?> responseType) {
+        synchronized (authLock) {
+            if (pendingAuth != null && !pendingAuth.isDone()) {
+                future.completeExceptionally(new IllegalStateException("Another authentication request is in progress."));
+                return;
             }
-        };
-        CompletableFuture.runAsync(() -> {
-            // The transport has one reader; temporarily route the next auth response.
-            synchronized (authHandlers) { authHandlers.add(previous); }
-        });
+            pendingAuth = future;
+            pendingAuthType = responseType;
+        }
     }
 
-    private final java.util.List<Consumer<Envelope>> authHandlers = new java.util.ArrayList<>();
+    private void clearPendingAuth(CompletableFuture<?> future) {
+        synchronized (authLock) {
+            if (pendingAuth == future) {
+                pendingAuth = null;
+                pendingAuthType = null;
+            }
+        }
+    }
+
+    private void handleAuthResponse(Envelope envelope) {
+        CompletableFuture<?> future;
+        Class<?> responseType;
+        synchronized (authLock) {
+            future = pendingAuth;
+            responseType = pendingAuthType;
+            pendingAuth = null;
+            pendingAuthType = null;
+        }
+        if (future == null) {
+            eventListener.accept(envelope);
+            return;
+        }
+
+        if (envelope.getType() == MessageType.S2C_LOGIN_FAILED || envelope.getType() == MessageType.S2C_REGISTER_FAILED) {
+            AuthFailedResponse error = codec.unwrap(envelope, AuthFailedResponse.class);
+            future.completeExceptionally(new IllegalStateException(
+                    error == null ? "Authentication request failed." : error.getReason()));
+            return;
+        }
+
+        Object response = codec.unwrap(envelope, responseType);
+        complete(future, response);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T> void complete(CompletableFuture<?> future, Object value) {
+        ((CompletableFuture<T>) future).complete((T) value);
+    }
 
     private void readLoop() {
         try {
             while (running) {
                 Envelope envelope = codec.read(in);
-                boolean handled = false;
-                synchronized (authHandlers) {
-                    if (!authHandlers.isEmpty() && (envelope.getType() == MessageType.S2C_LOGIN_SUCCESS
-                            || envelope.getType() == MessageType.S2C_LOGIN_FAILED
-                            || envelope.getType() == MessageType.S2C_REGISTER_SUCCESS
-                            || envelope.getType() == MessageType.S2C_REGISTER_FAILED)) {
-                        Consumer<Envelope> handler = authHandlers.remove(0);
-                        handler.accept(envelope);
-                        handled = true;
-                    }
+                MessageType type = envelope.getType();
+                if (type == MessageType.S2C_LOGIN_SUCCESS || type == MessageType.S2C_LOGIN_FAILED
+                        || type == MessageType.S2C_REGISTER_SUCCESS || type == MessageType.S2C_REGISTER_FAILED) {
+                    handleAuthResponse(envelope);
+                } else {
+                    eventListener.accept(envelope);
                 }
-                if (!handled) eventListener.accept(envelope);
             }
         } catch (IOException e) {
-            if (running) eventListener.accept(codec.wrap(MessageType.S2C_ERROR,
-                    new AuthFailedResponse("Connection lost: " + e.getMessage())));
+            if (running) {
+                eventListener.accept(codec.wrap(MessageType.S2C_ERROR,
+                        new AuthFailedResponse("Connection lost: " + e.getMessage())));
+            }
         } finally {
             running = false;
         }
     }
 
-    public void send(MessageType type, Object payload) throws IOException {
-        synchronized (this) {
-            if (!running || out == null) throw new IOException("Not connected.");
-            codec.write(out, codec.wrap(type, payload));
-        }
+    public synchronized void send(MessageType type, Object payload) throws IOException {
+        if (!running || out == null) throw new IOException("Not connected.");
+        codec.write(out, codec.wrap(type, payload));
     }
 
     public CompletableFuture<Void> sendAsync(MessageType type, Object payload) {
@@ -130,6 +161,7 @@ public final class ChatClientConnection implements AutoCloseable {
 
     public boolean isConnected() { return running; }
 
+    @Override
     public synchronized void close() {
         running = false;
         if (socket != null) {
