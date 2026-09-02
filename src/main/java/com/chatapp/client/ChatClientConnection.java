@@ -1,11 +1,12 @@
 package com.chatapp.client;
 
+import com.chatapp.model.dto.AttachmentDTOs.PrivateFileDownloadRequest;
+import com.chatapp.model.dto.AttachmentDTOs.PrivateFileUploadRequest;
 import com.chatapp.model.dto.AuthDTOs.AuthFailedResponse;
 import com.chatapp.model.dto.AuthDTOs.LoginRequest;
 import com.chatapp.model.dto.AuthDTOs.LoginSuccessResponse;
 import com.chatapp.model.dto.AuthDTOs.RegisterRequest;
 import com.chatapp.model.dto.AuthDTOs.RegisterSuccessResponse;
-import com.chatapp.model.dto.ChatDTOs.PrivateSearchResultsResponse;
 import com.chatapp.model.dto.ChatDTOs.SearchPrivateMessagesRequest;
 import com.chatapp.socket.protocol.Envelope;
 import com.chatapp.socket.protocol.MessageCodec;
@@ -28,8 +29,9 @@ public final class ChatClientConnection implements AutoCloseable {
     public synchronized void connect(String host,int port)throws IOException{if(running)return;if(host==null||host.isBlank())throw new IllegalArgumentException("Server host is required.");if(port<1||port>65535)throw new IllegalArgumentException("Server port must be between 1 and 65535.");Socket newSocket=new Socket();try{newSocket.connect(new InetSocketAddress(host.trim(),port),5000);newSocket.setTcpNoDelay(true);socket=newSocket;in=new DataInputStream(socket.getInputStream());out=new DataOutputStream(socket.getOutputStream());running=true;notifyConnectionState(true);Thread.ofVirtual().name("chat-client-reader").start(this::readLoop);}catch(IOException|RuntimeException e){try{newSocket.close();}catch(IOException ignored){}socket=null;in=null;out=null;running=false;notifyConnectionState(false);throw e;}}
     public CompletableFuture<LoginSuccessResponse> login(String usernameOrEmail,String password){CompletableFuture<LoginSuccessResponse> future=new CompletableFuture<>();if(!registerPendingAuth(future,LoginSuccessResponse.class))return future;try{send(MessageType.C2S_LOGIN,new LoginRequest(usernameOrEmail,password));}catch(IOException e){clearPendingAuth(future);future.completeExceptionally(e);}return future;}
     public CompletableFuture<RegisterSuccessResponse> register(String username,String email,String password,String confirmPassword){CompletableFuture<RegisterSuccessResponse> future=new CompletableFuture<>();if(!registerPendingAuth(future,RegisterSuccessResponse.class))return future;try{send(MessageType.C2S_REGISTER,new RegisterRequest(username,email,password,confirmPassword));}catch(IOException e){clearPendingAuth(future);future.completeExceptionally(e);}return future;}
-    /** Sends a private-message search request after authentication. */
     public void searchPrivateMessages(String query,int limit)throws IOException{if(query==null||query.isBlank())throw new IllegalArgumentException("Search text cannot be empty.");send(MessageType.C2S_SEARCH_PRIVATE_MESSAGES,new SearchPrivateMessagesRequest(query.strip(),limit));}
+    public void uploadPrivateFile(int receiverId,String fileName,String contentType,String dataBase64)throws IOException{send(MessageType.C2S_UPLOAD_PRIVATE_FILE,new PrivateFileUploadRequest(receiverId,fileName,contentType,dataBase64));}
+    public void downloadPrivateFile(String fileId)throws IOException{send(MessageType.C2S_DOWNLOAD_PRIVATE_FILE,new PrivateFileDownloadRequest(fileId));}
     private boolean registerPendingAuth(CompletableFuture<?> future,Class<?> responseType){synchronized(authLock){if(pendingAuth!=null&&!pendingAuth.isDone()){future.completeExceptionally(new IllegalStateException("Another authentication request is in progress."));return false;}if(!running){future.completeExceptionally(new IOException("Not connected."));return false;}pendingAuth=future;pendingAuthType=responseType;return true;}}
     private void clearPendingAuth(CompletableFuture<?> future){synchronized(authLock){if(pendingAuth==future){pendingAuth=null;pendingAuthType=null;}}}
     private void failPendingAuth(Throwable error){CompletableFuture<?> future;synchronized(authLock){future=pendingAuth;pendingAuth=null;pendingAuthType=null;}if(future!=null&&!future.isDone())future.completeExceptionally(error);}
