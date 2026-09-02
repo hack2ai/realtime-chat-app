@@ -69,7 +69,7 @@ public final class ConnectionPool {
         if (!isValid(conn)) {
             closeQuietly(conn);
             totalCreated.decrementAndGet();
-            return createConnectionSafely();
+            return createConnection();
         }
         return conn;
     }
@@ -82,6 +82,7 @@ public final class ConnectionPool {
         }
     }
 
+    /** Creates a connection for an already-reserved pool slot. */
     private Connection createConnectionSafely() throws SQLException {
         if (shutdown.get()) {
             totalCreated.decrementAndGet();
