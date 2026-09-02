@@ -11,6 +11,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.OptionalInt;
 
 /** Persistence operations for one-to-one messages. */
 public class PrivateMessageDAO {
@@ -85,6 +86,20 @@ public class PrivateMessageDAO {
                 stmt.setLong(1, messageId);
                 stmt.setInt(2, receiverId);
                 stmt.executeUpdate();
+            }
+        });
+    }
+
+    /** Returns the sender id only when the requesting user is the message receiver. */
+    public OptionalInt findSenderId(long messageId, int receiverId) {
+        String sql = "SELECT sender_id FROM private_messages WHERE id = ? AND receiver_id = ?";
+        return DatabaseManager.execute(conn -> {
+            try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+                stmt.setLong(1, messageId);
+                stmt.setInt(2, receiverId);
+                try (ResultSet rs = stmt.executeQuery()) {
+                    return rs.next() ? OptionalInt.of(rs.getInt("sender_id")) : OptionalInt.empty();
+                }
             }
         });
     }
