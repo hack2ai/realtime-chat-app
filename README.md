@@ -8,9 +8,9 @@
 
 ## Status
 
-**Phase 4 — JavaFX desktop client in progress.**
+**Phase 5 — feature-complete portfolio MVP, hardening in progress.**
 
-The application now provides secure authentication, real-time private messaging, presence and typing events, delivery/read states, paginated history, group chat, group membership, MySQL persistence, and a desktop JavaFX client with sign-in, registration, people/groups navigation, history, and messaging.
+The application provides secure authentication, real-time private messaging, presence and typing events, delivery/read states, paginated history, group chat, private file sharing, message search, MySQL persistence, and a responsive JavaFX desktop client.
 
 ## Highlights
 
@@ -27,6 +27,8 @@ The application now provides secure authentication, real-time private messaging,
 - Conversation history limited to 100 messages per request
 - Online/offline presence broadcasts and typing events
 - Group creation, joining, leaving, messaging, membership checks, and history
+- Private attachment upload/download with participant authorization, 5 MB limit, safe filenames, and SHA-256 integrity verification
+- Private message search with bounded result sets
 - Java 21 virtual threads for asynchronous message pushes
 - Environment-variable and JVM-property configuration overrides
 - JUnit protocol tests and GitHub Actions CI
@@ -39,15 +41,18 @@ JavaFX Client ──────────────────────
      │                                      │
      │                                ClientHandler
      │                                      │
-     │              ┌───────────────────────┼───────────────────────┐
-     │              ▼                       ▼                       ▼
-     │     AuthenticationService       ChatService            GroupService
-     │              │                       │                       │
-     │              ▼                       ▼                       ▼
-     │           UserDAO              PrivateMessageDAO          GroupDAO
-     │              └───────────────────────┬───────────────────────┘
-     │                                      ▼
-     └──────────────────────────────────► MySQL 8
+     │          ┌───────────────┬───────────┼───────────┐
+     │          ▼               ▼           ▼           ▼
+     │ Authentication       ChatService  GroupService AttachmentService
+     │       │                 │           │              │
+     │       ▼                 ▼           ▼              ▼
+     │    UserDAO        PrivateMessageDAO GroupDAO   AttachmentDAO
+     │          └───────────────┬───────────┴──────────────┘
+     │                          ▼
+     └──────────────────────► MySQL 8
+                                  │
+                                  ▼
+                         Local attachment storage
 ```
 
 The networking, service, persistence, protocol, client, and domain layers remain separated so features can evolve without turning the socket handler into a monolith.
@@ -74,17 +79,26 @@ Private messages track delivery and read state. Receivers can acknowledge messag
 
 Authenticated users can create groups, join groups by ID, leave groups, send messages, and retrieve paginated group history. Group messages are persisted and delivered to currently connected members.
 
+### Private file sharing
+
+Authenticated private-chat participants can exchange files up to 5 MB. Files are stored outside the repository, metadata is persisted separately, filenames are sanitized, downloads require participant authorization, and downloaded bytes are verified against the stored SHA-256 digest.
+
+### Message search
+
+Private conversations support server-side text search with bounded result counts. Search requests and responses use dedicated protocol messages rather than filtering only the currently rendered JavaFX rows.
+
 ### Desktop client
 
 The JavaFX client provides:
 
 - Sign-in and account registration screens
 - Configurable server host/port through JVM properties
-- People list with online status
-- Group list with member counts
-- Private conversation history
-- Group conversation history
-- Group creation and join-by-ID controls
+- People list with online status and unread badges
+- Group list with member counts and unread badges
+- Private and group conversation history
+- Real-time messaging, typing, delivery/read states
+- Private message search
+- Private file upload/download controls
 - Non-blocking socket reads/writes so the UI stays responsive
 
 ## Security
@@ -99,10 +113,14 @@ Current defensive controls include:
 - bounded message frames
 - bounded server work queues
 - server-side message length validation
+- authenticated participant checks for private attachments
+- attachment filename/path sanitization
+- attachment size limits and SHA-256 integrity verification
 - no application password or admin seed account in the database schema
 - secrets can be supplied through environment variables or JVM system properties
+- runtime attachment data is excluded from Git
 
-**Important:** this is a portfolio/learning project, not a security-audited production service. A production deployment still needs TLS, rate limiting, stronger persistent session management, secret rotation, hardened database permissions, dependency scanning, monitoring, threat modeling, and security testing.
+**Important:** this is a portfolio/learning project, not a security-audited production service. A production deployment still needs TLS, rate limiting, stronger persistent session management, secret rotation, hardened database permissions, dependency scanning, monitoring, threat modeling, malware/content scanning for uploads, and security testing.
 
 See [SECURITY.md](SECURITY.md) for reporting guidance.
 
@@ -138,6 +156,8 @@ export CHATAPP_DB_USER='chatapp_user'
 ```
 
 The precedence is: **JVM system property → environment variable → config file**.
+
+Attachment files default to `data/attachments` and are intentionally excluded from version control. For production, replace local storage with durable object storage and keep only attachment metadata in MySQL.
 
 ### 3. Verify the build
 
@@ -182,6 +202,10 @@ Private chat       C2S_PRIVATE_MESSAGE / S2C_PRIVATE_MESSAGE
 Read state         C2S_MESSAGE_READ / S2C_MESSAGE_READ
 Groups             C2S_CREATE_GROUP / C2S_GROUP_MESSAGE
 History            C2S_REQUEST_*_HISTORY / S2C_*_HISTORY
+Search             C2S_SEARCH_PRIVATE_MESSAGES / S2C_PRIVATE_SEARCH_RESULTS
+Files              C2S_UPLOAD_PRIVATE_FILE / C2S_DOWNLOAD_PRIVATE_FILE
+Errors              S2C_ERROR
+Notifications      S2C_NOTIFICATION
 ```
 
 ## Project Structure
@@ -218,7 +242,8 @@ realtime-chat-app/
 - [x] Phase 2 — private messaging and presence
 - [x] Phase 3 — group chat and membership controls
 - [x] Phase 4 — JavaFX desktop client
-- [ ] Phase 5 — file sharing, search, notifications, observability, deployment docs
+- [x] Phase 5 — file sharing and message search
+- [ ] Phase 6 — notifications, observability, deployment packaging, and production hardening
 
 ## Development
 
