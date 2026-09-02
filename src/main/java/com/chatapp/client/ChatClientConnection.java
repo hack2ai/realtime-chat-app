@@ -43,19 +43,23 @@ public final class ChatClientConnection implements AutoCloseable {
 
     public synchronized void connect(String host, int port) throws IOException {
         if (running) return;
+        if (host == null || host.isBlank()) throw new IllegalArgumentException("Server host is required.");
+        if (port < 1 || port > 65_535) throw new IllegalArgumentException("Server port must be between 1 and 65535.");
+
         Socket newSocket = new Socket();
         try {
-            newSocket.connect(new InetSocketAddress(host, port), 5_000);
+            newSocket.connect(new InetSocketAddress(host.trim(), port), 5_000);
             newSocket.setTcpNoDelay(true);
             socket = newSocket;
             in = new DataInputStream(socket.getInputStream());
             out = new DataOutputStream(socket.getOutputStream());
             running = true;
-            connectionListener.accept(true);
+            notifyConnectionState(true);
             Thread.ofVirtual().name("chat-client-reader").start(this::readLoop);
         } catch (IOException | RuntimeException e) {
             try { newSocket.close(); } catch (IOException ignored) { }
             socket = null; in = null; out = null; running = false;
+            notifyConnectionState(false);
             throw e;
         }
     }
@@ -89,6 +93,10 @@ public final class ChatClientConnection implements AutoCloseable {
         synchronized (authLock) {
             if (pendingAuth != null && !pendingAuth.isDone()) {
                 future.completeExceptionally(new IllegalStateException("Another authentication request is in progress."));
+                return false;
+            }
+            if (!running) {
+                future.completeExceptionally(new IOException("Not connected."));
                 return false;
             }
             pendingAuth = future;
@@ -125,8 +133,8 @@ public final class ChatClientConnection implements AutoCloseable {
             pendingAuth = null;
             pendingAuthType = null;
         }
-        if (future == null) {
-            eventListener.accept(envelope);
+        if (future == null || responseType == null) {
+            safeEvent(envelope);
             return;
         }
         if (envelope.getType() == MessageType.S2C_LOGIN_FAILED || envelope.getType() == MessageType.S2C_REGISTER_FAILED) {
@@ -136,6 +144,10 @@ public final class ChatClientConnection implements AutoCloseable {
             return;
         }
         Object response = codec.unwrap(envelope, responseType);
+        if (response == null) {
+            future.completeExceptionally(new IOException("Invalid authentication response."));
+            return;
+        }
         complete(future, response);
     }
 
@@ -153,20 +165,42 @@ public final class ChatClientConnection implements AutoCloseable {
                         || type == MessageType.S2C_REGISTER_SUCCESS || type == MessageType.S2C_REGISTER_FAILED) {
                     handleAuthResponse(envelope);
                 } else {
-                    eventListener.accept(envelope);
+                    safeEvent(envelope);
                 }
             }
         } catch (IOException e) {
             if (running) {
                 failPendingAuth(new IOException("Connection lost while waiting for authentication response.", e));
-                eventListener.accept(codec.wrap(MessageType.S2C_ERROR,
+                safeEvent(codec.wrap(MessageType.S2C_ERROR,
                         new AuthFailedResponse("Connection lost: " + (e.getMessage() == null ? "network error" : e.getMessage()))));
+            }
+        } catch (RuntimeException e) {
+            if (running) {
+                failPendingAuth(new IOException("Client protocol processing failed.", e));
+                safeEvent(codec.wrap(MessageType.S2C_ERROR,
+                        new AuthFailedResponse("Client protocol error.")));
             }
         } finally {
             boolean wasRunning = running;
             running = false;
             failPendingAuth(new IOException("Connection closed."));
-            if (wasRunning) connectionListener.accept(false);
+            if (wasRunning) notifyConnectionState(false);
+        }
+    }
+
+    private void safeEvent(Envelope envelope) {
+        try {
+            eventListener.accept(envelope);
+        } catch (RuntimeException ignored) {
+            // A UI/event consumer must never terminate the transport reader thread.
+        }
+    }
+
+    private void notifyConnectionState(boolean connected) {
+        try {
+            connectionListener.accept(connected);
+        } catch (RuntimeException ignored) {
+            // Connection observers are advisory and must not break transport cleanup.
         }
     }
 
@@ -193,6 +227,6 @@ public final class ChatClientConnection implements AutoCloseable {
             try { socket.close(); } catch (IOException ignored) { }
         }
         socket = null; in = null; out = null;
-        if (wasRunning) connectionListener.accept(false);
+        if (wasRunning) notifyConnectionState(false);
     }
 }
