@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS users (
     last_seen DATETIME DEFAULT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    INDEX idx_users_email (email), INDEX idx_users_status (status)
+    INDEX idx_users_status (status)
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS private_messages (
@@ -63,7 +63,7 @@ CREATE TABLE IF NOT EXISTS group_members (
     UNIQUE KEY uq_group_member (group_id, user_id),
     FOREIGN KEY (group_id) REFERENCES chat_groups(id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-    INDEX idx_gm_group (group_id), INDEX idx_gm_user (user_id)
+    INDEX idx_gm_user (user_id)
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS group_messages (
