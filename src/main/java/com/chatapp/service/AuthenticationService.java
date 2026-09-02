@@ -21,7 +21,6 @@ import java.util.concurrent.ConcurrentHashMap;
 public class AuthenticationService {
     private static final Logger logger = LoggerFactory.getLogger(AuthenticationService.class);
     private static final String GENERIC_LOGIN_FAILURE = "Invalid username/email or password.";
-    // Valid bcrypt hash used only to equalize verification work for unknown-user attempts.
     private static final String DUMMY_BCRYPT_HASH =
             "$2y$12$vgm76N96ItnRWvltvIMMReV0FQkritT0LtRtzB/U4fHvqV.aYVY.O";
 
@@ -62,21 +61,30 @@ public class AuthenticationService {
             throw new AuthenticationException(GENERIC_LOGIN_FAILURE);
         }
 
-        User user = userDAO.findByUsernameOrEmail(usernameOrEmail).orElse(null);
+        String identifier = usernameOrEmail.strip();
+        User user = userDAO.findByUsernameOrEmail(identifier).orElse(null);
         String hashToCheck = user == null ? DUMMY_BCRYPT_HASH : user.getPasswordHash();
         boolean passwordMatches = passwordEncoder.matches(password, hashToCheck);
         if (user == null || !passwordMatches) {
-            logger.info("Failed login attempt for identifier: {}", usernameOrEmail);
+            logger.info("Failed login attempt for identifier: {}", identifier);
             throw new AuthenticationException(GENERIC_LOGIN_FAILURE);
         }
 
         String token = generateSessionToken();
+        LocalDateTime expiry = LocalDateTime.now().plusHours(AppConfig.getSessionExpiryHours());
+        Session session = new Session(user.getId(), expiry);
+
         if (activeTokenByUser.putIfAbsent(user.getId(), token) != null) {
             throw new AuthenticationException("This account is already connected.");
         }
-        LocalDateTime expiry = LocalDateTime.now().plusHours(AppConfig.getSessionExpiryHours());
-        activeSessions.put(token, new Session(user.getId(), expiry));
-        userDAO.updateStatus(user.getId(), User.Status.ONLINE);
+        activeSessions.put(token, session);
+        try {
+            userDAO.updateStatus(user.getId(), User.Status.ONLINE);
+        } catch (RuntimeException e) {
+            activeSessions.remove(token, session);
+            activeTokenByUser.remove(user.getId(), token);
+            throw e;
+        }
         return new LoginResult(user, token);
     }
 
@@ -94,15 +102,19 @@ public class AuthenticationService {
         if (sessionToken == null || sessionToken.isBlank()) throw invalidSession();
         Session session = activeSessions.get(sessionToken);
         if (session == null) throw invalidSession();
-        if (LocalDateTime.now().isAfter(session.expiresAt)) {
-            if (activeSessions.remove(sessionToken, session)) {
-                activeTokenByUser.remove(session.userId, sessionToken);
-                userDAO.updateStatus(session.userId, User.Status.OFFLINE);
-                userDAO.updateLastSeen(session.userId, LocalDateTime.now());
-            }
+        if (!LocalDateTime.now().isBefore(session.expiresAt)) {
+            expireSession(sessionToken, session);
             throw invalidSession();
         }
         return session.userId;
+    }
+
+    private void expireSession(String token, Session session) {
+        if (activeSessions.remove(token, session)) {
+            activeTokenByUser.remove(session.userId, token);
+            userDAO.updateStatus(session.userId, User.Status.OFFLINE);
+            userDAO.updateLastSeen(session.userId, LocalDateTime.now());
+        }
     }
 
     private AuthenticationException invalidSession() {
