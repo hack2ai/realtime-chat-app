@@ -19,28 +19,27 @@ public class GroupService {
     public GroupService(GroupDAO groupDAO, UserDAO userDAO) { this.groupDAO = groupDAO; this.userDAO = userDAO; }
 
     public GroupSummary create(int ownerId, String name) throws ValidationException {
-        String normalized = normalizeName(name);
-        return groupDAO.create(ownerId, normalized);
+        requireUser(ownerId);
+        return groupDAO.create(ownerId, normalizeName(name));
     }
 
     public boolean join(int userId, int groupId) throws ValidationException {
-        requireGroup(groupId);
+        requireUser(userId); requireGroup(groupId);
         if (groupDAO.isMember(groupId, userId)) return false;
         return groupDAO.addMember(groupId, userId);
     }
 
     public boolean leave(int userId, int groupId) throws ValidationException {
-        requireGroup(groupId);
+        requireUser(userId); requireGroup(groupId);
         if (!groupDAO.isMember(groupId, userId)) return false;
+        if (groupDAO.isOwner(groupId, userId) && groupDAO.adminCount(groupId) <= 1) {
+            throw new ValidationException("The group owner must transfer ownership before leaving.");
+        }
         return groupDAO.removeMember(groupId, userId);
     }
 
     public List<GroupSummary> list(int userId) { return groupDAO.findForUser(userId); }
-
-    public List<Integer> members(int groupId) throws ValidationException {
-        requireGroup(groupId);
-        return groupDAO.memberIds(groupId);
-    }
+    public List<Integer> members(int groupId) throws ValidationException { requireGroup(groupId); return groupDAO.memberIds(groupId); }
 
     public GroupMessageEvent sendMessage(int userId, String username, int groupId, String message) throws ValidationException {
         requireMembership(groupId, userId);
@@ -55,15 +54,16 @@ public class GroupService {
         return groupDAO.history(groupId, limit, beforeId);
     }
 
+    private void requireUser(int userId) throws ValidationException {
+        if (userId <= 0 || userDAO.findById(userId).isEmpty()) throw new ValidationException("User does not exist.");
+    }
     private void requireGroup(int groupId) throws ValidationException {
         if (groupId <= 0 || !groupDAO.exists(groupId)) throw new ValidationException("Group does not exist.");
     }
-
     private void requireMembership(int groupId, int userId) throws ValidationException {
-        requireGroup(groupId);
+        requireUser(userId); requireGroup(groupId);
         if (!groupDAO.isMember(groupId, userId)) throw new ValidationException("You are not a member of this group.");
     }
-
     private String normalizeName(String name) throws ValidationException {
         if (name == null || name.isBlank()) throw new ValidationException("Group name cannot be empty.");
         String normalized = name.strip();
