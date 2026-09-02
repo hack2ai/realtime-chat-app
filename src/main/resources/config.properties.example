@@ -11,10 +11,15 @@ db.password=CHANGE_ME
 db.pool.minIdle=2
 db.pool.maxSize=10
 db.pool.connectionTimeoutMs=5000
+# TLS is enabled by default. Disable only for trusted local development.
+db.useSsl=true
+# Keep false unless the MySQL server explicitly requires RSA public-key retrieval.
+db.allowPublicKeyRetrieval=false
 
 # ---------------- Server ----------------
 server.port=5050
 server.maxClients=200
+# 0 disables the socket read timeout. Prefer a finite value for exposed deployments.
 server.socketReadTimeoutMs=0
 
 # ---------------- Authentication ----------------
