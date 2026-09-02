@@ -14,7 +14,6 @@ import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.Base64;
-import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -22,7 +21,6 @@ import java.util.concurrent.ConcurrentHashMap;
 public class AuthenticationService {
     private static final Logger logger = LoggerFactory.getLogger(AuthenticationService.class);
     private static final String GENERIC_LOGIN_FAILURE = "Invalid username/email or password.";
-    private static final String RATE_LIMIT_FAILURE = "Too many failed login attempts. Please try again later.";
     // Valid bcrypt hash used only to equalize verification work for unknown-user attempts.
     private static final String DUMMY_BCRYPT_HASH =
             "$2y$12$vgm76N96ItnRWvltvIMMReV0FQkritT0LtRtzB/U4fHvqV.aYVY.O";
@@ -30,7 +28,6 @@ public class AuthenticationService {
     private final UserDAO userDAO;
     private final BCryptPasswordEncoder passwordEncoder;
     private final SecureRandom secureRandom = new SecureRandom();
-    private final LoginRateLimiter loginRateLimiter = new LoginRateLimiter();
     private final Map<String, Session> activeSessions = new ConcurrentHashMap<>();
     private final Map<Integer, String> activeTokenByUser = new ConcurrentHashMap<>();
 
@@ -64,22 +61,15 @@ public class AuthenticationService {
         if (usernameOrEmail == null || usernameOrEmail.isBlank() || password == null || password.isEmpty()) {
             throw new AuthenticationException(GENERIC_LOGIN_FAILURE);
         }
-        String rateKey = usernameOrEmail.strip().toLowerCase(Locale.ROOT);
-        if (!loginRateLimiter.allow(rateKey)) {
-            logger.warn("Login rate limit reached for identifier key");
-            throw new AuthenticationException(RATE_LIMIT_FAILURE);
-        }
 
         User user = userDAO.findByUsernameOrEmail(usernameOrEmail).orElse(null);
         String hashToCheck = user == null ? DUMMY_BCRYPT_HASH : user.getPasswordHash();
         boolean passwordMatches = passwordEncoder.matches(password, hashToCheck);
         if (user == null || !passwordMatches) {
-            loginRateLimiter.recordFailure(rateKey);
             logger.info("Failed login attempt for identifier: {}", usernameOrEmail);
             throw new AuthenticationException(GENERIC_LOGIN_FAILURE);
         }
 
-        loginRateLimiter.recordSuccess(rateKey);
         String token = generateSessionToken();
         if (activeTokenByUser.putIfAbsent(user.getId(), token) != null) {
             throw new AuthenticationException("This account is already connected.");
