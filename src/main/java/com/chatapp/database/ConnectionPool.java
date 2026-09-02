@@ -46,6 +46,10 @@ public final class ConnectionPool {
         if (shutdown.get()) throw new IllegalStateException("Database connection pool is shut down.");
         try {
             Connection conn = DriverManager.getConnection(AppConfig.getJdbcUrl(), AppConfig.getDbUser(), AppConfig.getDbPassword());
+            if (shutdown.get()) {
+                closeQuietly(conn);
+                throw new IllegalStateException("Database connection pool is shut down.");
+            }
             totalCreated.incrementAndGet();
             return conn;
         } catch (SQLException e) {
@@ -69,7 +73,7 @@ public final class ConnectionPool {
         if (!isValid(conn)) {
             closeQuietly(conn);
             totalCreated.decrementAndGet();
-            return createConnection();
+            return createConnectionSafely();
         }
         return conn;
     }
@@ -89,7 +93,13 @@ public final class ConnectionPool {
             throw new SQLException("Database connection pool is shut down.");
         }
         try {
-            return DriverManager.getConnection(AppConfig.getJdbcUrl(), AppConfig.getDbUser(), AppConfig.getDbPassword());
+            Connection conn = DriverManager.getConnection(AppConfig.getJdbcUrl(), AppConfig.getDbUser(), AppConfig.getDbPassword());
+            if (shutdown.get()) {
+                closeQuietly(conn);
+                totalCreated.decrementAndGet();
+                throw new SQLException("Database connection pool is shut down.");
+            }
+            return conn;
         } catch (SQLException e) {
             totalCreated.decrementAndGet();
             throw e;
