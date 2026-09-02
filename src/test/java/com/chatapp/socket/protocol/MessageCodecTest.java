@@ -41,10 +41,42 @@ class MessageCodecTest {
 
     @Test
     void readRejectsOversizedFrameLength() {
-        byte[] invalidFrame = {0x01, 0x00, 0x00, 0x01}; // 16,777,217 bytes
+        byte[] invalidFrame = {0x01, 0x00, 0x00, 0x01};
 
         assertThrows(java.io.IOException.class, () ->
                 codec.read(new DataInputStream(new ByteArrayInputStream(invalidFrame))));
+    }
+
+    @Test
+    void readRejectsMalformedJson() throws Exception {
+        byte[] payload = "{not-json".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        DataOutputStream out = new DataOutputStream(bytes);
+        out.writeInt(payload.length);
+        out.write(payload);
+
+        assertThrows(java.io.IOException.class, () ->
+                codec.read(new DataInputStream(new ByteArrayInputStream(bytes.toByteArray()))));
+    }
+
+    @Test
+    void wrapRejectsNullMessageType() {
+        assertThrows(IllegalArgumentException.class, () ->
+                codec.wrap(null, new Payload("alice", "password")));
+    }
+
+    @Test
+    void unwrapRejectsNullPayloadType() {
+        Envelope envelope = codec.wrap(MessageType.C2S_LOGIN,
+                new Payload("alice", "password"));
+
+        assertThrows(NullPointerException.class, () -> codec.unwrap(envelope, null));
+    }
+
+    @Test
+    void writeRejectsNullEnvelope() {
+        assertThrows(NullPointerException.class, () ->
+                codec.write(new DataOutputStream(new ByteArrayOutputStream()), null));
     }
 
     private record Payload(String username, String password) {
