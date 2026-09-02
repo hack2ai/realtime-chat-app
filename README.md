@@ -8,13 +8,14 @@
 
 ## Status
 
-**Phase 2 — private messaging and presence.**
+**Phase 4 — JavaFX desktop client in progress.**
 
-The application now provides authentication plus real-time one-to-one messaging, presence events, typing indicators, message delivery/read states, paginated conversation history, MySQL persistence, and the professional server foundation from Phase 1. Group messaging and the full JavaFX client remain roadmap work.
+The application now provides secure authentication, real-time private messaging, presence and typing events, delivery/read states, paginated history, group chat, group membership, MySQL persistence, and a desktop JavaFX client with sign-in, registration, people/groups navigation, history, and messaging.
 
 ## Highlights
 
 - Java 21 + Maven build
+- JavaFX desktop client with responsive background networking
 - TCP sockets with explicit 4-byte length-prefixed UTF-8 JSON frames
 - Bounded server thread pool with connection back-pressure
 - Defensive maximum frame size (10 MB)
@@ -25,48 +26,66 @@ The application now provides authentication plus real-time one-to-one messaging,
 - Private messages persisted with SENT / DELIVERED / READ states
 - Conversation history limited to 100 messages per request
 - Online/offline presence broadcasts and typing events
-- Java 21 virtual threads for non-blocking message pushes
+- Group creation, joining, leaving, messaging, membership checks, and history
+- Java 21 virtual threads for asynchronous message pushes
 - Environment-variable and JVM-property configuration overrides
 - JUnit protocol tests and GitHub Actions CI
 
 ## Architecture
 
 ```text
-                  TCP + JSON
-Client ───────────────────────────► ChatServer
-                                      │
-                                ClientHandler
-                                      │
-              ┌───────────────────────┼───────────────────────┐
-              ▼                       ▼                       ▼
-     AuthenticationService       ChatService            Protocol/Codec
-              │                       │                       │
-              ▼                       ▼                       │
-           UserDAO              PrivateMessageDAO             │
-              └───────────────────────┬───────────────────────┘
-                                      ▼
-                                   MySQL 8
+                    TCP + JSON
+JavaFX Client ─────────────────────────► ChatServer
+     │                                      │
+     │                                ClientHandler
+     │                                      │
+     │              ┌───────────────────────┼───────────────────────┐
+     │              ▼                       ▼                       ▼
+     │     AuthenticationService       ChatService            GroupService
+     │              │                       │                       │
+     │              ▼                       ▼                       ▼
+     │           UserDAO              PrivateMessageDAO          GroupDAO
+     │              └───────────────────────┬───────────────────────┘
+     │                                      ▼
+     └──────────────────────────────────► MySQL 8
 ```
 
-The networking, service, persistence, protocol, and domain layers remain separated so the next group-chat and JavaFX work can be added without turning the socket handler into a monolith.
+The networking, service, persistence, protocol, client, and domain layers remain separated so features can evolve without turning the socket handler into a monolith.
 
-## Phase 2 Features
+## Features
+
+### Authentication
+
+Registration and login support username/email identity, BCrypt password hashing, secure session tokens, generic authentication failures, and one active session per account.
 
 ### Private messaging
 
-Clients can send a message to another authenticated user. Messages are persisted before delivery, which means offline recipients can retrieve them from conversation history after reconnecting.
+Clients can send messages to authenticated users. Messages are persisted before delivery, allowing offline recipients to retrieve conversation history after reconnecting.
 
-### Presence
+### Presence and typing
 
-The server broadcasts `S2C_USER_ONLINE` and `S2C_USER_OFFLINE` events as authenticated connections appear and disappear. Clients can also request the current user list.
+The server broadcasts online/offline events and supports typing start/stop indicators. Clients can request the current user list at any time.
 
-### Typing indicators
+### Delivery and read state
 
-Authenticated clients can send `C2S_TYPING_START` and `C2S_TYPING_STOP`; the server pushes the corresponding events to other connected clients.
+Private messages track delivery and read state. Receivers can acknowledge messages as read without being able to modify another user's message data.
 
-### History and read state
+### Group chat
 
-Conversation history supports a bounded page size and cursor-style `beforeMessageId`. Receivers can acknowledge a message as read without being able to modify another user's messages.
+Authenticated users can create groups, join groups by ID, leave groups, send messages, and retrieve paginated group history. Group messages are persisted and delivered to currently connected members.
+
+### Desktop client
+
+The JavaFX client provides:
+
+- Sign-in and account registration screens
+- Configurable server host/port through JVM properties
+- People list with online status
+- Group list with member counts
+- Private conversation history
+- Group conversation history
+- Group creation and join-by-ID controls
+- Non-blocking socket reads/writes so the UI stays responsive
 
 ## Security
 
@@ -132,6 +151,18 @@ mvn verify
 mvn exec:java -Dexec.mainClass="com.chatapp.server.ChatServer"
 ```
 
+### 5. Start the desktop client
+
+```bash
+mvn javafx:run
+```
+
+For a different server endpoint:
+
+```bash
+mvn javafx:run -Dchatapp.server.host=192.168.1.10 -Dchatapp.server.port=5050
+```
+
 ## Protocol
 
 Every message is encoded as:
@@ -142,21 +173,15 @@ Every message is encoded as:
 
 This framing makes message boundaries deterministic even when TCP splits or combines packets. The server rejects negative or oversized frames before allocating the payload buffer.
 
-### Core message flow
+### Message categories
 
 ```text
-C2S_PRIVATE_MESSAGE
-        │
-        ▼
-   ChatService
-        │
-        ▼
-PrivateMessageDAO ──► MySQL
-        │
-        ▼
-S2C_PRIVATE_MESSAGE ──► recipient (when online)
-        │
-        └──────────────► sender delivery state
+Authentication     C2S_REGISTER / C2S_LOGIN
+Presence           C2S_REQUEST_USER_LIST / S2C_USER_ONLINE
+Private chat       C2S_PRIVATE_MESSAGE / S2C_PRIVATE_MESSAGE
+Read state         C2S_MESSAGE_READ / S2C_MESSAGE_READ
+Groups             C2S_CREATE_GROUP / C2S_GROUP_MESSAGE
+History            C2S_REQUEST_*_HISTORY / S2C_*_HISTORY
 ```
 
 ## Project Structure
@@ -171,7 +196,7 @@ realtime-chat-app/
 ├── LICENSE
 └── src/
     ├── main/java/com/chatapp/
-    │   ├── client/              # CLI and future JavaFX client
+    │   ├── client/              # JavaFX and CLI clients
     │   ├── config/              # Runtime configuration
     │   ├── database/            # Pool, manager, DAOs
     │   ├── exception/           # Application exceptions
@@ -181,6 +206,7 @@ realtime-chat-app/
     │   ├── socket/protocol/     # Envelope, framing, message types
     │   └── util/                # Validation helpers
     ├── main/resources/
+    │   ├── chat.css
     │   ├── config.properties.example
     │   └── sql/schema.sql
     └── test/java/com/chatapp/   # Automated tests
@@ -190,8 +216,8 @@ realtime-chat-app/
 
 - [x] Phase 1 — foundation and authentication
 - [x] Phase 2 — private messaging and presence
-- [ ] Phase 3 — group chat and membership controls
-- [ ] Phase 4 — polished JavaFX desktop client
+- [x] Phase 3 — group chat and membership controls
+- [x] Phase 4 — JavaFX desktop client
 - [ ] Phase 5 — file sharing, search, notifications, observability, deployment docs
 
 ## Development
