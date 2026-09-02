@@ -3,6 +3,7 @@ package com.chatapp.server;
 import com.chatapp.exception.AuthenticationException;
 import com.chatapp.exception.ValidationException;
 import com.chatapp.model.User;
+import com.chatapp.model.dto.AttachmentDTOs.*;
 import com.chatapp.model.dto.AuthDTOs.AuthFailedResponse;
 import com.chatapp.model.dto.AuthDTOs.LoginRequest;
 import com.chatapp.model.dto.AuthDTOs.LoginSuccessResponse;
@@ -10,6 +11,7 @@ import com.chatapp.model.dto.AuthDTOs.RegisterRequest;
 import com.chatapp.model.dto.AuthDTOs.RegisterSuccessResponse;
 import com.chatapp.model.dto.ChatDTOs.*;
 import com.chatapp.model.dto.GroupDTOs.*;
+import com.chatapp.service.AttachmentService;
 import com.chatapp.service.AuthenticationService;
 import com.chatapp.service.ChatService;
 import com.chatapp.service.GroupService;
@@ -31,6 +33,7 @@ public class ClientHandler implements Runnable {
     private static final Logger logger=LoggerFactory.getLogger(ClientHandler.class);
     private final Socket socket; private final ChatServer server; private final AuthenticationService authService;
     private final ChatService chatService; private final GroupService groupService; private final MessageSearchService messageSearchService=new MessageSearchService();
+    private final AttachmentService attachmentService=new AttachmentService();
     private final MessageCodec codec=new MessageCodec(); private DataInputStream in; private DataOutputStream out;
     private volatile int authenticatedUserId=-1; private volatile String authenticatedUsername; private volatile String sessionToken;
     public ClientHandler(Socket socket,ChatServer server,AuthenticationService authService){this(socket,server,authService,new ChatService(),new GroupService());}
@@ -44,6 +47,7 @@ public class ClientHandler implements Runnable {
         case C2S_PRIVATE_MESSAGE->requireAuth(()->handlePrivateMessage(envelope)); case C2S_REQUEST_PRIVATE_HISTORY->requireAuth(()->handlePrivateHistory(envelope));
         case C2S_SEARCH_PRIVATE_MESSAGES->requireAuth(()->handlePrivateSearch(envelope)); case C2S_MESSAGE_READ->requireAuth(()->handleMessageRead(envelope));
         case C2S_TYPING_START->requireAuth(()->handleTyping(envelope,MessageType.S2C_TYPING_START)); case C2S_TYPING_STOP->requireAuth(()->handleTyping(envelope,MessageType.S2C_TYPING_STOP));
+        case C2S_UPLOAD_PRIVATE_FILE->requireAuth(()->handleFileUpload(envelope)); case C2S_DOWNLOAD_PRIVATE_FILE->requireAuth(()->handleFileDownload(envelope));
         case C2S_CREATE_GROUP->requireAuth(()->handleCreateGroup(envelope)); case C2S_JOIN_GROUP->requireAuth(()->handleJoinGroup(envelope)); case C2S_LEAVE_GROUP->requireAuth(()->handleLeaveGroup(envelope));
         case C2S_GROUP_MESSAGE->requireAuth(()->handleGroupMessage(envelope)); case C2S_REQUEST_GROUP_LIST->requireAuth(()->send(MessageType.S2C_GROUP_LIST,new GroupListResponse(groupService.list(authenticatedUserId)))); case C2S_REQUEST_GROUP_HISTORY->requireAuth(()->handleGroupHistory(envelope));
         default->sendError("Unsupported message type: "+envelope.getType());}}
@@ -54,6 +58,8 @@ public class ClientHandler implements Runnable {
     private void handlePrivateMessage(Envelope envelope)throws IOException,ValidationException{PrivateMessageRequest req=codec.unwrap(envelope,PrivateMessageRequest.class);if(req==null){sendError("Invalid private message request.");return;}PrivateMessageEvent event=chatService.sendPrivateMessage(authenticatedUserId,req.getReceiverId(),req.getMessage());ClientHandler recipient=server.getHandler(event.getReceiverId());if(recipient!=null){chatService.markDelivered(event.getReceiverId(),event.getMessageId());event.setStatus("DELIVERED");recipient.sendAsync(MessageType.S2C_PRIVATE_MESSAGE,event);send(MessageType.S2C_MESSAGE_DELIVERED,event);}else send(MessageType.S2C_PRIVATE_MESSAGE,event);}
     private void handlePrivateHistory(Envelope envelope)throws IOException,ValidationException{PrivateHistoryRequest req=codec.unwrap(envelope,PrivateHistoryRequest.class);if(req==null){sendError("Invalid history request.");return;}send(MessageType.S2C_PRIVATE_HISTORY,new PrivateHistoryResponse(req.getOtherUserId(),chatService.history(authenticatedUserId,req.getOtherUserId(),req.getLimit(),req.getBeforeMessageId())));}
     private void handlePrivateSearch(Envelope envelope)throws IOException,ValidationException{SearchPrivateMessagesRequest req=codec.unwrap(envelope,SearchPrivateMessagesRequest.class);if(req==null){sendError("Invalid private search request.");return;}var results=messageSearchService.searchPrivate(authenticatedUserId,req.getQuery(),req.getLimit()).stream().map(r->new PrivateSearchResult(r.messageId(),r.senderId(),r.senderUsername(),r.receiverId(),r.message(),r.sentAt())).toList();send(MessageType.S2C_PRIVATE_SEARCH_RESULTS,new PrivateSearchResultsResponse(req.getQuery().strip(),results));}
+    private void handleFileUpload(Envelope envelope)throws IOException,ValidationException{PrivateFileUploadRequest req=codec.unwrap(envelope,PrivateFileUploadRequest.class);if(req==null){sendError("Invalid file upload request.");return;}PrivateFileEvent event=attachmentService.upload(authenticatedUserId,req.getReceiverId(),req.getFileName(),req.getContentType(),req.getDataBase64(),authenticatedUsername);ClientHandler recipient=server.getHandler(req.getReceiverId());if(recipient!=null)recipient.sendAsync(MessageType.S2C_PRIVATE_FILE,event);send(MessageType.S2C_PRIVATE_FILE,event);}
+    private void handleFileDownload(Envelope envelope)throws IOException,ValidationException{PrivateFileDownloadRequest req=codec.unwrap(envelope,PrivateFileDownloadRequest.class);if(req==null){sendError("Invalid file download request.");return;}var file=attachmentService.download(authenticatedUserId,req.getFileId());var m=file.metadata();send(MessageType.S2C_PRIVATE_FILE_DOWNLOAD,new PrivateFileDownloadResponse(m.id(),m.fileName(),m.contentType(),m.sizeBytes(),m.sha256(),file.dataBase64()));}
     private void handleMessageRead(Envelope envelope)throws IOException,ValidationException{MessageReadRequest req=codec.unwrap(envelope,MessageReadRequest.class);if(req==null){sendError("Invalid read receipt.");return;}if(!chatService.markRead(authenticatedUserId,req.getMessageId()))return;OptionalInt senderId=chatService.findMessageSender(authenticatedUserId,req.getMessageId());if(senderId.isPresent()){ClientHandler sender=server.getHandler(senderId.getAsInt());if(sender!=null)sender.sendAsync(MessageType.S2C_MESSAGE_READ,req);}}
     private void handleTyping(Envelope envelope,MessageType type)throws IOException{PrivateMessageRequest req=codec.unwrap(envelope,PrivateMessageRequest.class);if(req==null||req.getReceiverId()<=0||req.getReceiverId()==authenticatedUserId||!chatService.userExists(req.getReceiverId())){sendError("Invalid typing recipient.");return;}ClientHandler recipient=server.getHandler(req.getReceiverId());if(recipient!=null)recipient.sendAsync(type,new TypingEvent(authenticatedUserId,authenticatedUsername,req.getReceiverId()));}
     private void handleCreateGroup(Envelope envelope)throws IOException,ValidationException{CreateGroupRequest req=codec.unwrap(envelope,CreateGroupRequest.class);if(req==null){sendError("Invalid group creation request.");return;}GroupSummary group=groupService.create(authenticatedUserId,req.getName());send(MessageType.S2C_GROUP_CREATED,new GroupCreatedResponse(group));}
