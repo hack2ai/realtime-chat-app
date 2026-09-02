@@ -21,8 +21,8 @@ server.port=5050
 # Bind to localhost by default. Set to 0.0.0.0 only when remote clients are intended.
 server.bindAddress=127.0.0.1
 server.maxClients=200
-# 0 disables the socket read timeout. Prefer a finite value for exposed deployments.
-server.socketReadTimeoutMs=0
+# Authentication handshake timeout in milliseconds. Authenticated chat connections clear this timeout.
+server.socketReadTimeoutMs=120000
 
 # ---------------- Authentication ----------------
 auth.bcrypt.strength=12
