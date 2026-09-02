@@ -21,10 +21,10 @@ import java.util.concurrent.ConcurrentHashMap;
 public class AuthenticationService {
     private static final Logger logger = LoggerFactory.getLogger(AuthenticationService.class);
     private static final String GENERIC_LOGIN_FAILURE = "Invalid username/email or password.";
-    // Used only to equalize unknown-user and wrong-password verification work.
-    // This is deliberately not a password hash from any real application account.
+    // Valid bcrypt hash of a private, non-application password used only to
+    // equalize verification work for unknown-user login attempts.
     private static final String DUMMY_BCRYPT_HASH =
-            "$2a$12$invalidsaltinvalidsaltinvalidsaltuv9bL.J6/PqcG1xX5/SXa";
+            "$2y$12$vgm76N96ItnRWvltvIMMReV0FQkritT0LtRtzB/U4fHvqV.aYVY.O";
 
     private final UserDAO userDAO;
     private final BCryptPasswordEncoder passwordEncoder;
