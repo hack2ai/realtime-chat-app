@@ -8,7 +8,6 @@ import com.chatapp.model.dto.AttachmentDTOs.PrivateFileEvent;
 
 import java.time.LocalDateTime;
 import java.util.Base64;
-import java.util.UUID;
 
 /** Business rules and authorization for private attachments. */
 public final class AttachmentService {
@@ -31,8 +30,7 @@ public final class AttachmentService {
             dao.insert(record);
             return new PrivateFileEvent(record.id(),senderId,receiverId,senderUsername,record.fileName(),record.contentType(),record.sizeBytes(),record.sha256(),record.createdAt());
         } catch (RuntimeException e) {
-            // Avoid leaving an orphaned file when metadata persistence fails.
-            try { storage.delete(stored.fileId()); } catch (RuntimeException ignored) {}
+            storage.delete(stored.fileId());
             throw e;
         }
     }
