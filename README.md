@@ -8,11 +8,9 @@
 
 ## Status
 
-**Phase 1 — foundation and authentication.**
+**Phase 2 — private messaging and presence.**
 
-The current build provides a runnable TCP server, length-prefixed JSON protocol, MySQL persistence, registration/login/logout, bcrypt password hashing, session tokens, connection pooling, bounded client capacity, and a CLI test client. Private messaging, groups, and the JavaFX UI remain roadmap work.
-
-The repository intentionally does not advertise planned features as implemented features.
+The application now provides authentication plus real-time one-to-one messaging, presence events, typing indicators, message delivery/read states, paginated conversation history, MySQL persistence, and the professional server foundation from Phase 1. Group messaging and the full JavaFX client remain roadmap work.
 
 ## Highlights
 
@@ -24,27 +22,51 @@ The repository intentionally does not advertise planned features as implemented 
 - Cryptographically random 256-bit session tokens
 - Generic authentication failure responses to reduce account enumeration
 - MySQL 8 / JDBC persistence with prepared statements
-- Lightweight connection pool with validation and timeout handling
+- Private messages persisted with SENT / DELIVERED / READ states
+- Conversation history limited to 100 messages per request
+- Online/offline presence broadcasts and typing events
+- Java 21 virtual threads for non-blocking message pushes
 - Environment-variable and JVM-property configuration overrides
-- Graceful resource cleanup on server shutdown and client disconnect
 - JUnit protocol tests and GitHub Actions CI
 
 ## Architecture
 
 ```text
-                 TCP + JSON
-Client ─────────────────────────► ChatServer
-                                    │
-                              ClientHandler
-                                    │
-                 ┌──────────────────┼──────────────────┐
-                 ▼                  ▼                  ▼
-       AuthenticationService   Protocol/Codec       DAO layer
-                 │                                      │
-                 └────────────── MySQL 8 ───────────────┘
+                  TCP + JSON
+Client ───────────────────────────► ChatServer
+                                      │
+                                ClientHandler
+                                      │
+              ┌───────────────────────┼───────────────────────┐
+              ▼                       ▼                       ▼
+     AuthenticationService       ChatService            Protocol/Codec
+              │                       │                       │
+              ▼                       ▼                       │
+           UserDAO              PrivateMessageDAO             │
+              └───────────────────────┬───────────────────────┘
+                                      ▼
+                                   MySQL 8
 ```
 
-The code is deliberately separated into configuration, networking, protocol, service, persistence, domain models, and validation packages so the project can grow without turning the socket handler into a monolith.
+The networking, service, persistence, protocol, and domain layers remain separated so the next group-chat and JavaFX work can be added without turning the socket handler into a monolith.
+
+## Phase 2 Features
+
+### Private messaging
+
+Clients can send a message to another authenticated user. Messages are persisted before delivery, which means offline recipients can retrieve them from conversation history after reconnecting.
+
+### Presence
+
+The server broadcasts `S2C_USER_ONLINE` and `S2C_USER_OFFLINE` events as authenticated connections appear and disappear. Clients can also request the current user list.
+
+### Typing indicators
+
+Authenticated clients can send `C2S_TYPING_START` and `C2S_TYPING_STOP`; the server pushes the corresponding events to other connected clients.
+
+### History and read state
+
+Conversation history supports a bounded page size and cursor-style `beforeMessageId`. Receivers can acknowledge a message as read without being able to modify another user's messages.
 
 ## Security
 
@@ -54,12 +76,14 @@ Current defensive controls include:
 - bcrypt password hashing
 - secure random session tokens
 - generic login failures
+- single active session per account
 - bounded message frames
 - bounded server work queues
+- server-side message length validation
 - no application password or admin seed account in the database schema
 - secrets can be supplied through environment variables or JVM system properties
 
-**Important:** this is a portfolio/learning project, not a security-audited production service. A production deployment still needs TLS, rate limiting, stronger session persistence/revocation, secret rotation, hardened database permissions, dependency scanning, monitoring, threat modeling, and security testing.
+**Important:** this is a portfolio/learning project, not a security-audited production service. A production deployment still needs TLS, rate limiting, stronger persistent session management, secret rotation, hardened database permissions, dependency scanning, monitoring, threat modeling, and security testing.
 
 See [SECURITY.md](SECURITY.md) for reporting guidance.
 
@@ -73,15 +97,11 @@ See [SECURITY.md](SECURITY.md) for reporting guidance.
 
 ### 1. Create the database
 
-Run:
-
 ```bash
 mysql -u root -p < src/main/resources/sql/schema.sql
 ```
 
 The schema creates tables only. It intentionally does **not** create a default application user or publish a password.
-
-For local development, create a dedicated MySQL account with only the privileges the application needs, then put those credentials in your local configuration.
 
 ### 2. Configure the application
 
@@ -91,7 +111,7 @@ cp src/main/resources/config.properties.example src/main/resources/config.proper
 
 Edit the local values. `config.properties` is ignored by Git and must never be committed.
 
-For deployment, secrets can be supplied without a config file. For example:
+For deployment, secrets can be supplied without a config file:
 
 ```bash
 export CHATAPP_DB_PASSWORD='your-secret'
@@ -112,18 +132,6 @@ mvn verify
 mvn exec:java -Dexec.mainClass="com.chatapp.server.ChatServer"
 ```
 
-## CLI Authentication Test
-
-With the server running:
-
-```bash
-java -cp target/classes com.chatapp.client.TestClient register alice alice@example.com YOUR_LOCAL_PASSWORD YOUR_LOCAL_PASSWORD
-java -cp target/classes com.chatapp.client.TestClient login alice YOUR_LOCAL_PASSWORD
-java -cp target/classes com.chatapp.client.TestClient ping
-```
-
-Never put real credentials into documentation, source code, CI configuration, or commit history.
-
 ## Protocol
 
 Every message is encoded as:
@@ -133,6 +141,23 @@ Every message is encoded as:
 ```
 
 This framing makes message boundaries deterministic even when TCP splits or combines packets. The server rejects negative or oversized frames before allocating the payload buffer.
+
+### Core message flow
+
+```text
+C2S_PRIVATE_MESSAGE
+        │
+        ▼
+   ChatService
+        │
+        ▼
+PrivateMessageDAO ──► MySQL
+        │
+        ▼
+S2C_PRIVATE_MESSAGE ──► recipient (when online)
+        │
+        └──────────────► sender delivery state
+```
 
 ## Project Structure
 
@@ -148,25 +173,25 @@ realtime-chat-app/
     ├── main/java/com/chatapp/
     │   ├── client/              # CLI and future JavaFX client
     │   ├── config/              # Runtime configuration
-    │   ├── database/            # Pool, database manager, DAOs
-    │   ├── exception/            # Application exceptions
-    │   ├── model/                # Domain and DTO models
-    │   ├── server/               # Server and connection handlers
-    │   ├── service/              # Authentication/business logic
-    │   ├── socket/protocol/      # Envelope, framing, message types
-    │   └── util/                 # Validation helpers
+    │   ├── database/            # Pool, manager, DAOs
+    │   ├── exception/           # Application exceptions
+    │   ├── model/               # Domain models and DTOs
+    │   ├── server/              # Server and connection handlers
+    │   ├── service/             # Business logic
+    │   ├── socket/protocol/     # Envelope, framing, message types
+    │   └── util/                # Validation helpers
     ├── main/resources/
     │   ├── config.properties.example
     │   └── sql/schema.sql
-    └── test/java/com/chatapp/    # Automated tests
+    └── test/java/com/chatapp/   # Automated tests
 ```
 
 ## Roadmap
 
 - [x] Phase 1 — foundation and authentication
-- [ ] Phase 2 — private messaging and presence
+- [x] Phase 2 — private messaging and presence
 - [ ] Phase 3 — group chat and membership controls
-- [ ] Phase 4 — JavaFX desktop client
+- [ ] Phase 4 — polished JavaFX desktop client
 - [ ] Phase 5 — file sharing, search, notifications, observability, deployment docs
 
 ## Development
