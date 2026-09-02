@@ -1,0 +1,124 @@
+package com.chatapp.model.dto;
+
+import java.time.LocalDateTime;
+import java.util.List;
+
+/** Wire payloads for group chat operations. */
+public final class GroupDTOs {
+    private GroupDTOs() {}
+
+    public static class CreateGroupRequest {
+        private String name;
+        public CreateGroupRequest() {}
+        public CreateGroupRequest(String name) { this.name = name; }
+        public String getName() { return name; }
+        public void setName(String name) { this.name = name; }
+    }
+
+    public static class GroupJoinRequest {
+        private int groupId;
+        public GroupJoinRequest() {}
+        public GroupJoinRequest(int groupId) { this.groupId = groupId; }
+        public int getGroupId() { return groupId; }
+        public void setGroupId(int groupId) { this.groupId = groupId; }
+    }
+
+    public static class GroupMessageRequest {
+        private int groupId;
+        private String message;
+        public GroupMessageRequest() {}
+        public GroupMessageRequest(int groupId, String message) { this.groupId = groupId; this.message = message; }
+        public int getGroupId() { return groupId; }
+        public String getMessage() { return message; }
+        public void setGroupId(int groupId) { this.groupId = groupId; }
+        public void setMessage(String message) { this.message = message; }
+    }
+
+    public static class GroupHistoryRequest {
+        private int groupId;
+        private int limit;
+        private long beforeMessageId;
+        public GroupHistoryRequest() {}
+        public GroupHistoryRequest(int groupId, int limit, long beforeMessageId) {
+            this.groupId = groupId; this.limit = limit; this.beforeMessageId = beforeMessageId;
+        }
+        public int getGroupId() { return groupId; }
+        public int getLimit() { return limit; }
+        public long getBeforeMessageId() { return beforeMessageId; }
+        public void setGroupId(int groupId) { groupId = groupId; }
+        public void setLimit(int limit) { this.limit = limit; }
+        public void setBeforeMessageId(long beforeMessageId) { this.beforeMessageId = beforeMessageId; }
+    }
+
+    public static class GroupSummary {
+        private int groupId;
+        private String name;
+        private int ownerId;
+        private int memberCount;
+        public GroupSummary() {}
+        public GroupSummary(int groupId, String name, int ownerId, int memberCount) {
+            this.groupId = groupId; this.name = name; this.ownerId = ownerId; this.memberCount = memberCount;
+        }
+        public int getGroupId() { return groupId; }
+        public String getName() { return name; }
+        public int getOwnerId() { return ownerId; }
+        public int getMemberCount() { return memberCount; }
+        public void setGroupId(int v) { groupId = v; }
+        public void setName(String v) { name = v; }
+        public void setOwnerId(int v) { ownerId = v; }
+        public void setMemberCount(int v) { memberCount = v; }
+    }
+
+    public static class GroupListResponse {
+        private List<GroupSummary> groups;
+        public GroupListResponse() {}
+        public GroupListResponse(List<GroupSummary> groups) { this.groups = groups; }
+        public List<GroupSummary> getGroups() { return groups; }
+        public void setGroups(List<GroupSummary> groups) { this.groups = groups; }
+    }
+
+    public static class GroupCreatedResponse {
+        private GroupSummary group;
+        public GroupCreatedResponse() {}
+        public GroupCreatedResponse(GroupSummary group) { this.group = group; }
+        public GroupSummary getGroup() { return group; }
+        public void setGroup(GroupSummary group) { this.group = group; }
+    }
+
+    public static class GroupMessageEvent {
+        private long messageId;
+        private int groupId;
+        private int senderId;
+        private String senderUsername;
+        private String message;
+        private LocalDateTime sentAt;
+        public GroupMessageEvent() {}
+        public GroupMessageEvent(long messageId, int groupId, int senderId, String senderUsername, String message, LocalDateTime sentAt) {
+            this.messageId = messageId; this.groupId = groupId; this.senderId = senderId; this.senderUsername = senderUsername;
+            this.message = message; this.sentAt = sentAt;
+        }
+        public long getMessageId() { return messageId; }
+        public int getGroupId() { return groupId; }
+        public int getSenderId() { return senderId; }
+        public String getSenderUsername() { return senderUsername; }
+        public String getMessage() { return message; }
+        public LocalDateTime getSentAt() { return sentAt; }
+        public void setMessageId(long v) { messageId = v; }
+        public void setGroupId(int v) { groupId = v; }
+        public void setSenderId(int v) { senderId = v; }
+        public void setSenderUsername(String v) { senderUsername = v; }
+        public void setMessage(String v) { message = v; }
+        public void setSentAt(LocalDateTime v) { sentAt = v; }
+    }
+
+    public static class GroupHistoryResponse {
+        private int groupId;
+        private List<GroupMessageEvent> messages;
+        public GroupHistoryResponse() {}
+        public GroupHistoryResponse(int groupId, List<GroupMessageEvent> messages) { this.groupId = groupId; this.messages = messages; }
+        public int getGroupId() { return groupId; }
+        public List<GroupMessageEvent> getMessages() { return messages; }
+        public void setGroupId(int v) { groupId = v; }
+        public void setMessages(List<GroupMessageEvent> v) { messages = v; }
+    }
+}
