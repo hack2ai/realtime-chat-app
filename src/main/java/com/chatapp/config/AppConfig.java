@@ -31,9 +31,26 @@ public final class AppConfig {
         return value.trim();
     }
 
+    private static String optional(String key, String defaultValue) {
+        String value = System.getProperty("chatapp." + key);
+        if (value == null || value.isBlank()) {
+            value = System.getenv(ENV_PREFIX + key.replace('.', '_').toUpperCase(Locale.ROOT));
+        }
+        if (value == null || value.isBlank()) value = PROPERTIES.getProperty(key);
+        return value == null || value.isBlank() ? defaultValue : value.trim();
+    }
+
     private static int requireInt(String key) {
         try { return Integer.parseInt(require(key)); }
         catch (NumberFormatException e) { throw new IllegalStateException("Config key '" + key + "' must be an integer.", e); }
+    }
+
+    private static boolean optionalBoolean(String key, boolean defaultValue) {
+        String value = optional(key, Boolean.toString(defaultValue));
+        if (!value.equalsIgnoreCase("true") && !value.equalsIgnoreCase("false")) {
+            throw new IllegalStateException("Config key '" + key + "' must be true or false.");
+        }
+        return Boolean.parseBoolean(value);
     }
 
     public static String getDbHost() { return require("db.host"); }
@@ -44,9 +61,13 @@ public final class AppConfig {
     public static int getDbPoolMinIdle() { return requireInt("db.pool.minIdle"); }
     public static int getDbPoolMaxSize() { return requireInt("db.pool.maxSize"); }
     public static int getDbConnectionTimeoutMs() { return requireInt("db.pool.connectionTimeoutMs"); }
+    public static boolean isDbUseSsl() { return optionalBoolean("db.useSsl", true); }
+    public static boolean isDbAllowPublicKeyRetrieval() { return optionalBoolean("db.allowPublicKeyRetrieval", false); }
     public static String getJdbcUrl() {
         return "jdbc:mysql://" + getDbHost() + ":" + getDbPort() + "/" + getDbName()
-                + "?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&characterEncoding=utf8mb4&useUnicode=true";
+                + "?useSSL=" + isDbUseSsl()
+                + "&allowPublicKeyRetrieval=" + isDbAllowPublicKeyRetrieval()
+                + "&serverTimezone=UTC&characterEncoding=utf8mb4&useUnicode=true";
     }
     public static int getServerPort() { return requireInt("server.port"); }
     public static int getServerMaxClients() { return requireInt("server.maxClients"); }
