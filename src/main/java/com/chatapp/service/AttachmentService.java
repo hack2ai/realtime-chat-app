@@ -40,10 +40,11 @@ public final class AttachmentService {
     }
 
     public DownloadedFile download(int userId, String fileId) throws ValidationException {
-        if (userId <= 0 || !downloadRateLimiter.allow(Integer.toString(userId))) {
+        if (userId <= 0) throw new ValidationException("Attachment not found.");
+        AttachmentRecord record=dao.findForUser(fileId,userId).orElseThrow(()->new ValidationException("Attachment not found."));
+        if (!downloadRateLimiter.allow(Integer.toString(userId))) {
             throw new ValidationException("Too many file downloads. Please try again later.");
         }
-        AttachmentRecord record=dao.findForUser(fileId,userId).orElseThrow(()->new ValidationException("Attachment not found."));
         byte[] bytes=storage.load(record.id());
         if(bytes.length!=record.sizeBytes() || !record.sha256().equalsIgnoreCase(sha256(bytes))) throw new ValidationException("Attachment integrity check failed.");
         return new DownloadedFile(record,Base64.getEncoder().encodeToString(bytes));
