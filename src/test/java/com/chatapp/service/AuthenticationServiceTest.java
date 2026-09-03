@@ -26,6 +26,17 @@ class AuthenticationServiceTest {
     }
 
     @Test
+    void oversizedLoginIdentifierIsRejectedBeforeLookup() {
+        UserDAO dao = new InMemoryUserDAO(null);
+        AuthenticationService service = new AuthenticationService(dao);
+
+        AuthenticationException error = assertThrows(AuthenticationException.class,
+                () -> service.login("a".repeat(255), "wrong-password"));
+
+        assertEquals("Invalid username/email or password.", error.getMessage());
+    }
+
+    @Test
     void successfulLoginCreatesExpiringSession() throws Exception {
         User user = userWithHash("alice", new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder(10).encode("correct-password"));
         AuthenticationService service = new AuthenticationService(new InMemoryUserDAO(user));
