@@ -1,11 +1,11 @@
 package com.chatapp.service;
 
-import com.chatapp.config.AppConfig;
-import com.chatapp.database.UserDAO;
-import com.chatapp.exception.AuthenticationException;
-import com.chatapp.exception.ValidationException;
-import com.chatapp.model.User;
-import com.chatapp.util.ValidationUtil;
+import com.chat2ai.config.AppConfig;
+import com.chat2ai.database.UserDAO;
+import com.chat2ai.exception.AuthenticationException;
+import com.chat2ai.exception.ValidationException;
+import com.chat2ai.model.User;
+import com.chat2ai.util.ValidationUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -55,9 +55,44 @@ public class AuthenticationService {
         if (userDAO.usernameExists(username)) throw new ValidationException("Username '" + username + "' is already taken.");
         if (userDAO.emailExists(email)) throw new ValidationException("An account with this email already exists.");
 
-        User saved = userDAO.insert(new User(username, email, passwordEncoder.encode(password)));
-        logger.info("New user registered: id={}, username={}", saved.getId(), saved.getUsername());
-        return saved;
+        User candidate = new User(username, email, passwordEncoder.encode(password));
+        try {
+            User saved = userDAO.insert(candidate);
+            logger.info("New user registered: id={}, username={}", saved.getId(), saved.getUsername());
+            return saved;
+        } catch (RuntimeException e) {
+            if (isDuplicateKeyViolation(e)) {
+                throw duplicateRegistrationFailure(username, email);
+            }
+            throw e;
+        }
+    }
+
+    private ValidationException duplicateRegistrationFailure(String username, String email) {
+        if (userDAO.usernameExists(username)) {
+            return new ValidationException("Username '" + username + "' is already taken.");
+        }
+        if (userDAO.emailExists(email)) {
+            return new ValidationException("An account with this email already exists.");
+        }
+        return new ValidationException("An account with these details already exists.");
+    }
+
+    private boolean isDuplicateKeyViolation(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            if (current instanceof java.sql.SQLIntegrityConstraintViolationException) return true;
+            String message = current.getMessage();
+            if (message != null) {
+                String normalized = message.toLowerCase(java.util.Locale.ROOT);
+                if (normalized.contains("duplicate") || normalized.contains("unique constraint")
+                        || normalized.contains("duplicate entry") || normalized.contains("unique index")) {
+                    return true;
+                }
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     public LoginResult login(String usernameOrEmail, String password) throws AuthenticationException {
