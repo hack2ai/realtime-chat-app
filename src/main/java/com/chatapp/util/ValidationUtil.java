@@ -2,6 +2,7 @@ package com.chatapp.util;
 
 import com.chatapp.exception.ValidationException;
 
+import java.nio.charset.StandardCharsets;
 import java.util.regex.Pattern;
 
 /** Centralized server-side input validation rules. */
@@ -13,7 +14,7 @@ public final class ValidationUtil {
             Pattern.compile("^[\\w.+-]+@[\\w-]+\\.[a-zA-Z]{2,}$");
 
     private static final int MIN_PASSWORD_LENGTH = 8;
-    private static final int MAX_PASSWORD_LENGTH = 128;
+    private static final int MAX_PASSWORD_BYTES = 72;
     private static final int MAX_MESSAGE_LENGTH = 4000;
     private static final int MAX_GROUP_NAME_LENGTH = 80;
 
@@ -40,7 +41,7 @@ public final class ValidationUtil {
         }
     }
 
-    /** Validates password strength; AuthenticationService additionally enforces bcrypt's 72-byte input boundary. */
+    /** Validates password strength and enforces bcrypt's 72-byte UTF-8 input boundary. */
     public static void validatePassword(String password) throws ValidationException {
         if (password == null || password.isEmpty()) {
             throw new ValidationException("Password is required.");
@@ -48,8 +49,8 @@ public final class ValidationUtil {
         if (password.length() < MIN_PASSWORD_LENGTH) {
             throw new ValidationException("Password must be at least " + MIN_PASSWORD_LENGTH + " characters.");
         }
-        if (password.length() > MAX_PASSWORD_LENGTH) {
-            throw new ValidationException("Password must not exceed " + MAX_PASSWORD_LENGTH + " characters.");
+        if (password.getBytes(StandardCharsets.UTF_8).length > MAX_PASSWORD_BYTES) {
+            throw new ValidationException("Password must not exceed " + MAX_PASSWORD_BYTES + " UTF-8 bytes.");
         }
         boolean hasLetter = password.chars().anyMatch(Character::isLetter);
         boolean hasDigit = password.chars().anyMatch(Character::isDigit);
