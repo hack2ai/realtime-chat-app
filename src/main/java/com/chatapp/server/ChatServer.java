@@ -1,8 +1,8 @@
 package com.chatapp.server;
 
 import com.chatapp.config.AppConfig;
+import com.chatapp.database.ConnectionPool;
 import com.chatapp.service.AuthenticationService;
-import com.chatapp.service.ConnectionPool;
 import com.chatapp.service.GroupService;
 import com.chatapp.service.ChatService;
 import com.chatapp.socket.protocol.MessageType;
