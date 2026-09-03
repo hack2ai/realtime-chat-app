@@ -5,6 +5,7 @@ import com.chatapp.database.ConnectionPool;
 import com.chatapp.service.AuthenticationService;
 import com.chatapp.service.GroupService;
 import com.chatapp.service.ChatService;
+import com.chatapp.server.RequestRateLimiter;
 import com.chatapp.socket.protocol.MessageType;
 import com.chatapp.model.dto.ChatDTOs.UserPresenceEvent;
 import org.slf4j.Logger;
