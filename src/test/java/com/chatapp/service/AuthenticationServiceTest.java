@@ -121,7 +121,7 @@ class AuthenticationServiceTest {
         return user;
     }
 
-    private static final class InMemoryUserDAO extends UserDAO {
+    private static class InMemoryUserDAO extends UserDAO {
         private final User user;
 
         private InMemoryUserDAO(User user) {
