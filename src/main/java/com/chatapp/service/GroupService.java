@@ -5,13 +5,12 @@ import com.chatapp.database.UserDAO;
 import com.chatapp.exception.ValidationException;
 import com.chatapp.model.dto.GroupDTOs.GroupMessageEvent;
 import com.chatapp.model.dto.GroupDTOs.GroupSummary;
+import com.chatapp.util.ValidationUtil;
 
 import java.util.List;
 
 /** Business rules for group creation, membership, and messaging. */
 public class GroupService {
-    private static final int MAX_GROUP_NAME = 80;
-    private static final int MAX_MESSAGE_LENGTH = 4000;
     private final GroupDAO groupDAO;
     private final UserDAO userDAO;
 
@@ -20,7 +19,8 @@ public class GroupService {
 
     public GroupSummary create(int ownerId, String name) throws ValidationException {
         requireUser(ownerId);
-        return groupDAO.create(ownerId, normalizeName(name));
+        ValidationUtil.validateGroupName(name);
+        return groupDAO.create(ownerId, name.strip());
     }
 
     public boolean join(int userId, int groupId) throws ValidationException {
@@ -43,10 +43,8 @@ public class GroupService {
 
     public GroupMessageEvent sendMessage(int userId, String username, int groupId, String message) throws ValidationException {
         requireMembership(groupId, userId);
-        if (message == null || message.isBlank()) throw new ValidationException("Message cannot be empty.");
-        String normalized = message.strip();
-        if (normalized.length() > MAX_MESSAGE_LENGTH) throw new ValidationException("Message exceeds the " + MAX_MESSAGE_LENGTH + " character limit.");
-        return groupDAO.insertMessage(groupId, userId, username, normalized);
+        ValidationUtil.validateMessageContent(message);
+        return groupDAO.insertMessage(groupId, userId, username, message.strip());
     }
 
     public List<GroupMessageEvent> history(int userId, int groupId, int limit, long beforeId) throws ValidationException {
@@ -63,11 +61,5 @@ public class GroupService {
     private void requireMembership(int groupId, int userId) throws ValidationException {
         requireUser(userId); requireGroup(groupId);
         if (!groupDAO.isMember(groupId, userId)) throw new ValidationException("You are not a member of this group.");
-    }
-    private String normalizeName(String name) throws ValidationException {
-        if (name == null || name.isBlank()) throw new ValidationException("Group name cannot be empty.");
-        String normalized = name.strip();
-        if (normalized.length() > MAX_GROUP_NAME) throw new ValidationException("Group name exceeds the " + MAX_GROUP_NAME + " character limit.");
-        return normalized;
     }
 }
