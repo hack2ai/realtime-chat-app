@@ -8,15 +8,16 @@
 
 ## Status
 
-**Phase 5 — feature-complete portfolio MVP, hardening in progress.**
+**Phase 6 — production hardening and deployment readiness.**
 
-The application provides secure authentication, real-time private messaging, presence and typing events, delivery/read states, paginated history, group chat, private file sharing, message search, MySQL persistence, and a responsive JavaFX desktop client.
+The application provides secure authentication, real-time private messaging, presence and typing events, delivery/read states, paginated history, group chat, private file sharing, message search, MySQL persistence, a responsive JavaFX desktop client, automated dependency updates, container packaging, CI/CD checks, and configurable TLS transport.
 
 ## Highlights
 
 - Java 21 + Maven build
 - JavaFX desktop client with responsive background networking
 - TCP sockets with explicit 4-byte length-prefixed UTF-8 JSON frames
+- Optional TLS transport for encrypted client/server TCP connections
 - Bounded server thread pool with connection back-pressure
 - Defensive maximum frame size (10 MB)
 - BCrypt password hashing with configurable work factor
@@ -32,11 +33,13 @@ The application provides secure authentication, real-time private messaging, pre
 - Java 21 virtual threads for asynchronous message pushes
 - Environment-variable and JVM-property configuration overrides
 - JUnit protocol tests and GitHub Actions CI
+- Docker image and Docker Compose deployment support
+- Weekly Dependabot updates for Maven dependencies, GitHub Actions, and Docker
 
 ## Architecture
 
 ```text
-                    TCP + JSON
+                    TCP / TLS + JSON
 JavaFX Client ─────────────────────────► ChatServer
      │                                      │
      │                                ClientHandler
@@ -93,6 +96,7 @@ The JavaFX client provides:
 
 - Sign-in and account registration screens
 - Configurable server host/port through JVM properties
+- Optional TLS client transport with configurable trust store
 - People list with online status and unread badges
 - Group list with member counts and unread badges
 - Private and group conversation history
@@ -112,6 +116,7 @@ Current defensive controls include:
 - single active session per account
 - bounded message frames
 - bounded server work queues
+- connection, login, registration, request, search, upload, download, PING, and protocol-error rate limiting
 - server-side message length validation
 - authenticated participant checks for private attachments
 - attachment filename/path sanitization
@@ -119,8 +124,9 @@ Current defensive controls include:
 - no application password or admin seed account in the database schema
 - secrets can be supplied through environment variables or JVM system properties
 - runtime attachment data is excluded from Git
+- optional TLS for the application TCP transport
 
-**Important:** this is a portfolio/learning project, not a security-audited production service. A production deployment still needs TLS, rate limiting, stronger persistent session management, secret rotation, hardened database permissions, dependency scanning, monitoring, threat modeling, malware/content scanning for uploads, and security testing.
+**Important:** this is a portfolio/learning project, not a security-audited production service. A production deployment still needs certificate lifecycle management, secret rotation, hardened database permissions, monitoring, threat modeling, malware/content scanning for uploads, and security testing.
 
 See [SECURITY.md](SECURITY.md) for reporting guidance.
 
@@ -159,19 +165,39 @@ The precedence is: **JVM system property → environment variable → config fil
 
 Attachment files default to `data/attachments` and are intentionally excluded from version control. For production, replace local storage with durable object storage and keep only attachment metadata in MySQL.
 
-### 3. Verify the build
+### 3. Configure application TLS
+
+The server can use a PKCS12 keystore containing its certificate and private key. Set the following values in `config.properties` or through environment/JVM overrides:
+
+```properties
+# Server
+server.port=5050
+tls.enabled=true
+tls.keyStorePath=config/server-keystore.p12
+tls.keyStorePassword=CHANGE_ME
+
+# JavaFX client
+client.tls.enabled=true
+# Leave blank for the JVM default CA trust store, or set a PKCS12 trust store for a private CA.
+client.tls.trustStorePath=
+client.tls.trustStorePassword=
+```
+
+Keep `tls.enabled=false` and `client.tls.enabled=false` for trusted local development only. Never commit private keys, keystores, or passwords.
+
+### 4. Verify the build
 
 ```bash
 mvn verify
 ```
 
-### 4. Start the server
+### 5. Start the server
 
 ```bash
 mvn exec:java -Dexec.mainClass="com.chatapp.server.ChatServer"
 ```
 
-### 5. Start the desktop client
+### 6. Start the desktop client
 
 ```bash
 mvn javafx:run
@@ -206,7 +232,11 @@ The TCP server listens on port `5050`. The JavaFX desktop client can connect to 
 docker compose down
 ```
 
-The server container runs as a non-root user. The Compose database is intended for development/demo environments; production deployments should use managed MySQL, TLS for database traffic where appropriate, an external secret manager, and durable object storage for attachments.
+The server container runs as a non-root user. The Compose database is intended for development/demo environments; production deployments should use managed MySQL, application TLS, TLS for database traffic where appropriate, an external secret manager, and durable object storage for attachments.
+
+### Automated releases
+
+Pushing a semantic version tag such as `v1.1.0` triggers the release workflow. It verifies the Maven build, publishes the runnable server JAR and SHA-256 checksum to a GitHub Release, and builds and pushes the tagged and `latest` server image to GHCR.
 
 ## Protocol
 
@@ -238,6 +268,10 @@ Notifications      S2C_NOTIFICATION
 ```text
 realtime-chat-app/
 ├── .github/workflows/ci.yml
+├── .github/workflows/codeql.yml
+├── .github/workflows/release.yml
+├── .github/dependabot.yml
+├── .dockerignore
 ├── Dockerfile
 ├── docker-compose.yml
 ├── pom.xml
@@ -270,7 +304,8 @@ realtime-chat-app/
 - [x] Phase 3 — group chat and membership controls
 - [x] Phase 4 — JavaFX desktop client
 - [x] Phase 5 — file sharing and message search
-- [ ] Phase 6 — notifications, observability, deployment packaging, and production hardening
+- [x] Phase 6 — notifications, deployment packaging, CI/CD hardening, rate limiting, dependency automation, and configurable TLS
+- [ ] Phase 7 — production observability, managed storage, certificate lifecycle automation, and external security testing
 
 ## Development
 
@@ -280,7 +315,7 @@ Run the complete verification suite before submitting changes:
 mvn verify
 ```
 
-GitHub Actions runs the same Maven verification on pushes and pull requests targeting `main`.
+GitHub Actions runs the same Maven verification on pushes and pull requests targeting `main`. CodeQL analysis and container builds are also automated, and tagged releases publish versioned server packages.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for project conventions.
 
