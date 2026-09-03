@@ -25,6 +25,7 @@ public class AuthenticationService {
     private static final String GENERIC_LOGIN_FAILURE = "Invalid username/email or password.";
     private static final String DUMMY_BCRYPT_HASH =
             "$2y$12$vgm76N96ItnRWvltvIMMReV0FQkritT0LtRtzB/U4fHvqV.aYVY.O";
+    private static final int MAX_LOGIN_IDENTIFIER_LENGTH = 254;
 
     private final UserDAO userDAO;
     private final BCryptPasswordEncoder passwordEncoder;
@@ -65,6 +66,9 @@ public class AuthenticationService {
         }
 
         String identifier = usernameOrEmail.strip();
+        if (identifier.length() > MAX_LOGIN_IDENTIFIER_LENGTH) {
+            throw new AuthenticationException(GENERIC_LOGIN_FAILURE);
+        }
         User user = userDAO.findByUsernameOrEmail(identifier).orElse(null);
         String hashToCheck = user == null ? DUMMY_BCRYPT_HASH : user.getPasswordHash();
         boolean passwordMatches = passwordEncoder.matches(password, hashToCheck);
