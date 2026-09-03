@@ -3,7 +3,10 @@ package com.chatapp.service;
 import com.chatapp.exception.ValidationException;
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -48,5 +51,47 @@ class AttachmentValidatorTest {
     void rejectsEmptyContent() {
         assertThrows(ValidationException.class,
                 () -> AttachmentValidator.validateContent("text/plain", new byte[0]));
+    }
+
+    @Test
+    void rejectsOrdinaryZipDeclaredAsDocx() throws Exception {
+        byte[] zip = zipWithEntries("readme.txt");
+        assertThrows(ValidationException.class,
+                () -> AttachmentValidator.validateContent(
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document", zip));
+    }
+
+    @Test
+    void acceptsMinimalDocxStructure() throws Exception {
+        byte[] docx = zipWithEntries("[Content_Types].xml", "word/document.xml");
+        AttachmentValidator.validateContent(
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document", docx);
+    }
+
+    @Test
+    void rejectsOrdinaryZipDeclaredAsXlsx() throws Exception {
+        byte[] zip = zipWithEntries("[Content_Types].xml", "word/document.xml");
+        assertThrows(ValidationException.class,
+                () -> AttachmentValidator.validateContent(
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", zip));
+    }
+
+    @Test
+    void acceptsMinimalXlsxStructure() throws Exception {
+        byte[] xlsx = zipWithEntries("[Content_Types].xml", "xl/workbook.xml");
+        AttachmentValidator.validateContent(
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", xlsx);
+    }
+
+    private static byte[] zipWithEntries(String... names) throws Exception {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        try (ZipOutputStream zip = new ZipOutputStream(output, StandardCharsets.UTF_8)) {
+            for (String name : names) {
+                zip.putNextEntry(new ZipEntry(name));
+                zip.write("test".getBytes(StandardCharsets.UTF_8));
+                zip.closeEntry();
+            }
+        }
+        return output.toByteArray();
     }
 }
