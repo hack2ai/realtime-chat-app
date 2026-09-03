@@ -142,7 +142,7 @@ public final class ConnectionPool {
 
     private void closeQuietly(Connection conn) {
         try { if (conn != null) conn.close(); }
-        catch (SQLException e) { logger.warn("Error closing database connection: {}", e.getMessage()); }
+        catch (SQLException e) { logger.warn("Error closing database connection ({}).", e.getClass().getSimpleName()); }
     }
 
     /** Idempotently closes all currently idle connections. Borrowed connections are rejected after shutdown. */
