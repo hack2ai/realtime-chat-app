@@ -98,14 +98,17 @@ public class AuthenticationService {
 
     public LoginResult login(String usernameOrEmail, String password) throws AuthenticationException {
         if (usernameOrEmail == null || usernameOrEmail.isBlank() || password == null || password.isEmpty()) {
+            runDummyPasswordCheck(password);
             throw new AuthenticationException(GENERIC_LOGIN_FAILURE);
         }
 
         String identifier = usernameOrEmail.strip();
         if (identifier.length() > MAX_LOGIN_IDENTIFIER_LENGTH) {
+            runDummyPasswordCheck(password);
             throw new AuthenticationException(GENERIC_LOGIN_FAILURE);
         }
         if (password.getBytes(StandardCharsets.UTF_8).length > MAX_BCRYPT_PASSWORD_BYTES) {
+            runDummyPasswordCheck("password");
             throw new AuthenticationException(GENERIC_LOGIN_FAILURE);
         }
 
@@ -133,6 +136,14 @@ public class AuthenticationService {
             throw e;
         }
         return new LoginResult(user, token, expiry);
+    }
+
+    private void runDummyPasswordCheck(String suppliedPassword) {
+        String safePassword = suppliedPassword == null ? "" : suppliedPassword;
+        if (safePassword.getBytes(StandardCharsets.UTF_8).length > MAX_BCRYPT_PASSWORD_BYTES) {
+            safePassword = "password";
+        }
+        passwordEncoder.matches(safePassword, DUMMY_BCRYPT_HASH);
     }
 
     public void logout(String sessionToken) {
