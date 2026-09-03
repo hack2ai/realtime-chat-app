@@ -6,14 +6,18 @@ import com.chatapp.database.UserDAO;
 import com.chatapp.exception.ValidationException;
 import com.chatapp.model.dto.AttachmentDTOs.PrivateFileEvent;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Base64;
 
 /** Business rules and authorization for private attachments. */
 public final class AttachmentService {
+    private static final int MAX_DOWNLOADS_PER_MINUTE = 12;
     private final AttachmentStorageService storage;
     private final AttachmentDAO dao;
     private final UserDAO userDAO;
+    private final RequestRateLimiter downloadRateLimiter =
+            new RequestRateLimiter(MAX_DOWNLOADS_PER_MINUTE, Duration.ofMinutes(1), 10_000);
 
     public AttachmentService() { this(new AttachmentStorageService(), new AttachmentDAO(), new UserDAO()); }
     public AttachmentService(AttachmentStorageService storage, AttachmentDAO dao, UserDAO userDAO) {
@@ -36,6 +40,9 @@ public final class AttachmentService {
     }
 
     public DownloadedFile download(int userId, String fileId) throws ValidationException {
+        if (userId <= 0 || !downloadRateLimiter.allow(Integer.toString(userId))) {
+            throw new ValidationException("Too many file downloads. Please try again later.");
+        }
         AttachmentRecord record=dao.findForUser(fileId,userId).orElseThrow(()->new ValidationException("Attachment not found."));
         byte[] bytes=storage.load(record.id());
         if(bytes.length!=record.sizeBytes() || !record.sha256().equalsIgnoreCase(sha256(bytes))) throw new ValidationException("Attachment integrity check failed.");
