@@ -67,8 +67,9 @@ class AuthenticationServiceTest {
     void registrationRejectsAsciiPasswordOverBcryptByteLimit() {
         UserDAO dao = new LookupTrackingUserDAO(null);
         AuthenticationService service = new AuthenticationService(dao);
-        String oversizedPassword = "a".repeat(73);
+        String oversizedPassword = "a".repeat(72) + "1";
 
+        assertEquals(73, oversizedPassword.getBytes(StandardCharsets.UTF_8).length);
         ValidationException error = assertThrows(ValidationException.class,
                 () -> service.register("alice", "alice@example.com", oversizedPassword, oversizedPassword));
 
@@ -81,7 +82,7 @@ class AuthenticationServiceTest {
     void registrationRejectsMultibytePasswordOverBcryptByteLimit() {
         UserDAO dao = new LookupTrackingUserDAO(null);
         AuthenticationService service = new AuthenticationService(dao);
-        String oversizedUtf8Password = "é".repeat(37);
+        String oversizedUtf8Password = "é".repeat(36) + "A1";
 
         assertEquals(74, oversizedUtf8Password.getBytes(StandardCharsets.UTF_8).length);
         ValidationException error = assertThrows(ValidationException.class,
@@ -127,7 +128,7 @@ class AuthenticationServiceTest {
 
     @Test
     void successfulLogoutAllowsAccountToLoginAgain() throws Exception {
-        User user = userWithHash("alice", new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder(10).encode("correct-password"));
+        User user = userWithHash("alice", new org.springframework.security.crypto.bCryptPasswordEncoder(10).encode("correct-password"));
         AuthenticationService service = new AuthenticationService(new InMemoryUserDAO(user));
 
         AuthenticationService.LoginResult first = service.login("alice", "correct-password");
