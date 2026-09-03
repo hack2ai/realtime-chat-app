@@ -128,7 +128,7 @@ class AuthenticationServiceTest {
 
     @Test
     void successfulLogoutAllowsAccountToLoginAgain() throws Exception {
-        User user = userWithHash("alice", new org.springframework.security.crypto.bCryptPasswordEncoder(10).encode("correct-password"));
+        User user = userWithHash("alice", new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder(10).encode("correct-password"));
         AuthenticationService service = new AuthenticationService(new InMemoryUserDAO(user));
 
         AuthenticationService.LoginResult first = service.login("alice", "correct-password");
