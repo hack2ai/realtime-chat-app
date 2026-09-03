@@ -59,7 +59,7 @@ public class AuthenticationService {
         User candidate = new User(username, email, passwordEncoder.encode(password));
         try {
             User saved = userDAO.insert(candidate);
-            logger.info("New user registered: id={}, username={}", saved.getId(), saved.getUsername());
+            logger.info("New user registered: id={}", saved.getId());
             return saved;
         } catch (RuntimeException e) {
             if (isDuplicateKeyViolation(e)) {
@@ -116,7 +116,7 @@ public class AuthenticationService {
         String hashToCheck = user == null ? DUMMY_BCRYPT_HASH : user.getPasswordHash();
         boolean passwordMatches = passwordEncoder.matches(password, hashToCheck);
         if (user == null || !passwordMatches) {
-            logger.info("Failed login attempt for identifier: {}", identifier);
+            logger.info("Failed login attempt.");
             throw new AuthenticationException(GENERIC_LOGIN_FAILURE);
         }
 
