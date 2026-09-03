@@ -26,6 +26,7 @@ public class AuthenticationService {
     private static final String DUMMY_BCRYPT_HASH =
             "$2y$12$vgm76N96ItnRWvltvIMMReV0FQkritT0LtRtzB/U4fHvqV.aYVY.O";
     private static final int MAX_LOGIN_IDENTIFIER_LENGTH = 254;
+    private static final int MAX_BCRYPT_PASSWORD_BYTES = 72;
 
     private final UserDAO userDAO;
     private final BCryptPasswordEncoder passwordEncoder;
@@ -49,7 +50,7 @@ public class AuthenticationService {
         ValidationUtil.validateEmail(email);
         ValidationUtil.validatePassword(password);
         ValidationUtil.validatePasswordsMatch(password, confirmPassword);
-        if (password.getBytes(StandardCharsets.UTF_8).length > 72) {
+        if (password.getBytes(StandardCharsets.UTF_8).length > MAX_BCRYPT_PASSWORD_BYTES) {
             throw new ValidationException("Password must not exceed 72 UTF-8 bytes.");
         }
         if (userDAO.usernameExists(username)) throw new ValidationException("Username '" + username + "' is already taken.");
@@ -104,6 +105,10 @@ public class AuthenticationService {
         if (identifier.length() > MAX_LOGIN_IDENTIFIER_LENGTH) {
             throw new AuthenticationException(GENERIC_LOGIN_FAILURE);
         }
+        if (password.getBytes(StandardCharsets.UTF_8).length > MAX_BCRYPT_PASSWORD_BYTES) {
+            throw new AuthenticationException(GENERIC_LOGIN_FAILURE);
+        }
+
         User user = userDAO.findByUsernameOrEmail(identifier).orElse(null);
         String hashToCheck = user == null ? DUMMY_BCRYPT_HASH : user.getPasswordHash();
         boolean passwordMatches = passwordEncoder.matches(password, hashToCheck);
