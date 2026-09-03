@@ -26,13 +26,13 @@ public class MessageSearchService {
         int safeLimit = Math.max(1, Math.min(limit, MAX_RESULTS));
         String sql = "SELECT pm.id, pm.sender_id, su.username AS sender_username, pm.receiver_id, pm.message, pm.sent_at "
                 + "FROM private_messages pm JOIN users su ON su.id = pm.sender_id "
-                + "WHERE (pm.sender_id = ? OR pm.receiver_id = ?) AND pm.message LIKE ? "
+                + "WHERE (pm.sender_id = ? OR pm.receiver_id = ?) AND pm.message LIKE ? ESCAPE '\\\\' "
                 + "ORDER BY pm.id DESC LIMIT ?";
         return DatabaseManager.execute(conn -> {
             try (PreparedStatement stmt = conn.prepareStatement(sql)) {
                 stmt.setInt(1, userId);
                 stmt.setInt(2, userId);
-                stmt.setString(3, "%" + normalized + "%");
+                stmt.setString(3, "%" + escapeLikePattern(normalized) + "%");
                 stmt.setInt(4, safeLimit);
                 try (ResultSet rs = stmt.executeQuery()) {
                     List<SearchResult> results = new ArrayList<>();
@@ -46,5 +46,11 @@ public class MessageSearchService {
                 }
             }
         });
+    }
+
+    private static String escapeLikePattern(String value) {
+        return value.replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_");
     }
 }
