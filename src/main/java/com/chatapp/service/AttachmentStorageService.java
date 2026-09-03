@@ -4,6 +4,7 @@ import com.chatapp.config.AppConfig;
 import com.chatapp.exception.ValidationException;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
@@ -49,11 +50,15 @@ public final class AttachmentStorageService {
         try{
             if(!Files.isRegularFile(path,LinkOption.NOFOLLOW_LINKS))throw new ValidationException("Attachment not found.");
             long size=Files.size(path);if(size>MAX_FILE_BYTES)throw new ValidationException("Stored attachment exceeds the configured limit.");
-            return Files.readAllBytes(path);
+            try(InputStream input=Files.newInputStream(path,StandardOpenOption.READ,LinkOption.NOFOLLOW_LINKS)){
+                byte[] bytes=input.readAllBytes();
+                if(bytes.length>MAX_FILE_BYTES)throw new ValidationException("Stored attachment exceeds the configured limit.");
+                return bytes;
+            }
         }catch(IOException e){throw new IllegalStateException("Unable to read attachment.",e);}
     }
 
-    public void delete(String fileId){try{validateId(fileId);Files.deleteIfExists(STORAGE_ROOT.resolve(fileId+".bin").normalize());}catch(Exception ignored){}}
+    public void delete(String fileId){try{validateId(fileId);Path path=STORAGE_ROOT.resolve(fileId+".bin").normalize();if(path.getParent().equals(STORAGE_ROOT))Files.deleteIfExists(path);}catch(Exception ignored){}}
 
     public static byte[] decodeBase64(String data)throws ValidationException{
         if(data==null||data.isBlank())throw new ValidationException("File data is required.");
