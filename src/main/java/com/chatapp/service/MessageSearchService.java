@@ -6,6 +6,7 @@ import com.chatapp.exception.ValidationException;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Timestamp;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -14,6 +15,8 @@ import java.util.List;
 public class MessageSearchService {
     private static final int MAX_QUERY_LENGTH = 120;
     private static final int MAX_RESULTS = 50;
+    private static final RequestRateLimiter SEARCH_RATE_LIMITER =
+            new RequestRateLimiter(20, Duration.ofMinutes(1), 10_000);
 
     public record SearchResult(long messageId, int senderId, String senderUsername,
                                int receiverId, String message, LocalDateTime sentAt) {}
@@ -23,6 +26,9 @@ public class MessageSearchService {
         if (query == null || query.isBlank()) throw new ValidationException("Search text cannot be empty.");
         String normalized = query.strip();
         if (normalized.length() > MAX_QUERY_LENGTH) throw new ValidationException("Search text is too long.");
+        if (!SEARCH_RATE_LIMITER.allow(Integer.toString(userId))) {
+            throw new ValidationException("Too many searches. Please try again later.");
+        }
         int safeLimit = Math.max(1, Math.min(limit, MAX_RESULTS));
         String sql = "SELECT pm.id, pm.sender_id, su.username AS sender_username, pm.receiver_id, pm.message, pm.sent_at "
                 + "FROM private_messages pm JOIN users su ON su.id = pm.sender_id "
