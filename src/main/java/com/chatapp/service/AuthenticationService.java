@@ -97,8 +97,7 @@ public class AuthenticationService {
         Session session = activeSessions.remove(tokenDigest);
         if (session != null) {
             activeTokenByUser.remove(session.userId, tokenDigest);
-            userDAO.updateStatus(session.userId, User.Status.OFFLINE);
-            userDAO.updateLastSeen(session.userId, LocalDateTime.now());
+            markOfflineSafely(session.userId);
         }
     }
 
@@ -117,8 +116,25 @@ public class AuthenticationService {
     private void expireSession(String tokenDigest, Session session) {
         if (activeSessions.remove(tokenDigest, session)) {
             activeTokenByUser.remove(session.userId, tokenDigest);
-            userDAO.updateStatus(session.userId, User.Status.OFFLINE);
-            userDAO.updateLastSeen(session.userId, LocalDateTime.now());
+            markOfflineSafely(session.userId);
+        }
+    }
+
+    /**
+     * Session invalidation must never be blocked by a database outage.
+     * In-memory authentication state is authoritative for the connection,
+     * while the next successful lifecycle operation can repair persisted status.
+     */
+    private void markOfflineSafely(int userId) {
+        try {
+            userDAO.updateStatus(userId, User.Status.OFFLINE);
+        } catch (RuntimeException e) {
+            logger.warn("Failed to persist offline status for user {}: {}", userId, e.getMessage());
+        }
+        try {
+            userDAO.updateLastSeen(userId, LocalDateTime.now());
+        } catch (RuntimeException e) {
+            logger.warn("Failed to persist last-seen timestamp for user {}: {}", userId, e.getMessage());
         }
     }
 
