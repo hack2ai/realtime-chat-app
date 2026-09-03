@@ -2,6 +2,7 @@ package com.chatapp.server;
 
 import com.chatapp.config.AppConfig;
 import com.chatapp.database.ConnectionPool;
+import com.chatapp.security.TlsContextFactory;
 import com.chatapp.service.AuthenticationService;
 import com.chatapp.service.GroupService;
 import com.chatapp.service.ChatService;
@@ -11,6 +12,8 @@ import com.chatapp.model.dto.ChatDTOs.UserPresenceEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.net.ssl.SSLServerSocket;
+import javax.net.ssl.SSLServerSocketFactory;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.ServerSocket;
@@ -59,11 +62,23 @@ public class ChatServer {
         String bindAddress = AppConfig.getServerBindAddress();
         int port = AppConfig.getServerPort();
         InetAddress address = InetAddress.getByName(bindAddress);
-        serverSocket = new ServerSocket(port, 50, address);
+        serverSocket = createServerSocket(address, port);
         running = true;
         registerShutdownHook();
-        logger.info("Chat server listening on {}:{}", bindAddress, port);
+        logger.info("Chat server listening on {}:{} (TLS: {})", bindAddress, port, AppConfig.isTlsEnabled());
         acceptLoop();
+    }
+
+    private ServerSocket createServerSocket(InetAddress address, int port) throws IOException {
+        if (!AppConfig.isTlsEnabled()) return new ServerSocket(port, 50, address);
+        try {
+            SSLServerSocketFactory factory = TlsContextFactory.createServerContext().getServerSocketFactory();
+            SSLServerSocket sslSocket = (SSLServerSocket) factory.createServerSocket(port, 50, address);
+            sslSocket.setEnabledProtocols(new String[]{"TLSv1.3", "TLSv1.2"});
+            return sslSocket;
+        } catch (IllegalStateException e) {
+            throw new IOException("TLS server initialization failed.", e);
+        }
     }
 
     private synchronized void registerShutdownHook() {
@@ -79,9 +94,7 @@ public class ChatServer {
     private synchronized void unregisterShutdownHook() {
         if (!shutdownHookRegistered) return;
         try {
-            if (Runtime.getRuntime().removeShutdownHook(shutdownHook)) {
-                shutdownHookRegistered = false;
-            }
+            if (Runtime.getRuntime().removeShutdownHook(shutdownHook)) shutdownHookRegistered = false;
         } catch (IllegalStateException e) {
             // The JVM is already shutting down; the hook is executing or will execute.
         }
@@ -125,6 +138,9 @@ public class ChatServer {
         socket.setKeepAlive(true);
         int readTimeout = AppConfig.getSocketReadTimeoutMs();
         if (readTimeout > 0) socket.setSoTimeout(readTimeout);
+        if (socket instanceof javax.net.ssl.SSLSocket sslSocket) {
+            sslSocket.setEnabledProtocols(new String[]{"TLSv1.3", "TLSv1.2"});
+        }
     }
 
     public boolean registerClient(int userId, ClientHandler handler) {
@@ -145,9 +161,7 @@ public class ChatServer {
         }
     }
 
-    void handlerClosed(ClientHandler handler) {
-        activeHandlers.remove(handler);
-    }
+    void handlerClosed(ClientHandler handler) { activeHandlers.remove(handler); }
 
     private void broadcastPresence(int userId, ClientHandler source, boolean online) {
         UserPresenceEvent event = new UserPresenceEvent(userId, source.getUsername(), online ? "ONLINE" : "OFFLINE");
@@ -169,14 +183,10 @@ public class ChatServer {
         unregisterShutdownHook();
         logger.info("Shutting down chat server ({} active connections)...", activeHandlers.size());
         closeQuietly(serverSocket);
-        for (ClientHandler handler : activeHandlers.toArray(ClientHandler[]::new)) {
-            handler.closeConnection();
-        }
+        for (ClientHandler handler : activeHandlers.toArray(ClientHandler[]::new)) handler.closeConnection();
         clientThreadPool.shutdownNow();
         try {
-            if (!clientThreadPool.awaitTermination(5, TimeUnit.SECONDS)) {
-                logger.warn("Client handler pool did not terminate within 5 seconds");
-            }
+            if (!clientThreadPool.awaitTermination(5, TimeUnit.SECONDS)) logger.warn("Client handler pool did not terminate within 5 seconds");
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
@@ -186,9 +196,6 @@ public class ChatServer {
 
     private static void closeQuietly(AutoCloseable closeable) {
         if (closeable == null) return;
-        try {
-            closeable.close();
-        } catch (Exception ignored) {
-        }
+        try { closeable.close(); } catch (Exception ignored) {}
     }
 }
