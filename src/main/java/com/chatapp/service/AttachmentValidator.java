@@ -2,9 +2,13 @@ package com.chatapp.service;
 
 import com.chatapp.exception.ValidationException;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.HashSet;
 import java.util.Locale;
 import java.util.Set;
+import java.util.zip.ZipInputStream;
 
 /** Validates attachment metadata and file signatures before storage. */
 public final class AttachmentValidator {
@@ -51,9 +55,9 @@ public final class AttachmentValidator {
             case "image/gif" -> require(bytes, ascii("GIF8"), "GIF");
             case "image/webp" -> requireWebp(bytes);
             case "application/pdf" -> require(bytes, ascii("%PDF-"), "PDF");
-            case "application/zip",
-                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" -> requireZip(bytes);
+            case "application/zip" -> requireZip(bytes);
+            case "application/vnd.openxmlformats-officedocument.wordprocessingml.document" -> requireOoxml(bytes, "word/document.xml", "DOCX");
+            case "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" -> requireOoxml(bytes, "xl/workbook.xml", "XLSX");
             case "audio/wav" -> requireRiff(bytes, "WAVE");
             case "video/mp4" -> requireMp4(bytes);
             case "audio/mpeg" -> requireMpeg(bytes);
@@ -77,6 +81,25 @@ public final class AttachmentValidator {
                 || startsWith(value, new byte[]{0x50, 0x4b, 0x05, 0x06})
                 || startsWith(value, new byte[]{0x50, 0x4b, 0x07, 0x08}))) {
             throw new ValidationException("File content does not match its declared ZIP-based type.");
+        }
+    }
+
+    private static void requireOoxml(byte[] value, String requiredEntry, String type) throws ValidationException {
+        if (!startsWith(value, new byte[]{0x50, 0x4b, 0x03, 0x04})) {
+            throw new ValidationException("File content does not match its declared " + type + " type.");
+        }
+        Set<String> entries = new HashSet<>();
+        try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(value), StandardCharsets.UTF_8)) {
+            java.util.zip.ZipEntry entry;
+            while ((entry = zip.getNextEntry()) != null) {
+                entries.add(entry.getName());
+                zip.closeEntry();
+            }
+        } catch (IOException | RuntimeException e) {
+            throw new ValidationException("Invalid " + type + " archive.");
+        }
+        if (!entries.contains("[Content_Types].xml") || !entries.contains(requiredEntry)) {
+            throw new ValidationException("File content does not match its declared " + type + " structure.");
         }
     }
 
