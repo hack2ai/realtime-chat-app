@@ -22,9 +22,9 @@ services:
   server:
     build: .
     restart: unless-stopped
-    init: true
     networks:
       - backend
+    init: true
     read_only: true
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=64m
@@ -50,6 +50,12 @@ services:
       CHATAPP_AUTH_BCRYPT_STRENGTH: 12
       CHATAPP_AUTH_SESSION_EXPIRYHOURS: 24
       CHATAPP_ATTACHMENTS_STORAGEPATH: /app/data/attachments
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/chatapp.ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
     ports:
       - "5050:5050"
     volumes:
