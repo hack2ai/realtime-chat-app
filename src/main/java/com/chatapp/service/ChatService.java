@@ -6,6 +6,7 @@ import com.chatapp.exception.ValidationException;
 import com.chatapp.model.User;
 import com.chatapp.model.dto.ChatDTOs.PrivateMessageEvent;
 import com.chatapp.model.dto.ChatDTOs.UserSummary;
+import com.chatapp.util.ValidationUtil;
 
 import java.util.List;
 import java.util.OptionalInt;
@@ -13,7 +14,6 @@ import java.util.OptionalInt;
 /** Business rules for presence and one-to-one chat. */
 public class ChatService {
 
-    private static final int MAX_MESSAGE_LENGTH = 4000;
     private final UserDAO userDAO;
     private final PrivateMessageDAO privateMessageDAO;
 
@@ -39,12 +39,8 @@ public class ChatService {
             throws ValidationException {
         if (receiverId <= 0 || receiverId == senderId) throw new ValidationException("Choose a valid recipient.");
         if (!userExists(receiverId)) throw new ValidationException("Recipient does not exist.");
-        if (message == null || message.isBlank()) throw new ValidationException("Message cannot be empty.");
-        String normalized = message.strip();
-        if (normalized.length() > MAX_MESSAGE_LENGTH) {
-            throw new ValidationException("Message exceeds the " + MAX_MESSAGE_LENGTH + " character limit.");
-        }
-        return privateMessageDAO.insert(senderId, receiverId, normalized);
+        ValidationUtil.validateMessageContent(message);
+        return privateMessageDAO.insert(senderId, receiverId, message.strip());
     }
 
     public List<PrivateMessageEvent> history(int currentUserId, int otherUserId, int limit, long beforeMessageId)
