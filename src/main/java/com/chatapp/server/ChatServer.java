@@ -69,11 +69,19 @@ public class ChatServer {
         int port = AppConfig.getServerPort();
         InetAddress address = InetAddress.getByName(bindAddress);
         serverSocket = createServerSocket(address, port);
-        running = true;
-        markReady();
-        registerShutdownHook();
-        logger.info("Chat server listening on {}:{} (TLS: {})", bindAddress, port, AppConfig.isTlsEnabled());
-        acceptLoop();
+        try {
+            running = true;
+            markReady();
+            registerShutdownHook();
+            logger.info("Chat server listening on {}:{} (TLS: {})", bindAddress, port, AppConfig.isTlsEnabled());
+            acceptLoop();
+        } catch (IOException | RuntimeException e) {
+            running = false;
+            clearReady();
+            closeQuietly(serverSocket);
+            serverSocket = null;
+            throw e;
+        }
     }
 
     private void verifyDatabaseReady() throws IOException {
@@ -223,6 +231,7 @@ public class ChatServer {
         unregisterShutdownHook();
         logger.info("Shutting down chat server ({} active connections)...", activeHandlers.size());
         closeQuietly(serverSocket);
+        serverSocket = null;
         for (ClientHandler handler : activeHandlers.toArray(ClientHandler[]::new)) handler.closeConnection();
         clientThreadPool.shutdownNow();
         try {
