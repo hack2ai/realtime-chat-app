@@ -58,16 +58,19 @@ public final class DatabaseManager {
     }
 
     /**
-     * Executes a unit of work in a single transaction and restores the
-     * connection's original auto-commit mode before it is returned to the pool.
-     * The transaction is committed on success and rolled back on failure.
+     * Executes a unit of work in a single transaction. A connection whose
+     * transaction state cannot be restored is discarded rather than returned
+     * to the pool, preventing transaction-state leakage between callers.
      */
     public static <T> T executeTransaction(SqlOperation<T> operation) {
         if (operation == null) {
             throw new IllegalArgumentException("SQL transaction must not be null.");
         }
 
-        return execute(conn -> {
+        Connection conn = null;
+        boolean reusable = true;
+        try {
+            conn = ConnectionPool.getInstance().borrowConnection();
             boolean originalAutoCommit = conn.getAutoCommit();
             try {
                 conn.setAutoCommit(false);
@@ -79,15 +82,29 @@ public final class DatabaseManager {
                     conn.rollback();
                 } catch (SQLException rollbackError) {
                     e.addSuppressed(rollbackError);
+                    reusable = false;
                 }
                 throw e;
             } finally {
                 try {
                     conn.setAutoCommit(originalAutoCommit);
                 } catch (SQLException restoreError) {
-                    logger.warn("Failed to restore JDBC auto-commit state: {}", restoreError.getMessage());
+                    reusable = false;
+                    logger.warn("Failed to restore JDBC auto-commit state; discarding connection: {}",
+                            restoreError.getMessage());
                 }
             }
-        });
+        } catch (SQLException e) {
+            logger.error("Database transaction failed: {}", e.getMessage(), e);
+            throw new RuntimeException("Database transaction failed: " + e.getMessage(), e);
+        } finally {
+            if (conn != null) {
+                if (reusable) {
+                    ConnectionPool.getInstance().returnConnection(conn);
+                } else {
+                    ConnectionPool.getInstance().discardConnection(conn);
+                }
+            }
+        }
     }
 }
