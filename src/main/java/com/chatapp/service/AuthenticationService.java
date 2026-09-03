@@ -184,12 +184,12 @@ public class AuthenticationService {
         try {
             userDAO.updateStatus(userId, User.Status.OFFLINE);
         } catch (RuntimeException e) {
-            logger.warn("Failed to persist offline status for user {}: {}", userId, e.getMessage());
+            logger.warn("Failed to persist offline status for user {} ({}).", userId, e.getClass().getSimpleName());
         }
         try {
             userDAO.updateLastSeen(userId, LocalDateTime.now());
         } catch (RuntimeException e) {
-            logger.warn("Failed to persist last-seen timestamp for user {}: {}", userId, e.getMessage());
+            logger.warn("Failed to persist last-seen timestamp for user {} ({}).", userId, e.getClass().getSimpleName());
         }
     }
 
