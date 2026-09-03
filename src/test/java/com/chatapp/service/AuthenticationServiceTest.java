@@ -64,6 +64,35 @@ class AuthenticationServiceTest {
     }
 
     @Test
+    void registrationRejectsAsciiPasswordOverBcryptByteLimit() {
+        UserDAO dao = new LookupTrackingUserDAO(null);
+        AuthenticationService service = new AuthenticationService(dao);
+        String oversizedPassword = "a".repeat(73);
+
+        ValidationException error = assertThrows(ValidationException.class,
+                () -> service.register("alice", "alice@example.com", oversizedPassword, oversizedPassword));
+
+        assertEquals("Password must not exceed 72 UTF-8 bytes.", error.getMessage());
+        assertEquals(0, ((LookupTrackingUserDAO) dao).getUsernameLookups());
+        assertEquals(0, ((LookupTrackingUserDAO) dao).getEmailLookups());
+    }
+
+    @Test
+    void registrationRejectsMultibytePasswordOverBcryptByteLimit() {
+        UserDAO dao = new LookupTrackingUserDAO(null);
+        AuthenticationService service = new AuthenticationService(dao);
+        String oversizedUtf8Password = "é".repeat(37);
+
+        assertEquals(74, oversizedUtf8Password.getBytes(StandardCharsets.UTF_8).length);
+        ValidationException error = assertThrows(ValidationException.class,
+                () -> service.register("alice", "alice@example.com", oversizedUtf8Password, oversizedUtf8Password));
+
+        assertEquals("Password must not exceed 72 UTF-8 bytes.", error.getMessage());
+        assertEquals(0, ((LookupTrackingUserDAO) dao).getUsernameLookups());
+        assertEquals(0, ((LookupTrackingUserDAO) dao).getEmailLookups());
+    }
+
+    @Test
     void successfulLoginCreatesExpiringSession() throws Exception {
         User user = userWithHash("alice", new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder(10).encode("correct-password"));
         AuthenticationService service = new AuthenticationService(new InMemoryUserDAO(user));
@@ -234,19 +263,35 @@ class AuthenticationServiceTest {
     }
 
     private static class LookupTrackingUserDAO extends InMemoryUserDAO {
-        private int lookupCount;
+        private int usernameLookups;
+        private int emailLookups;
 
         private LookupTrackingUserDAO(User user) {
             super(user);
         }
 
-        private synchronized int getLookupCount() {
-            return lookupCount;
+        private synchronized int getUsernameLookups() {
+            return usernameLookups;
+        }
+
+        private synchronized int getEmailLookups() {
+            return emailLookups;
+        }
+
+        @Override
+        public synchronized boolean usernameExists(String username) {
+            usernameLookups++;
+            return false;
+        }
+
+        @Override
+        public synchronized boolean emailExists(String email) {
+            emailLookups++;
+            return false;
         }
 
         @Override
         public synchronized Optional<User> findByUsernameOrEmail(String identifier) {
-            lookupCount++;
             return super.findByUsernameOrEmail(identifier);
         }
     }
