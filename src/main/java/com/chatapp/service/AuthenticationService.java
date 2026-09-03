@@ -11,6 +11,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.Base64;
@@ -27,6 +29,7 @@ public class AuthenticationService {
     private final UserDAO userDAO;
     private final BCryptPasswordEncoder passwordEncoder;
     private final SecureRandom secureRandom = new SecureRandom();
+    /** Stores only SHA-256 digests of bearer tokens, never the raw tokens. */
     private final Map<String, Session> activeSessions = new ConcurrentHashMap<>();
     private final Map<Integer, String> activeTokenByUser = new ConcurrentHashMap<>();
 
@@ -71,17 +74,18 @@ public class AuthenticationService {
         }
 
         String token = generateSessionToken();
+        String tokenDigest = digestToken(token);
         LocalDateTime expiry = LocalDateTime.now().plusHours(AppConfig.getSessionExpiryHours());
         Session session = new Session(user.getId(), expiry);
-        if (activeTokenByUser.putIfAbsent(user.getId(), token) != null) {
+        if (activeTokenByUser.putIfAbsent(user.getId(), tokenDigest) != null) {
             throw new AuthenticationException("This account is already connected.");
         }
-        activeSessions.put(token, session);
+        activeSessions.put(tokenDigest, session);
         try {
             userDAO.updateStatus(user.getId(), User.Status.ONLINE);
         } catch (RuntimeException e) {
-            activeSessions.remove(token, session);
-            activeTokenByUser.remove(user.getId(), token);
+            activeSessions.remove(tokenDigest, session);
+            activeTokenByUser.remove(user.getId(), tokenDigest);
             throw e;
         }
         return new LoginResult(user, token, expiry);
@@ -89,9 +93,10 @@ public class AuthenticationService {
 
     public void logout(String sessionToken) {
         if (sessionToken == null) return;
-        Session session = activeSessions.remove(sessionToken);
+        String tokenDigest = digestToken(sessionToken);
+        Session session = activeSessions.remove(tokenDigest);
         if (session != null) {
-            activeTokenByUser.remove(session.userId, sessionToken);
+            activeTokenByUser.remove(session.userId, tokenDigest);
             userDAO.updateStatus(session.userId, User.Status.OFFLINE);
             userDAO.updateLastSeen(session.userId, LocalDateTime.now());
         }
@@ -99,18 +104,19 @@ public class AuthenticationService {
 
     public int validateSession(String sessionToken) throws AuthenticationException {
         if (sessionToken == null || sessionToken.isBlank()) throw invalidSession();
-        Session session = activeSessions.get(sessionToken);
+        String tokenDigest = digestToken(sessionToken);
+        Session session = activeSessions.get(tokenDigest);
         if (session == null) throw invalidSession();
         if (!LocalDateTime.now().isBefore(session.expiresAt)) {
-            expireSession(sessionToken, session);
+            expireSession(tokenDigest, session);
             throw invalidSession();
         }
         return session.userId;
     }
 
-    private void expireSession(String token, Session session) {
-        if (activeSessions.remove(token, session)) {
-            activeTokenByUser.remove(session.userId, token);
+    private void expireSession(String tokenDigest, Session session) {
+        if (activeSessions.remove(tokenDigest, session)) {
+            activeTokenByUser.remove(session.userId, tokenDigest);
             userDAO.updateStatus(session.userId, User.Status.OFFLINE);
             userDAO.updateLastSeen(session.userId, LocalDateTime.now());
         }
@@ -124,6 +130,16 @@ public class AuthenticationService {
         byte[] randomBytes = new byte[32];
         secureRandom.nextBytes(randomBytes);
         return Base64.getUrlEncoder().withoutPadding().encodeToString(randomBytes);
+    }
+
+    private String digestToken(String token) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(token.getBytes(StandardCharsets.UTF_8));
+            return Base64.getUrlEncoder().withoutPadding().encodeToString(digest);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is unavailable.", e);
+        }
     }
 
     private record Session(int userId, LocalDateTime expiresAt) {}
