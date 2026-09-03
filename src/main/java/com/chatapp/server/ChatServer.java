@@ -19,6 +19,8 @@ import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Collection;
 import java.util.Set;
@@ -32,6 +34,7 @@ import java.util.concurrent.RejectedExecutionException;
 public class ChatServer {
     private static final Logger logger = LoggerFactory.getLogger(ChatServer.class);
     private static final RequestRateLimiter CONNECTION_RATE_LIMITER = new RequestRateLimiter(30, Duration.ofSeconds(10), 10_000);
+    private static final Path READINESS_FILE = Path.of(System.getProperty("java.io.tmpdir"), "chatapp.ready");
 
     private final AuthenticationService authService;
     private final ChatService chatService = new ChatService();
@@ -64,6 +67,7 @@ public class ChatServer {
         InetAddress address = InetAddress.getByName(bindAddress);
         serverSocket = createServerSocket(address, port);
         running = true;
+        markReady();
         registerShutdownHook();
         logger.info("Chat server listening on {}:{} (TLS: {})", bindAddress, port, AppConfig.isTlsEnabled());
         acceptLoop();
@@ -78,6 +82,23 @@ public class ChatServer {
             return sslSocket;
         } catch (IllegalStateException e) {
             throw new IOException("TLS server initialization failed.", e);
+        }
+    }
+
+    private void markReady() throws IOException {
+        try {
+            Files.createFile(READINESS_FILE);
+        } catch (java.nio.file.FileAlreadyExistsException e) {
+            Files.deleteIfExists(READINESS_FILE);
+            Files.createFile(READINESS_FILE);
+        }
+    }
+
+    private void clearReady() {
+        try {
+            Files.deleteIfExists(READINESS_FILE);
+        } catch (IOException e) {
+            logger.debug("Unable to clear server readiness marker");
         }
     }
 
@@ -178,8 +199,12 @@ public class ChatServer {
     public GroupService getGroupService() { return groupService; }
 
     public void stop() {
-        if (!running) return;
+        if (!running) {
+            clearReady();
+            return;
+        }
         running = false;
+        clearReady();
         unregisterShutdownHook();
         logger.info("Shutting down chat server ({} active connections)...", activeHandlers.size());
         closeQuietly(serverSocket);
