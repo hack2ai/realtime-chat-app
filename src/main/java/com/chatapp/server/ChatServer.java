@@ -19,7 +19,6 @@ import java.net.SocketException;
 import java.time.Duration;
 import java.util.Collection;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -36,6 +35,8 @@ public class ChatServer {
     private final ConcurrentHashMap<Integer, ClientHandler> connectedClients = new ConcurrentHashMap<>();
     private final Set<ClientHandler> activeHandlers = ConcurrentHashMap.newKeySet();
     private final ThreadPoolExecutor clientThreadPool;
+    private final Thread shutdownHook = new Thread(this::stop, "chat-server-shutdown");
+    private volatile boolean shutdownHookRegistered;
     private volatile boolean running;
     private ServerSocket serverSocket;
 
@@ -59,9 +60,30 @@ public class ChatServer {
         InetAddress address = InetAddress.getByName(bindAddress);
         serverSocket = new ServerSocket(port, 50, address);
         running = true;
+        registerShutdownHook();
         logger.info("Chat server listening on {}:{}", bindAddress, port);
-        Runtime.getRuntime().addShutdownHook(new Thread(this::stop, "chat-server-shutdown"));
         acceptLoop();
+    }
+
+    private synchronized void registerShutdownHook() {
+        if (shutdownHookRegistered) return;
+        try {
+            Runtime.getRuntime().addShutdownHook(shutdownHook);
+            shutdownHookRegistered = true;
+        } catch (IllegalStateException e) {
+            logger.debug("JVM shutdown is already in progress; shutdown hook was not registered");
+        }
+    }
+
+    private synchronized void unregisterShutdownHook() {
+        if (!shutdownHookRegistered) return;
+        try {
+            if (Runtime.getRuntime().removeShutdownHook(shutdownHook)) {
+                shutdownHookRegistered = false;
+            }
+        } catch (IllegalStateException e) {
+            // The JVM is already shutting down; the hook is executing or will execute.
+        }
     }
 
     private void acceptLoop() {
@@ -143,6 +165,7 @@ public class ChatServer {
     public void stop() {
         if (!running) return;
         running = false;
+        unregisterShutdownHook();
         logger.info("Shutting down chat server ({} active connections)...", activeHandlers.size());
         closeQuietly(serverSocket);
         for (ClientHandler handler : activeHandlers.toArray(ClientHandler[]::new)) {
