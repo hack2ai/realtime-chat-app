@@ -1,0 +1,10 @@
+.git
+.github
+.idea
+.vscode
+*.iml
+target
+/data
+*.log
+.DS_Store
+Thumbs.db
