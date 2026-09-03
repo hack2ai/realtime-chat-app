@@ -36,7 +36,7 @@ public final class RequestRateLimiter {
         return true;
     }
 
-    /** Returns the current number of tracked limiter keys for diagnostics/tests. */
+    /** Returns the current number of tracked limiter keys and removes expired entries. */
     public synchronized int size() {
         removeExpired(Instant.now());
         return windows.size();
