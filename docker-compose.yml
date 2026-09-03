@@ -28,6 +28,10 @@ services:
     read_only: true
     pids_limit: 256
     stop_grace_period: 10s
+    ulimits:
+      nofile:
+        soft: 4096
+        hard: 8192
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=64m
     security_opt:
