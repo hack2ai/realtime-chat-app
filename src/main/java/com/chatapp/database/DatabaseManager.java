@@ -45,6 +45,10 @@ public final class DatabaseManager {
             logger.error("Database operation failed unexpectedly: {}", e.getMessage(), e);
             reusable = false;
             throw e;
+        } catch (Error e) {
+            logger.error("Fatal error during database operation; discarding connection: {}", e.getMessage(), e);
+            reusable = false;
+            throw e;
         } finally {
             if (conn != null) {
                 if (reusable) {
@@ -94,6 +98,16 @@ public final class DatabaseManager {
                     e.addSuppressed(rollbackError);
                     reusable = false;
                 }
+                throw e;
+            } catch (Error e) {
+                try {
+                    conn.rollback();
+                } catch (SQLException rollbackError) {
+                    e.addSuppressed(rollbackError);
+                    reusable = false;
+                }
+                reusable = false;
+                logger.error("Fatal error during database transaction; discarding connection: {}", e.getMessage(), e);
                 throw e;
             } finally {
                 try {
