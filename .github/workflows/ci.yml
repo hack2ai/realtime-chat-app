@@ -39,5 +39,11 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Validate Docker Compose configuration
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: docker compose config --quiet
+
       - name: Build server container image
         run: docker build --pull --tag realtime-chat-app:${{ github.sha }} .
