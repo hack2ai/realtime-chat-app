@@ -38,3 +38,6 @@ jobs:
             target/chatapp-server.jar.sha256
           if-no-files-found: error
           retention-days: 14
+
+      - name: Build server container image
+        run: docker build --pull --tag realtime-chat-app:${{ github.sha }} .
