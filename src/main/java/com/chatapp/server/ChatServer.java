@@ -21,6 +21,8 @@ import java.net.Socket;
 import java.net.SocketException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.Connection;
+import java.sql.SQLException;
 import java.time.Duration;
 import java.util.Collection;
 import java.util.Set;
@@ -62,6 +64,7 @@ public class ChatServer {
 
     public void start() throws IOException {
         if (running) return;
+        verifyDatabaseReady();
         String bindAddress = AppConfig.getServerBindAddress();
         int port = AppConfig.getServerPort();
         InetAddress address = InetAddress.getByName(bindAddress);
@@ -71,6 +74,18 @@ public class ChatServer {
         registerShutdownHook();
         logger.info("Chat server listening on {}:{} (TLS: {})", bindAddress, port, AppConfig.isTlsEnabled());
         acceptLoop();
+    }
+
+    private void verifyDatabaseReady() throws IOException {
+        Connection connection = null;
+        try {
+            connection = ConnectionPool.getInstance().borrowConnection();
+            if (!connection.isValid(2)) throw new SQLException("Database connection validation failed.");
+        } catch (SQLException | RuntimeException e) {
+            throw new IOException("Database is not ready.", e);
+        } finally {
+            if (connection != null) ConnectionPool.getInstance().returnConnection(connection);
+        }
     }
 
     private ServerSocket createServerSocket(InetAddress address, int port) throws IOException {
