@@ -14,6 +14,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class MessageCodecTest {
 
+    private static final int MAX_FRAME_BYTES = 8 * 1024 * 1024;
     private final MessageCodec codec = new MessageCodec();
 
     @Test
@@ -108,6 +109,23 @@ class MessageCodecTest {
     void writeRejectsNullOutputStream() {
         Envelope envelope = codec.wrap(MessageType.C2S_LOGIN, new Payload("alice", "password"));
         assertThrows(IllegalArgumentException.class, () -> codec.write(null, envelope));
+    }
+
+    @Test
+    void writeAcceptsExactMaximumFrameSize() throws Exception {
+        Envelope template = codec.wrap(MessageType.C2S_PRIVATE_MESSAGE, new Payload("alice", ""));
+        int fixedJsonBytes = codec.getGson().toJson(template).getBytes(StandardCharsets.UTF_8).length;
+        int payloadChars = MAX_FRAME_BYTES - fixedJsonBytes;
+        assertTrue(payloadChars > 0);
+
+        Envelope envelope = codec.wrap(MessageType.C2S_PRIVATE_MESSAGE,
+                new Payload("alice", "x".repeat(payloadChars)));
+        byte[] jsonBytes = codec.getGson().toJson(envelope).getBytes(StandardCharsets.UTF_8);
+        assertEquals(MAX_FRAME_BYTES, jsonBytes.length);
+
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream(MAX_FRAME_BYTES + Integer.BYTES);
+        codec.write(new DataOutputStream(bytes), envelope);
+        assertEquals(MAX_FRAME_BYTES + Integer.BYTES, bytes.size());
     }
 
     @Test
