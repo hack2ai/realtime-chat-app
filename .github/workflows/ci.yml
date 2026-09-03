@@ -23,5 +23,18 @@ jobs:
           java-version: '21'
           cache: maven
 
-      - name: Verify
+      - name: Verify and package
         run: mvn --batch-mode --no-transfer-progress verify
+
+      - name: Generate server checksum
+        run: sha256sum target/chatapp-server.jar > target/chatapp-server.jar.sha256
+
+      - name: Upload server package
+        uses: actions/upload-artifact@v4
+        with:
+          name: chatapp-server-${{ github.sha }}
+          path: |
+            target/chatapp-server.jar
+            target/chatapp-server.jar.sha256
+          if-no-files-found: error
+          retention-days: 14
