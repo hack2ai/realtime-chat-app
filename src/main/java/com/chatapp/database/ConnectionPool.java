@@ -7,8 +7,10 @@ import org.slf4j.LoggerFactory;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
+import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -19,6 +21,7 @@ public final class ConnectionPool {
     private static volatile ConnectionPool instance;
 
     private final BlockingQueue<Connection> availableConnections;
+    private final Set<Connection> trackedConnections = ConcurrentHashMap.newKeySet();
     private final int maxSize;
     private final int connectionTimeoutMs;
     private final AtomicInteger totalCreated = new AtomicInteger();
@@ -50,6 +53,7 @@ public final class ConnectionPool {
                 closeQuietly(conn);
                 throw new IllegalStateException("Database connection pool is shut down.");
             }
+            trackedConnections.add(conn);
             totalCreated.incrementAndGet();
             return conn;
         } catch (SQLException e) {
@@ -59,22 +63,28 @@ public final class ConnectionPool {
 
     public Connection borrowConnection() throws SQLException {
         if (shutdown.get()) throw new SQLException("Database connection pool is shut down.");
-        Connection conn = availableConnections.poll();
-        if (conn == null) {
-            if (tryReserveConnection()) return createConnectionSafely();
-            try {
-                conn = availableConnections.poll(connectionTimeoutMs, TimeUnit.MILLISECONDS);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new SQLException("Interrupted while waiting for a database connection.", e);
+
+        while (true) {
+            Connection conn = availableConnections.poll();
+            if (conn == null) {
+                if (tryReserveConnection()) return createConnectionSafely();
+                try {
+                    conn = availableConnections.poll(connectionTimeoutMs, TimeUnit.MILLISECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new SQLException("Interrupted while waiting for a database connection.", e);
+                }
+                if (conn == null) {
+                    throw new SQLException("Timed out after " + connectionTimeoutMs + "ms waiting for a database connection.");
+                }
             }
-            if (conn == null) throw new SQLException("Timed out after " + connectionTimeoutMs + "ms waiting for a database connection.");
-        }
-        if (!isValid(conn)) {
+
+            if (isValid(conn)) return conn;
             discardConnection(conn);
-            return createConnectionSafely();
+            if (shutdown.get()) throw new SQLException("Database connection pool is shut down.");
+            // The broken connection released a pool slot. Loop so replacement creation
+            // follows the same bounded reservation path as every other new connection.
         }
-        return conn;
     }
 
     private boolean tryReserveConnection() {
@@ -98,6 +108,7 @@ public final class ConnectionPool {
                 totalCreated.decrementAndGet();
                 throw new SQLException("Database connection pool is shut down.");
             }
+            trackedConnections.add(conn);
             return conn;
         } catch (SQLException e) {
             totalCreated.decrementAndGet();
@@ -112,11 +123,16 @@ public final class ConnectionPool {
         }
     }
 
-    /** Permanently removes a broken connection from the pool. */
+    /** Permanently removes a broken connection from the pool. Safe to call more than once. */
     public void discardConnection(Connection conn) {
         if (conn == null) return;
-        closeQuietly(conn);
-        totalCreated.updateAndGet(current -> Math.max(0, current - 1));
+        if (trackedConnections.remove(conn)) {
+            availableConnections.remove(conn);
+            closeQuietly(conn);
+            totalCreated.updateAndGet(current -> Math.max(0, current - 1));
+        } else {
+            closeQuietly(conn);
+        }
     }
 
     private boolean isValid(Connection conn) {
@@ -134,6 +150,7 @@ public final class ConnectionPool {
         if (!shutdown.compareAndSet(false, true)) return;
         Connection conn;
         while ((conn = availableConnections.poll()) != null) {
+            trackedConnections.remove(conn);
             closeQuietly(conn);
             totalCreated.updateAndGet(current -> Math.max(0, current - 1));
         }
