@@ -3,7 +3,10 @@ package com.chatapp.util;
 import com.chatapp.exception.ValidationException;
 import org.junit.jupiter.api.Test;
 
+import java.nio.charset.StandardCharsets;
+
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class ValidationUtilTest {
@@ -26,10 +29,21 @@ class ValidationUtilTest {
     }
 
     @Test
-    void acceptsPasswordAtBoundaryButRejectsOversizedInput() {
-        assertDoesNotThrow(() -> ValidationUtil.validatePassword("a1" + "x".repeat(6)));
-        assertDoesNotThrow(() -> ValidationUtil.validatePassword("a1" + "x".repeat(126)));
-        assertThrows(ValidationException.class, () -> ValidationUtil.validatePassword("a1" + "x".repeat(127)));
+    void enforcesPasswordUtf8ByteBoundary() {
+        String validAscii = "a1" + "x".repeat(70);
+        String oversizedAscii = validAscii + "x";
+        String validMultibyte = "A1" + "é".repeat(35);
+        String oversizedMultibyte = "A1" + "é".repeat(36);
+
+        assertEquals(72, validAscii.getBytes(StandardCharsets.UTF_8).length);
+        assertEquals(73, oversizedAscii.getBytes(StandardCharsets.UTF_8).length);
+        assertEquals(72, validMultibyte.getBytes(StandardCharsets.UTF_8).length);
+        assertEquals(74, oversizedMultibyte.getBytes(StandardCharsets.UTF_8).length);
+
+        assertDoesNotThrow(() -> ValidationUtil.validatePassword(validAscii));
+        assertThrows(ValidationException.class, () -> ValidationUtil.validatePassword(oversizedAscii));
+        assertDoesNotThrow(() -> ValidationUtil.validatePassword(validMultibyte));
+        assertThrows(ValidationException.class, () -> ValidationUtil.validatePassword(oversizedMultibyte));
     }
 
     @Test
