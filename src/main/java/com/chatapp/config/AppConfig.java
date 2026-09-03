@@ -91,6 +91,12 @@ public final class AppConfig {
     public static String getServerBindAddress() { return require("server.bindAddress"); }
     public static int getServerMaxClients() { return requireRange("server.maxClients", 1, 10000); }
     public static int getSocketReadTimeoutMs() { return requireRange("server.socketReadTimeoutMs", 0, 300000); }
+    public static boolean isTlsEnabled() { return optionalBoolean("tls.enabled", false); }
+    public static String getTlsKeyStorePath() { return require("tls.keyStorePath"); }
+    public static String getTlsKeyStorePassword() { return require("tls.keyStorePassword"); }
+    public static boolean isClientTlsEnabled() { return optionalBoolean("client.tls.enabled", false); }
+    public static String getTlsTrustStorePath() { return optional("client.tls.trustStorePath", ""); }
+    public static String getTlsTrustStorePassword() { return optional("client.tls.trustStorePassword", ""); }
     public static int getBcryptStrength() { return requireRange("auth.bcrypt.strength", 10, 31); }
     public static int getSessionExpiryHours() { return requireRange("auth.session.expiryHours", 1, 8760); }
     public static String getAttachmentStoragePath() { return require("attachments.storagePath"); }
