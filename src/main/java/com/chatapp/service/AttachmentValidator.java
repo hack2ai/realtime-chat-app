@@ -61,7 +61,8 @@ public final class AttachmentValidator {
             case "audio/wav" -> requireRiff(bytes, "WAVE");
             case "video/mp4" -> requireMp4(bytes);
             case "audio/mpeg" -> requireMpeg(bytes);
-            case "application/json", "text/plain", "text/csv", "application/octet-stream" -> { /* no reliable fixed signature */ }
+            case "application/json" -> requireJson(bytes);
+            case "text/plain", "text/csv", "application/octet-stream" -> { /* no reliable fixed signature */ }
             default -> throw new ValidationException("Unsupported attachment type.");
         }
     }
@@ -100,6 +101,15 @@ public final class AttachmentValidator {
         }
         if (!entries.contains("[Content_Types].xml") || !entries.contains(requiredEntry)) {
             throw new ValidationException("File content does not match its declared " + type + " structure.");
+        }
+    }
+
+    private static void requireJson(byte[] value) throws ValidationException {
+        try {
+            String json = new String(value, StandardCharsets.UTF_8);
+            com.google.gson.JsonParser.parseString(json);
+        } catch (RuntimeException e) {
+            throw new ValidationException("File content is not valid JSON.");
         }
     }
 
