@@ -2,6 +2,8 @@ services:
   db:
     image: mysql:8.4
     restart: unless-stopped
+    networks:
+      - backend
     environment:
       MYSQL_ROOT_PASSWORD: ${CHATAPP_MYSQL_ROOT_PASSWORD:?set CHATAPP_MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: chatapp_db
@@ -20,6 +22,8 @@ services:
   server:
     build: .
     restart: unless-stopped
+    networks:
+      - backend
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -46,6 +50,10 @@ services:
       - "5050:5050"
     volumes:
       - chatapp-attachments:/app/data/attachments
+
+networks:
+  backend:
+    internal: true
 
 volumes:
   chatapp-mysql:
