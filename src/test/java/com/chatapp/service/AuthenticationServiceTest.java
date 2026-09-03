@@ -2,10 +2,13 @@ package com.chatapp.service;
 
 import com.chatapp.database.UserDAO;
 import com.chatapp.exception.AuthenticationException;
+import com.chatapp.exception.ValidationException;
 import com.chatapp.model.User;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
+import java.nio.charset.StandardCharsets;
+import java.sql.SQLIntegrityConstraintViolationException;
 import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.Optional;
@@ -53,7 +56,7 @@ class AuthenticationServiceTest {
         AuthenticationService service = new AuthenticationService(dao);
         String oversizedUtf8Password = "é".repeat(37);
 
-        assertEquals(74, oversizedUtf8Password.getBytes(java.nio.charset.StandardCharsets.UTF_8).length);
+        assertEquals(74, oversizedUtf8Password.getBytes(StandardCharsets.UTF_8).length);
         AuthenticationException error = assertThrows(AuthenticationException.class,
                 () -> service.login("alice", oversizedUtf8Password));
 
@@ -162,6 +165,36 @@ class AuthenticationServiceTest {
     }
 
     @Test
+    void duplicateUsernameRaceBecomesValidationFailure() {
+        AuthenticationService service = new AuthenticationService(new DuplicateRegistrationUserDAO(true, false, false));
+
+        ValidationException error = assertThrows(ValidationException.class,
+                () -> service.register("alice", "alice@example.com", "password1", "password1"));
+
+        assertEquals("Username 'alice' is already taken.", error.getMessage());
+    }
+
+    @Test
+    void duplicateEmailRaceBecomesValidationFailure() {
+        AuthenticationService service = new AuthenticationService(new DuplicateRegistrationUserDAO(false, true, false));
+
+        ValidationException error = assertThrows(ValidationException.class,
+                () -> service.register("alice", "alice@example.com", "password1", "password1"));
+
+        assertEquals("An account with this email already exists.", error.getMessage());
+    }
+
+    @Test
+    void wrappedDuplicateKeyIsRecognized() {
+        AuthenticationService service = new AuthenticationService(new DuplicateRegistrationUserDAO(false, false, true));
+
+        ValidationException error = assertThrows(ValidationException.class,
+                () -> service.register("alice", "alice@example.com", "password1", "password1"));
+
+        assertEquals("An account with these details already exists.", error.getMessage());
+    }
+
+    @Test
     void invalidSessionTokenIsRejected() {
         AuthenticationService service = new AuthenticationService(new InMemoryUserDAO(null));
 
@@ -197,6 +230,61 @@ class AuthenticationServiceTest {
         @Override
         public void updateLastSeen(int userId, LocalDateTime lastSeen) {
             if (user != null && user.getId() == userId) user.setLastSeen(lastSeen);
+        }
+    }
+
+    private static class LookupTrackingUserDAO extends InMemoryUserDAO {
+        private int lookupCount;
+
+        private LookupTrackingUserDAO(User user) {
+            super(user);
+        }
+
+        private synchronized int getLookupCount() {
+            return lookupCount;
+        }
+
+        @Override
+        public synchronized Optional<User> findByUsernameOrEmail(String identifier) {
+            lookupCount++;
+            return super.findByUsernameOrEmail(identifier);
+        }
+    }
+
+    private static class DuplicateRegistrationUserDAO extends UserDAO {
+        private final boolean usernameConflict;
+        private final boolean emailConflict;
+        private final boolean wrappedDuplicate;
+        private volatile boolean insertAttempted;
+
+        private DuplicateRegistrationUserDAO(boolean usernameConflict, boolean emailConflict, boolean wrappedDuplicate) {
+            this.usernameConflict = usernameConflict;
+            this.emailConflict = emailConflict;
+            this.wrappedDuplicate = wrappedDuplicate;
+        }
+
+        @Override
+        public boolean usernameExists(String username) {
+            return insertAttempted && usernameConflict;
+        }
+
+        @Override
+        public boolean emailExists(String email) {
+            return insertAttempted && emailConflict;
+        }
+
+        @Override
+        public User insert(User user) {
+            insertAttempted = true;
+            if (wrappedDuplicate) {
+                throw new RuntimeException(new IllegalStateException("database rejected INSERT: duplicate entry for unique index"));
+            }
+            throw new RuntimeException(new SQLIntegrityConstraintViolationException("duplicate key during concurrent registration"));
+        }
+
+        @Override
+        public Optional<User> findByUsernameOrEmail(String identifier) {
+            return Optional.empty();
         }
     }
 
