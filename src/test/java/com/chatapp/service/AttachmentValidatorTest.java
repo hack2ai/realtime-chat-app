@@ -54,6 +54,17 @@ class AttachmentValidatorTest {
     }
 
     @Test
+    void rejectsInvalidJson() {
+        assertThrows(ValidationException.class,
+                () -> AttachmentValidator.validateContent("application/json", "{invalid".getBytes(StandardCharsets.UTF_8)));
+    }
+
+    @Test
+    void acceptsValidJson() throws Exception {
+        AttachmentValidator.validateContent("application/json", "{\"message\":\"hello\",\"ok\":true}".getBytes(StandardCharsets.UTF_8));
+    }
+
+    @Test
     void rejectsOrdinaryZipDeclaredAsDocx() throws Exception {
         byte[] zip = zipWithEntries("readme.txt");
         assertThrows(ValidationException.class,
