@@ -21,11 +21,7 @@ public final class RequestRateLimiter {
         this.maxKeys = maxKeys;
     }
 
-    /**
-     * Atomically admits a request and enforces the global key bound.
-     * Synchronization is intentionally coarse-grained: admission is a tiny in-memory
-     * operation, and correctness of the memory bound is more important than parallelism here.
-     */
+    /** Atomically admits a request while keeping limiter state bounded. */
     public synchronized boolean allow(String key) {
         if (key == null || key.isBlank()) return false;
         Instant now = Instant.now();
@@ -40,7 +36,11 @@ public final class RequestRateLimiter {
         return true;
     }
 
-    public int size() { return windows.size(); }
+    /** Returns the current number of tracked limiter keys for diagnostics/tests. */
+    public synchronized int size() {
+        removeExpired(Instant.now());
+        return windows.size();
+    }
 
     private boolean expired(Window value, Instant now) {
         return Duration.between(value.windowStart(), now).compareTo(window) >= 0;
