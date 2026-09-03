@@ -19,7 +19,7 @@ The application provides secure authentication, real-time private messaging, pre
 - TCP sockets with explicit 4-byte length-prefixed UTF-8 JSON frames
 - Optional TLS transport for encrypted client/server TCP connections
 - Bounded server thread pool with connection back-pressure
-- Defensive maximum frame size (10 MB)
+- Defensive maximum frame size (8 MiB)
 - BCrypt password hashing with configurable work factor
 - Cryptographically random 256-bit session tokens
 - Generic authentication failure responses to reduce account enumeration
