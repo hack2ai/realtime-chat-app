@@ -111,6 +111,16 @@ class MessageCodecTest {
     }
 
     @Test
+    void writeRejectsOversizedFrame() {
+        String oversizedPayload = "x".repeat(8 * 1024 * 1024);
+        Envelope envelope = codec.wrap(MessageType.C2S_PRIVATE_MESSAGE,
+                new Payload("alice", oversizedPayload));
+
+        assertThrows(IOException.class, () ->
+                codec.write(new DataOutputStream(new ByteArrayOutputStream()), envelope));
+    }
+
+    @Test
     void wrapRejectsNullMessageType() {
         assertThrows(IllegalArgumentException.class, () ->
                 codec.wrap(null, new Payload("alice", "password")));
