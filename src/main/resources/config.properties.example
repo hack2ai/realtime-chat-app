@@ -24,6 +24,18 @@ server.maxClients=200
 # Authentication handshake timeout in milliseconds. Authenticated chat connections clear this timeout.
 server.socketReadTimeoutMs=120000
 
+# ---------------- Transport TLS ----------------
+# Enable for encrypted TCP transport. Keep false for local plain-TCP development only.
+tls.enabled=false
+# Required when tls.enabled=true. Use a PKCS12 keystore containing the server certificate/private key.
+tls.keyStorePath=config/server-keystore.p12
+tls.keyStorePassword=CHANGE_ME
+# Enable on the desktop client when connecting to a TLS-enabled server.
+client.tls.enabled=false
+# Leave blank to use the JVM's default CA trust store; set a PKCS12 path for a private/self-signed CA.
+client.tls.trustStorePath=
+client.tls.trustStorePassword=
+
 # ---------------- Authentication ----------------
 auth.bcrypt.strength=12
 auth.session.expiryHours=24
