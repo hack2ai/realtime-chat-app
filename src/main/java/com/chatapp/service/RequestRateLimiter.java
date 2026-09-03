@@ -21,21 +21,23 @@ public final class RequestRateLimiter {
         this.maxKeys = maxKeys;
     }
 
-    public boolean allow(String key) {
+    /**
+     * Atomically admits a request and enforces the global key bound.
+     * Synchronization is intentionally coarse-grained: admission is a tiny in-memory
+     * operation, and correctness of the memory bound is more important than parallelism here.
+     */
+    public synchronized boolean allow(String key) {
         if (key == null || key.isBlank()) return false;
         Instant now = Instant.now();
-        final boolean[] allowed = {false};
-        windows.compute(key, (ignored, current) -> {
-            if (current == null || expired(current, now)) {
-                enforceCapacity(now);
-                allowed[0] = true;
-                return new Window(1, now);
-            }
-            if (current.requests() >= maxRequests) return current;
-            allowed[0] = true;
-            return new Window(current.requests() + 1, current.windowStart());
-        });
-        return allowed[0];
+        Window current = windows.get(key);
+        if (current == null || expired(current, now)) {
+            enforceCapacity(now);
+            windows.put(key, new Window(1, now));
+            return true;
+        }
+        if (current.requests() >= maxRequests) return false;
+        windows.put(key, new Window(current.requests() + 1, current.windowStart()));
+        return true;
     }
 
     public int size() { return windows.size(); }
