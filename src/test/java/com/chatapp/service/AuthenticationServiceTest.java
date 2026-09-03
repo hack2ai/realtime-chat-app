@@ -95,16 +95,35 @@ class AuthenticationServiceTest {
     }
 
     @Test
-    void logoutStillInvalidatesSessionWhenDatabaseCleanupFails() throws Exception {
+    void logoutStillInvalidatesSessionWhenStatusCleanupFails() throws Exception {
         User user = userWithHash("alice", new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder(10).encode("correct-password"));
         FailingCleanupUserDAO dao = new FailingCleanupUserDAO(user);
         AuthenticationService service = new AuthenticationService(dao);
 
         AuthenticationService.LoginResult result = service.login("alice", "correct-password");
-        dao.setFailCleanup(true);
+        int lastSeenUpdatesBeforeLogout = dao.getLastSeenUpdates();
+        dao.setFailStatusUpdate(true);
 
         assertDoesNotThrow(() -> service.logout(result.sessionToken()));
         assertThrows(AuthenticationException.class, () -> service.validateSession(result.sessionToken()));
+        assertTrue(dao.getLastSeenUpdates() > lastSeenUpdatesBeforeLogout,
+                "last_seen cleanup must still run when status cleanup fails");
+    }
+
+    @Test
+    void logoutStillInvalidatesSessionWhenLastSeenCleanupFails() throws Exception {
+        User user = userWithHash("alice", new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder(10).encode("correct-password"));
+        FailingCleanupUserDAO dao = new FailingCleanupUserDAO(user);
+        AuthenticationService service = new AuthenticationService(dao);
+
+        AuthenticationService.LoginResult result = service.login("alice", "correct-password");
+        int statusUpdatesBeforeLogout = dao.getStatusUpdates();
+        dao.setFailLastSeenUpdate(true);
+
+        assertDoesNotThrow(() -> service.logout(result.sessionToken()));
+        assertThrows(AuthenticationException.class, () -> service.validateSession(result.sessionToken()));
+        assertTrue(dao.getStatusUpdates() > statusUpdatesBeforeLogout,
+                "status cleanup must still run when last_seen cleanup fails");
     }
 
     @Test
@@ -147,25 +166,42 @@ class AuthenticationServiceTest {
     }
 
     private static final class FailingCleanupUserDAO extends InMemoryUserDAO {
-        private volatile boolean failCleanup;
+        private volatile boolean failStatusUpdate;
+        private volatile boolean failLastSeenUpdate;
+        private int statusUpdates;
+        private int lastSeenUpdates;
 
         private FailingCleanupUserDAO(User user) {
             super(user);
         }
 
-        private void setFailCleanup(boolean value) {
-            failCleanup = value;
+        private void setFailStatusUpdate(boolean value) {
+            failStatusUpdate = value;
+        }
+
+        private void setFailLastSeenUpdate(boolean value) {
+            failLastSeenUpdate = value;
+        }
+
+        private synchronized int getStatusUpdates() {
+            return statusUpdates;
+        }
+
+        private synchronized int getLastSeenUpdates() {
+            return lastSeenUpdates;
         }
 
         @Override
-        public void updateStatus(int userId, User.Status status) {
-            if (failCleanup) throw new RuntimeException("simulated database outage");
+        public synchronized void updateStatus(int userId, User.Status status) {
+            if (failStatusUpdate) throw new RuntimeException("simulated database outage");
+            statusUpdates++;
             super.updateStatus(userId, status);
         }
 
         @Override
-        public void updateLastSeen(int userId, LocalDateTime lastSeen) {
-            if (failCleanup) throw new RuntimeException("simulated database outage");
+        public synchronized void updateLastSeen(int userId, LocalDateTime lastSeen) {
+            if (failLastSeenUpdate) throw new RuntimeException("simulated database outage");
+            lastSeenUpdates++;
             super.updateLastSeen(userId, lastSeen);
         }
     }
