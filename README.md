@@ -183,6 +183,31 @@ For a different server endpoint:
 mvn javafx:run -Dchatapp.server.host=192.168.1.10 -Dchatapp.server.port=5050
 ```
 
+### Docker Compose deployment
+
+The repository also includes a containerized server plus MySQL stack. Docker Compose keeps database data and attachment bytes in named volumes and requires secrets to be supplied from the environment rather than committed to Git.
+
+Set the required secrets:
+
+```bash
+export CHATAPP_MYSQL_ROOT_PASSWORD='change-this-root-secret'
+export CHATAPP_DB_PASSWORD='change-this-app-secret'
+```
+
+Start the stack:
+
+```bash
+docker compose up --build -d
+```
+
+The TCP server listens on port `5050`. The JavaFX desktop client can connect to the Docker host using that address and port. Stop the stack with:
+
+```bash
+docker compose down
+```
+
+The server container runs as a non-root user. The Compose database is intended for development/demo environments; production deployments should use managed MySQL, TLS for database traffic where appropriate, an external secret manager, and durable object storage for attachments.
+
 ## Protocol
 
 Every message is encoded as:
@@ -213,6 +238,8 @@ Notifications      S2C_NOTIFICATION
 ```text
 realtime-chat-app/
 ├── .github/workflows/ci.yml
+├── Dockerfile
+├── docker-compose.yml
 ├── pom.xml
 ├── README.md
 ├── CONTRIBUTING.md
