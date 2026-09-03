@@ -41,6 +41,10 @@ public final class DatabaseManager {
             logger.error("Database operation failed: {}", e.getMessage(), e);
             reusable = false;
             throw new RuntimeException("Database operation failed: " + e.getMessage(), e);
+        } catch (RuntimeException e) {
+            logger.error("Database operation failed unexpectedly: {}", e.getMessage(), e);
+            reusable = false;
+            throw e;
         } finally {
             if (conn != null) {
                 if (reusable) {
