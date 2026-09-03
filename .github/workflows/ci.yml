@@ -26,8 +26,10 @@ jobs:
       - name: Verify and package
         run: mvn --batch-mode --no-transfer-progress verify
 
-      - name: Generate server checksum
-        run: sha256sum target/chatapp-server.jar > target/chatapp-server.jar.sha256
+      - name: Generate and verify server checksum
+        run: |
+          sha256sum target/chatapp-server.jar > target/chatapp-server.jar.sha256
+          sha256sum --check target/chatapp-server.jar.sha256
 
       - name: Upload server package
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
