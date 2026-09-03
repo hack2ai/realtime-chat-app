@@ -33,15 +33,21 @@ public final class DatabaseManager {
         }
 
         Connection conn = null;
+        boolean reusable = true;
         try {
             conn = ConnectionPool.getInstance().borrowConnection();
             return operation.apply(conn);
         } catch (SQLException e) {
             logger.error("Database operation failed: {}", e.getMessage(), e);
+            reusable = false;
             throw new RuntimeException("Database operation failed: " + e.getMessage(), e);
         } finally {
             if (conn != null) {
-                ConnectionPool.getInstance().returnConnection(conn);
+                if (reusable) {
+                    ConnectionPool.getInstance().returnConnection(conn);
+                } else {
+                    ConnectionPool.getInstance().discardConnection(conn);
+                }
             }
         }
     }
