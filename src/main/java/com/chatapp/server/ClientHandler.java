@@ -37,6 +37,7 @@ import java.util.OptionalInt;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /** Handles one client's connection lifecycle and protocol dispatch. */
 public class ClientHandler implements Runnable {
@@ -45,6 +46,7 @@ public class ClientHandler implements Runnable {
     private static final String REQUEST_RATE_LIMIT_FAILURE="Too many requests. Please slow down and try again.";
     private static final String UPLOAD_RATE_LIMIT_FAILURE="Too many file uploads. Please try again later.";
     private static final String REGISTRATION_RATE_LIMIT_FAILURE="Too many registration attempts. Please try again later.";
+    private static final int MAX_PROTOCOL_ERRORS=5;
     private static final LoginRateLimiter LOGIN_RATE_LIMITER=new LoginRateLimiter();
     private static final RequestRateLimiter REQUEST_RATE_LIMITER=new RequestRateLimiter(60,Duration.ofSeconds(10),10_000);
     private static final RequestRateLimiter UPLOAD_RATE_LIMITER=new RequestRateLimiter(6,Duration.ofMinutes(1),10_000);
@@ -56,7 +58,7 @@ public class ClientHandler implements Runnable {
     private final AttachmentService attachmentService=new AttachmentService();
     private final MessageCodec codec=new MessageCodec(); private DataInputStream in; private DataOutputStream out;
     private final BlockingQueue<OutboundMessage> outbound=new ArrayBlockingQueue<>(OUTBOUND_QUEUE_CAPACITY);
-    private final AtomicBoolean closed=new AtomicBoolean();
+    private final AtomicBoolean closed=new AtomicBoolean(); private final AtomicInteger protocolErrors=new AtomicInteger();
     private volatile Thread writerThread; private volatile Thread sessionExpiryThread;
     private volatile int authenticatedUserId=-1; private volatile String authenticatedUsername; private volatile String sessionToken;
     private record OutboundMessage(MessageType type,Object payload) {}
@@ -100,7 +102,7 @@ public class ClientHandler implements Runnable {
     void send(MessageType type,Object payload)throws IOException{if(closed.get())throw new IOException("Client connection is closed");if(!outbound.offer(new OutboundMessage(type,payload)))throw new IOException("Client outbound queue is full");}
     void sendAsync(MessageType type,Object payload){if(closed.get()||!outbound.offer(new OutboundMessage(type,payload))){logger.warn("Outbound queue full or client closed for user {}; closing connection",authenticatedUserId);cleanup();}}
     private void writeNow(MessageType type,Object payload)throws IOException{if(out==null)throw new IOException("Client output stream is not initialized");codec.write(out,codec.wrap(type,payload));}
-    private void sendError(String message){try{send(MessageType.S2C_ERROR,new AuthFailedResponse(message));}catch(IOException e){logger.debug("Unable to send error response to {}",socket.getRemoteSocketAddress());}}
+    private void sendError(String message){int errors=protocolErrors.incrementAndGet();try{send(MessageType.S2C_ERROR,new AuthFailedResponse(message));}catch(IOException e){logger.debug("Unable to send error response to {}",socket.getRemoteSocketAddress());return;}if(errors>=MAX_PROTOCOL_ERRORS){logger.info("Closing {} after {} protocol errors",socket.getRemoteSocketAddress(),errors);closeConnection();}}
     public int getAuthenticatedUserId(){return authenticatedUserId;} public String getUsername(){return authenticatedUsername;}
     void closeConnection(){cleanup();}
     private void cleanup(){if(!closed.compareAndSet(false,true))return;int userId=authenticatedUserId;String token=sessionToken;if(userId!=-1){server.deregisterClient(userId,this);authService.logout(token);}authenticatedUserId=-1;authenticatedUsername=null;sessionToken=null;server.handlerClosed(this);Thread watcher=sessionExpiryThread;if(watcher!=null)watcher.interrupt();try{socket.close();}catch(IOException e){logger.debug("Error closing client socket",e);}}
