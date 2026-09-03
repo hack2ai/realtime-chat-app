@@ -26,6 +26,8 @@ services:
       - backend
     init: true
     read_only: true
+    pids_limit: 256
+    stop_grace_period: 10s
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=64m
     security_opt:
