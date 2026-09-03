@@ -5,7 +5,9 @@ import com.chatapp.exception.AuthenticationException;
 import com.chatapp.model.User;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Field;
 import java.time.LocalDateTime;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -32,9 +34,41 @@ class AuthenticationServiceTest {
 
         assertNotNull(result.sessionToken());
         assertFalse(result.sessionToken().isBlank());
+        assertEquals(43, result.sessionToken().length(), "32 random bytes should encode to 43 Base64URL characters");
+        assertTrue(result.sessionToken().matches("[A-Za-z0-9_-]+"));
         assertEquals(user.getId(), service.validateSession(result.sessionToken()));
         assertNotNull(result.expiresAt());
         assertTrue(result.expiresAt().isAfter(LocalDateTime.now()));
+    }
+
+    @Test
+    void sessionStoreContainsOnlyTokenDigests() throws Exception {
+        User user = userWithHash("alice", new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder(10).encode("correct-password"));
+        AuthenticationService service = new AuthenticationService(new InMemoryUserDAO(user));
+
+        AuthenticationService.LoginResult result = service.login("alice", "correct-password");
+
+        Field sessionsField = AuthenticationService.class.getDeclaredField("activeSessions");
+        sessionsField.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        Map<String, ?> sessions = (Map<String, ?>) sessionsField.get(service);
+
+        assertEquals(1, sessions.size());
+        assertFalse(sessions.containsKey(result.sessionToken()), "Raw bearer tokens must never be stored as session-map keys");
+        assertEquals(43, sessions.keySet().iterator().next().length(), "SHA-256 digest should be Base64URL encoded");
+    }
+
+    @Test
+    void successfulLogoutAllowsAccountToLoginAgain() throws Exception {
+        User user = userWithHash("alice", new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder(10).encode("correct-password"));
+        AuthenticationService service = new AuthenticationService(new InMemoryUserDAO(user));
+
+        AuthenticationService.LoginResult first = service.login("alice", "correct-password");
+        service.logout(first.sessionToken());
+        AuthenticationService.LoginResult second = service.login("alice", "correct-password");
+
+        assertNotEquals(first.sessionToken(), second.sessionToken());
+        assertEquals(user.getId(), service.validateSession(second.sessionToken()));
     }
 
     @Test
