@@ -45,7 +45,6 @@ public class ClientHandler implements Runnable {
     private static final String REQUEST_RATE_LIMIT_FAILURE="Too many requests. Please slow down and try again.";
     private static final String UPLOAD_RATE_LIMIT_FAILURE="Too many file uploads. Please try again later.";
     private static final String REGISTRATION_RATE_LIMIT_FAILURE="Too many registration attempts. Please try again later.";
-    private static final String PING_RATE_LIMIT_FAILURE="Too many ping requests. Please slow down and try again.";
     private static final LoginRateLimiter LOGIN_RATE_LIMITER=new LoginRateLimiter();
     private static final RequestRateLimiter REQUEST_RATE_LIMITER=new RequestRateLimiter(60,Duration.ofSeconds(10),10_000);
     private static final RequestRateLimiter UPLOAD_RATE_LIMITER=new RequestRateLimiter(6,Duration.ofMinutes(1),10_000);
@@ -68,7 +67,7 @@ public class ClientHandler implements Runnable {
     private void startWriter(){writerThread=Thread.startVirtualThread(()->{try{while(!closed.get()){OutboundMessage message=outbound.take();if(message.type()==null)continue;writeNow(message.type(),message.payload());}}catch(InterruptedException e){Thread.currentThread().interrupt();}catch(IOException e){if(!closed.get())logger.warn("Output error on {}: {}",socket.getRemoteSocketAddress(),e.getMessage());cleanup();}});}
     private void messageLoop()throws IOException{while(!socket.isClosed()){final Envelope envelope;try{envelope=codec.read(in);}catch(EOFException e){logger.info("Client disconnected: {}",socket.getRemoteSocketAddress());return;}catch(SocketTimeoutException e){if(authenticatedUserId==-1)return;throw e;}catch(RuntimeException e){logger.warn("Invalid protocol message from {}; closing connection: {}",socket.getRemoteSocketAddress(),e.getMessage());return;}if(envelope==null||envelope.getType()==null){sendError("Invalid message envelope.");continue;}try{dispatch(envelope);}catch(Exception e){logger.error("Error handling {} from {}",envelope.getType(),socket.getRemoteSocketAddress(),e);sendError("An internal error occurred processing your request.");}}}
     private void dispatch(Envelope envelope)throws Exception{switch(envelope.getType()){
-        case PING->{if(PING_RATE_LIMITER.allow(buildAddressRateKey()))send(MessageType.PONG,null);else sendError(PING_RATE_LIMIT_FAILURE);}
+        case PING->{if(PING_RATE_LIMITER.allow(buildAddressRateKey()))send(MessageType.PONG,null);}
         case C2S_REGISTER->handleRegister(envelope); case C2S_LOGIN->handleLogin(envelope); case C2S_LOGOUT->handleLogout();
         case C2S_REQUEST_USER_LIST->requireAuth(()->send(MessageType.S2C_USER_LIST,new UserListResponse(chatService.listUsers(authenticatedUserId))));
         case C2S_PRIVATE_MESSAGE->requireAuth(()->handlePrivateMessage(envelope)); case C2S_REQUEST_PRIVATE_HISTORY->requireAuth(()->handlePrivateHistory(envelope));
