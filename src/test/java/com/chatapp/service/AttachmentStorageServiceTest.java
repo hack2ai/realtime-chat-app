@@ -29,10 +29,18 @@ class AttachmentStorageServiceTest {
 
     @Test
     void decodeBase64RejectsEncodedInputAboveLimitBeforeDecoding() {
-        String oversized = "A".repeat(AttachmentStorageService.MAX_FILE_BYTES > 0
-                ? ((AttachmentStorageService.MAX_FILE_BYTES + 2) / 3) * 4 + 1
-                : 1);
+        String oversized = "A".repeat(((AttachmentStorageService.MAX_FILE_BYTES + 2) / 3) * 4 + 1);
 
         assertThrows(ValidationException.class, () -> AttachmentStorageService.decodeBase64(oversized));
+    }
+
+    @Test
+    void decodeBase64RejectsBlankInput() {
+        assertThrows(ValidationException.class, () -> AttachmentStorageService.decodeBase64(" "));
+    }
+
+    @Test
+    void decodeBase64RejectsMalformedInput() {
+        assertThrows(ValidationException.class, () -> AttachmentStorageService.decodeBase64("not-base64!"));
     }
 }
