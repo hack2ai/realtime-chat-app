@@ -71,8 +71,7 @@ public final class ConnectionPool {
             if (conn == null) throw new SQLException("Timed out after " + connectionTimeoutMs + "ms waiting for a database connection.");
         }
         if (!isValid(conn)) {
-            closeQuietly(conn);
-            totalCreated.decrementAndGet();
+            discardConnection(conn);
             return createConnectionSafely();
         }
         return conn;
@@ -109,9 +108,15 @@ public final class ConnectionPool {
     public void returnConnection(Connection conn) {
         if (conn == null) return;
         if (shutdown.get() || !isValid(conn) || !availableConnections.offer(conn)) {
-            closeQuietly(conn);
-            totalCreated.decrementAndGet();
+            discardConnection(conn);
         }
+    }
+
+    /** Permanently removes a broken connection from the pool. */
+    public void discardConnection(Connection conn) {
+        if (conn == null) return;
+        closeQuietly(conn);
+        totalCreated.updateAndGet(current -> Math.max(0, current - 1));
     }
 
     private boolean isValid(Connection conn) {
@@ -130,7 +135,7 @@ public final class ConnectionPool {
         Connection conn;
         while ((conn = availableConnections.poll()) != null) {
             closeQuietly(conn);
-            totalCreated.decrementAndGet();
+            totalCreated.updateAndGet(current -> Math.max(0, current - 1));
         }
         logger.info("Connection pool shut down.");
     }
