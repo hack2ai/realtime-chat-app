@@ -1,11 +1,11 @@
 package com.chatapp.service;
 
-import com.chat2ai.config.AppConfig;
-import com.chat2ai.database.UserDAO;
-import com.chat2ai.exception.AuthenticationException;
-import com.chat2ai.exception.ValidationException;
-import com.chat2ai.model.User;
-import com.chat2ai.util.ValidationUtil;
+import com.chatapp.config.AppConfig;
+import com.chatapp.database.UserDAO;
+import com.chatapp.exception.AuthenticationException;
+import com.chatapp.exception.ValidationException;
+import com.chatapp.model.User;
+import com.chatapp.util.ValidationUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
