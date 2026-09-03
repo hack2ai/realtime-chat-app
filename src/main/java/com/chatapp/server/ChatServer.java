@@ -6,6 +6,7 @@ import com.chatapp.model.dto.ChatDTOs.UserPresenceEvent;
 import com.chatapp.service.AuthenticationService;
 import com.chatapp.service.ChatService;
 import com.chatapp.service.GroupService;
+import com.chatapp.service.RequestRateLimiter;
 import com.chatapp.socket.protocol.MessageType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,6 +16,7 @@ import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
+import java.time.Duration;
 import java.util.Collection;
 import java.util.Map;
 import java.util.Set;
@@ -27,6 +29,8 @@ import java.util.concurrent.TimeUnit;
 /** Main TCP server: accepts connections and dispatches them to client handlers. */
 public class ChatServer {
     private static final Logger logger = LoggerFactory.getLogger(ChatServer.class);
+    private static final RequestRateLimiter CONNECTION_RATE_LIMITER =
+            new RequestRateLimiter(30, Duration.ofSeconds(10), 10_000);
     private final int port;
     private final int maxClients;
     private final String bindAddress;
@@ -67,6 +71,12 @@ public class ChatServer {
         while (running) {
             try {
                 Socket clientSocket = serverSocket.accept();
+                if (!allowConnection(clientSocket)) {
+                    logger.warn("Rejecting connection from {} because the per-IP connection rate limit was exceeded",
+                            clientSocket.getRemoteSocketAddress());
+                    closeQuietly(clientSocket);
+                    continue;
+                }
                 configureSocket(clientSocket);
                 ClientHandler handler = new ClientHandler(clientSocket, this, authenticationService, chatService, groupService);
                 activeHandlers.add(handler);
@@ -83,6 +93,12 @@ public class ChatServer {
                 if (running) logger.error("Error accepting client connection", e);
             }
         }
+    }
+
+    private boolean allowConnection(Socket socket) {
+        InetAddress address = socket.getInetAddress();
+        String key = address == null ? "ip:unknown" : "ip:" + address.getHostAddress();
+        return CONNECTION_RATE_LIMITER.allow(key);
     }
 
     private void configureSocket(Socket socket) throws SocketException {
