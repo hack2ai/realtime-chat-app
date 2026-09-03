@@ -82,4 +82,13 @@ class RequestRateLimiterTest {
             executor.shutdownNow();
         }
     }
+
+    @Test
+    void sizeRemovesExpiredWindows() throws Exception {
+        RequestRateLimiter limiter = new RequestRateLimiter(1, Duration.ofMillis(25), 10);
+        assertTrue(limiter.allow("short-lived"));
+        assertEquals(1, limiter.size());
+        Thread.sleep(40);
+        assertEquals(0, limiter.size());
+    }
 }
