@@ -10,7 +10,7 @@
 
 **Phase 6 — production hardening and deployment readiness.**
 
-The application provides secure authentication, real-time private messaging, presence and typing events, delivery/read states, paginated history, group chat, private file sharing, message search, MySQL persistence, a responsive JavaFX desktop client, automated dependency updates, container packaging, CI/CD checks, and configurable TLS transport.
+The application provides secure authentication, real-time private messaging, presence and typing events, delivery/read states, paginated history, group chat, private file sharing, message search, MySQL persistence, a responsive JavaFX desktop client, automated dependency updates, container packaging, SBOM generation, CI/CD checks, and configurable TLS transport.
 
 ## Highlights
 
@@ -34,6 +34,9 @@ The application provides secure authentication, real-time private messaging, pre
 - Environment-variable and JVM-property configuration overrides
 - JUnit protocol tests and GitHub Actions CI
 - Docker image and Docker Compose deployment support
+- Non-root container execution with read-only server filesystem and dropped Linux capabilities
+- OCI image metadata stamped with source, revision, license, and release version
+- CycloneDX SBOM generation with checksum verification and release publication
 - Weekly Dependabot updates for Maven dependencies, GitHub Actions, and Docker
 
 ## Architecture
@@ -125,6 +128,10 @@ Current defensive controls include:
 - secrets can be supplied through environment variables or JVM system properties
 - runtime attachment data is excluded from Git
 - optional TLS for the application TCP transport
+- non-root server container with dropped Linux capabilities and read-only root filesystem
+- bounded container logs in Docker Compose
+- OCI image metadata for traceability
+- CycloneDX SBOM generation and checksum verification
 
 **Important:** this is a portfolio/learning project, not a security-audited production service. A production deployment still needs certificate lifecycle management, secret rotation, hardened database permissions, monitoring, threat modeling, malware/content scanning for uploads, and security testing.
 
@@ -236,7 +243,7 @@ The server container runs as a non-root user. The Compose database is intended f
 
 ### Automated releases
 
-Pushing a semantic version tag such as `v1.1.0` triggers the release workflow. It verifies the Maven build, publishes the runnable server JAR and SHA-256 checksum to a GitHub Release, and builds and pushes the tagged and `latest` server image to GHCR.
+Pushing a semantic version tag such as `v1.1.0` triggers the release workflow. It verifies the Maven build, validates the runnable server JAR and CycloneDX SBOM, publishes the versioned server JAR, SHA-256 checksums, and SBOM to a GitHub Release, and builds and pushes the tagged and `latest` server image to GHCR after validating its non-root identity, entrypoint, healthcheck, stop signal, filesystem policy, and OCI metadata.
 
 ## Protocol
 
@@ -304,7 +311,7 @@ realtime-chat-app/
 - [x] Phase 3 — group chat and membership controls
 - [x] Phase 4 — JavaFX desktop client
 - [x] Phase 5 — file sharing and message search
-- [x] Phase 6 — notifications, deployment packaging, CI/CD hardening, rate limiting, dependency automation, and configurable TLS
+- [x] Phase 6 — notifications, deployment packaging, CI/CD hardening, rate limiting, dependency automation, configurable TLS, container hardening, SBOM generation, and release verification
 - [ ] Phase 7 — production observability, managed storage, certificate lifecycle automation, and external security testing
 
 ## Development
@@ -315,7 +322,7 @@ Run the complete verification suite before submitting changes:
 mvn verify
 ```
 
-GitHub Actions runs the same Maven verification on pushes and pull requests targeting `main`. CodeQL analysis and container builds are also automated, and tagged releases publish versioned server packages.
+GitHub Actions runs the same Maven verification on pushes and pull requests targeting `main`. CodeQL analysis, dependency review, SBOM checks, and container builds are also automated, and tagged releases publish versioned server packages and a verified SBOM.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for project conventions.
 
