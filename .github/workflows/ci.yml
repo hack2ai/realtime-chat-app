@@ -8,6 +8,8 @@ on:
 
 permissions:
   contents: read
+  attestations: write
+  id-token: write
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -50,6 +52,11 @@ jobs:
         run: |
           sha256sum target/bom.json > target/bom.json.sha256
           sha256sum --check target/bom.json.sha256
+
+      - name: Attest server build artifact
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-path: target/chatapp-server.jar
 
       - name: Upload server package
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
