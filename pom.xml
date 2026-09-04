@@ -115,6 +115,9 @@
                                 <requireJavaVersion>
                                     <version>[21,22)</version>
                                 </requireJavaVersion>
+                                <requireMavenVersion>
+                                    <version>[3.8,4)</version>
+                                </requireMavenVersion>
                             </rules>
                         </configuration>
                     </execution>
