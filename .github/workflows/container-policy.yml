@@ -28,3 +28,14 @@ jobs:
             echo 'Docker base images must not use the mutable :latest tag.'
             exit 1
           fi
+
+      - name: Require non-root runtime user
+        run: |
+          if ! grep -nE '^USER\s+chatapp\s*$' Dockerfile; then
+            echo 'The final Docker image must declare USER chatapp.'
+            exit 1
+          fi
+          if grep -nE '^USER\s+root\s*$' Dockerfile; then
+            echo 'Dockerfile must not explicitly switch the runtime back to root.'
+            exit 1
+          fi
