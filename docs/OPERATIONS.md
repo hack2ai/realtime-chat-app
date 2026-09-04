@@ -115,6 +115,20 @@ Do not delete volumes as part of routine troubleshooting. Confirm backup/restore
 6. Confirm the server TCP port is reachable and inspect server logs for startup errors.
 7. Validate a representative login and private-message flow.
 
+## Release artifact integrity and provenance
+
+Use a specific release tag rather than the mutable `latest` image tag when selecting a deployment version.
+
+For the server JAR, download the matching `.sha256` file from the GitHub Release and verify the checksum before deployment:
+
+```bash
+sha256sum --check chatapp-server-v1.1.0.jar.sha256
+```
+
+Release artifacts also include the CycloneDX SBOM and its SHA-256 checksum. Keep the JAR, SBOM, and checksum files together when archiving a deployment record.
+
+For the container image, prefer the immutable digest recorded in the release's `chatapp-container-<version>.digest` asset over a mutable tag. The release workflow publishes build provenance for the server artifact, SBOM, and container image.
+
 ## Rollback procedure
 
 For a bad application release, redeploy the previous known-good Git tag and rebuild the server image from that exact revision. Preserve the database and attachment volumes unless the release explicitly includes an incompatible schema migration with a documented rollback plan.
