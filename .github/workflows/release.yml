@@ -8,6 +8,8 @@ on:
 permissions:
   contents: write
   packages: write
+  attestations: write
+  id-token: write
 
 concurrency:
   group: release-publish
@@ -135,6 +137,24 @@ jobs:
           IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
           docker push "${IMAGE_NAME}:${RELEASE_VERSION}"
           docker push "${IMAGE_NAME}:latest"
+
+      - name: Attest release container provenance
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          image="${IMAGE_NAME}:${RELEASE_VERSION}"
+          digest=$(docker image inspect "$image" --format '{{index .RepoDigests 0}}' | sed 's/^.*@//')
+          test -n "$digest"
+          echo "IMAGE_DIGEST=$digest" >> "$GITHUB_ENV"
+
+      - name: Publish release container provenance
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-name: ghcr.io/${{ github.repository }}
+          subject-digest: ${{ env.IMAGE_DIGEST }}
+          push-to-registry: true
 
       - name: Create GitHub release
         env:
