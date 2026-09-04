@@ -151,8 +151,10 @@ jobs:
           CHATAPP_DB_PASSWORD: ci-app-password
         run: |
           for attempt in {1..24}; do
-            status=$(docker compose ps --format json | jq -r 'select(.Service == "server") | .Health // "unknown"')
-            if [ "$status" = "healthy" ]; then
+            statuses=$(docker compose ps --format json)
+            db_status=$(printf '%s\n' "$statuses" | jq -r 'select(.Service == "db") | .Health // "unknown"')
+            server_status=$(printf '%s\n' "$statuses" | jq -r 'select(.Service == "server") | .Health // "unknown"')
+            if [ "$db_status" = "healthy" ] && [ "$server_status" = "healthy" ]; then
               exit 0
             fi
             sleep 5
