@@ -170,6 +170,30 @@ jobs:
           test "$(docker image inspect "$image" --format '{{.Config.WorkingDir}}')" = "/app"
           test "$(docker image inspect "$image" --format '{{json .Config.Volumes}}')" = '{"/app/data/attachments":{}}'
 
+      - name: Verify release image runs as non-root user
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{.Config.User}}')" = "chatapp"
+
+      - name: Verify release image entrypoint contract
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{json .Config.Entrypoint}}')" = '["java","-jar","/app/chatapp-server.jar"]'
+
+      - name: Verify release image port contract
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{json .Config.ExposedPorts}}')" = '{"5050/tcp":{}}'
+
       - name: Push release container
         env:
           IMAGE_NAME: ghcr.io/${{ github.repository }}
