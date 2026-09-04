@@ -30,6 +30,15 @@ jobs:
             exit 1
           fi
 
+      - name: Verify tracked secret material is absent
+        run: |
+          forbidden=$(git ls-files | grep -E '(^|/)(\.env|config\.properties|[^/]+\.(p12|jks|key|pem))$' || true)
+          if [ -n "$forbidden" ]; then
+            echo 'Sensitive configuration or key material must not be tracked:'
+            printf '%s\n' "$forbidden"
+            exit 1
+          fi
+
       - name: Set up JDK 21
         uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
         with:
