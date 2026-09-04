@@ -66,7 +66,23 @@ jobs:
           RELEASE_VERSION: ${{ github.ref_name }}
         run: |
           IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
-          docker build --pull --tag "${IMAGE_NAME}:${RELEASE_VERSION}" --tag "${IMAGE_NAME}:latest" .
+          docker build --pull \
+            --build-arg VCS_REF="${{ github.sha }}" \
+            --build-arg VERSION="${RELEASE_VERSION}" \
+            --tag "${IMAGE_NAME}:${RELEASE_VERSION}" \
+            --tag "${IMAGE_NAME}:latest" .
+
+      - name: Verify release image metadata
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          image="${IMAGE_NAME}:${RELEASE_VERSION}"
+          test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.source"}}')" = "https://github.com/hack2ai/realtime-chat-app"
+          test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.licenses"}}')" = "MIT"
+          test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "${{ github.sha }}"
+          test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.version"}}')" = "${RELEASE_VERSION}"
 
       - name: Verify release image runs as non-root
         env:
