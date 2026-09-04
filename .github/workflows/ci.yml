@@ -131,6 +131,8 @@ jobs:
       - name: Verify server image metadata
         run: |
           image=realtime-chat-app:${{ github.sha }}
+          test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.title"}}')" = "Real-Time Chat Application"
+          test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.description"}}')" = "Secure Java 21 TCP chat server with MySQL persistence and optional TLS"
           test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.source"}}')" = "https://github.com/hack2ai/realtime-chat-app"
           test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.licenses"}}')" = "MIT"
           test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "${{ github.sha }}"
