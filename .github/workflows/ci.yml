@@ -210,6 +210,10 @@ jobs:
           docker inspect "$container_id" | jq -e '.[0].HostConfig.SecurityOpt | index("no-new-privileges:true") != null' >/dev/null
           docker inspect "$container_id" | jq -e '.[0].HostConfig.PidsLimit == 256' >/dev/null
 
+      - name: Verify attachment volume is writable
+        run: |
+          docker compose exec -T server sh -c 'test -w /app/data/attachments && touch /app/data/attachments/.ci-write-test && rm /app/data/attachments/.ci-write-test'
+
       - name: Verify server TCP port is reachable
         run: |
           timeout 5 bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/5050'
