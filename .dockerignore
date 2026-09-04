@@ -8,3 +8,11 @@ target
 *.log
 .DS_Store
 Thumbs.db
+.env
+.env.*
+config.properties
+*.p12
+*.pfx
+*.jks
+*.key
+*.pem
