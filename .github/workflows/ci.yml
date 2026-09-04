@@ -71,6 +71,22 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Verify CODEOWNERS coverage
+        run: |
+          test -s .github/CODEOWNERS
+          grep -Fqx '* @hack2ai' .github/CODEOWNERS
+          grep -Fqx '/src/main/java/com/chatapp/server/ @hack2ai' .github/CODEOWNERS
+          grep -Fqx '/src/main/java/com/chatapp/service/ @hack2ai' .github/CODEOWNERS
+          grep -Fqx '/src/main/java/com/chatapp/database/ @hack2ai' .github/CODEOWNERS
+          grep -Fqx '/src/main/java/com/chatapp/socket/ @hack2ai' .github/CODEOWNERS
+          grep -Fqx '/src/main/resources/sql/ @hack2ai' .github/CODEOWNERS
+          grep -Fqx '/.github/workflows/ @hack2ai' .github/CODEOWNERS
+          grep -Fqx '/.github/dependabot.yml @hack2ai' .github/CODEOWNERS
+          grep -Fqx '/Dockerfile @hack2ai' .github/CODEOWNERS
+          grep -Fqx '/docker-compose.yml @hack2ai' .github/CODEOWNERS
+          grep -Fqx '/pom.xml @hack2ai' .github/CODEOWNERS
+          grep -Fqx '/SECURITY.md @hack2ai' .github/CODEOWNERS
+
       - name: Validate Docker Compose configuration
         env:
           CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
