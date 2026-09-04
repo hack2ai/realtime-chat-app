@@ -44,6 +44,7 @@ public class ChatServer {
     private final AuthenticationService authService;
     private final ChatService chatService = new ChatService();
     private final GroupService groupService = new GroupService();
+    private final ServerMetrics metrics = new ServerMetrics();
     private final ConcurrentHashMap<Integer, ClientHandler> connectedClients = new ConcurrentHashMap<>();
     private final Set<ClientHandler> activeHandlers = ConcurrentHashMap.newKeySet();
     private final ThreadPoolExecutor clientThreadPool;
@@ -98,9 +99,14 @@ public class ChatServer {
 
     private void logRuntimeMetrics() {
         if (!running) return;
-        logger.info("Server metrics: connectedUsers={}, activeHandlers={}, poolActive={}, poolSize={}, queueDepth={}, completedHandlers={}",
+        ServerMetrics.Snapshot snapshot = metrics.snapshot();
+        logger.info("Server metrics: connectedUsers={}, activeHandlers={}, acceptedConnections={}, rejectedConnections={}, requests={}, protocolErrors={}, poolActive={}, poolSize={}, queueDepth={}, completedHandlers={}",
                 connectedClients.size(),
                 activeHandlers.size(),
+                snapshot.acceptedConnections(),
+                snapshot.rejectedConnections(),
+                snapshot.requests(),
+                snapshot.protocolErrors(),
                 clientThreadPool.getActiveCount(),
                 clientThreadPool.getPoolSize(),
                 clientThreadPool.getQueue().size(),
@@ -157,6 +163,7 @@ public class ChatServer {
                 clientSocket = serverSocket.accept();
                 configureSocket(clientSocket);
                 if (!allowConnection(clientSocket)) {
+                    metrics.recordRejectedConnection();
                     logger.warn("Rejecting connection from {} because connection rate limit was exceeded", clientSocket.getRemoteSocketAddress());
                     closeQuietly(clientSocket);
                     clientSocket = null;
@@ -166,8 +173,10 @@ public class ChatServer {
                 activeHandlers.add(handler);
                 try {
                     clientThreadPool.execute(handler);
+                    metrics.recordAcceptedConnection();
                     clientSocket = null;
                 } catch (RejectedExecutionException e) {
+                    metrics.recordRejectedConnection();
                     activeHandlers.remove(handler);
                     logger.warn("Rejecting connection from {} because the server is at capacity", clientSocket.getRemoteSocketAddress());
                     closeQuietly(clientSocket);
@@ -218,6 +227,9 @@ public class ChatServer {
     }
 
     void handlerClosed(ClientHandler handler) { activeHandlers.remove(handler); }
+
+    public void recordRequest() { metrics.recordRequest(); }
+    public void recordProtocolError() { metrics.recordProtocolError(); }
 
     private void broadcastPresence(int userId, ClientHandler source, boolean online) {
         UserPresenceEvent event = new UserPresenceEvent(userId, source.getUsername(), online ? "ONLINE" : "OFFLINE");
