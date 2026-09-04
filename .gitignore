@@ -9,6 +9,16 @@ target/
 
 # Local configuration / secrets
 src/main/resources/config.properties
+config.properties
+.env
+.env.*
+
+# Local certificate / key material
+*.p12
+*.pfx
+*.jks
+*.key
+*.pem
 
 # Runtime attachment data — never commit user files
 /data/
@@ -36,4 +46,3 @@ desktop.ini
 logs/
 *.bak
 *.tmp
-.env
