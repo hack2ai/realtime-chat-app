@@ -24,6 +24,7 @@
         <junit.version>5.10.2</junit.version>
         <slf4j.version>2.0.12</slf4j.version>
         <commons.logging.version>1.3.5</commons.logging.version>
+        <cyclonedx.maven.plugin.version>2.9.3</cyclonedx.maven.plugin.version>
 
         <server.mainClass>com.chatapp.server.ChatServer</server.mainClass>
         <client.mainClass>com.chatapp.client.ChatClientApp</client.mainClass>
@@ -156,6 +157,21 @@
                             </transformers>
                             <finalName>chatapp-server</finalName>
                         </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <groupId>org.cyclonedx</groupId>
+                <artifactId>cyclonedx-maven-plugin</artifactId>
+                <version>${cyclonedx.maven.plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>generate-sbom</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>makeAggregateBom</goal>
+                        </goals>
                     </execution>
                 </executions>
             </plugin>
