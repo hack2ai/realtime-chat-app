@@ -152,26 +152,32 @@ public class ChatServer {
 
     private void acceptLoop() {
         while (running) {
+            Socket clientSocket = null;
             try {
-                Socket clientSocket = serverSocket.accept();
+                clientSocket = serverSocket.accept();
                 configureSocket(clientSocket);
                 if (!allowConnection(clientSocket)) {
                     logger.warn("Rejecting connection from {} because connection rate limit was exceeded", clientSocket.getRemoteSocketAddress());
                     closeQuietly(clientSocket);
+                    clientSocket = null;
                     continue;
                 }
                 ClientHandler handler = new ClientHandler(clientSocket, this, authService, chatService, groupService);
                 activeHandlers.add(handler);
                 try {
                     clientThreadPool.execute(handler);
+                    clientSocket = null;
                 } catch (RejectedExecutionException e) {
                     activeHandlers.remove(handler);
                     logger.warn("Rejecting connection from {} because the server is at capacity", clientSocket.getRemoteSocketAddress());
                     closeQuietly(clientSocket);
+                    clientSocket = null;
                 }
             } catch (SocketException e) {
+                closeQuietly(clientSocket);
                 if (running) logger.error("Server socket error while accepting clients", e);
             } catch (IOException e) {
+                closeQuietly(clientSocket);
                 if (running) logger.error("Error accepting client connection", e);
             }
         }
