@@ -54,6 +54,12 @@ jobs:
           test -s target/bom.json
           jq -e '.bomFormat == "CycloneDX" and (.specVersion | type == "string")' target/bom.json >/dev/null
 
+      - name: Validate Docker Compose configuration
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: docker compose config --quiet
+
       - name: Prepare release assets
         env:
           RELEASE_VERSION: ${{ github.ref_name }}
