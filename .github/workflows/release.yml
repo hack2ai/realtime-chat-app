@@ -76,6 +76,22 @@ jobs:
           IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
           test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{json .Config.Entrypoint}}')" = '["java","-jar","/app/chatapp-server.jar"]'
 
+      - name: Verify release image healthcheck
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{json .Config.Healthcheck.Test}}')" = '["CMD-SHELL","test -f /tmp/chatapp.ready"]'
+
+      - name: Verify release image stop signal
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{.Config.StopSignal}}')" = "SIGTERM"
+
       - name: Push release container
         env:
           IMAGE_NAME: ghcr.io/${{ github.repository }}
