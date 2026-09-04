@@ -36,10 +36,20 @@ jobs:
           test -s target/chatapp-server.jar
           unzip -p target/chatapp-server.jar META-INF/MANIFEST.MF | grep -Fqx 'Main-Class: com.chatapp.server.ChatServer'
 
+      - name: Verify generated SBOM
+        run: |
+          test -s target/bom.json
+          jq -e '.bomFormat == "CycloneDX" and (.specVersion | type == "string")' target/bom.json >/dev/null
+
       - name: Generate and verify server checksum
         run: |
           sha256sum target/chatapp-server.jar > target/chatapp-server.jar.sha256
           sha256sum --check target/chatapp-server.jar.sha256
+
+      - name: Generate and verify SBOM checksum
+        run: |
+          sha256sum target/bom.json > target/bom.json.sha256
+          sha256sum --check target/bom.json.sha256
 
       - name: Upload server package
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -48,6 +58,16 @@ jobs:
           path: |
             target/chatapp-server.jar
             target/chatapp-server.jar.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: chatapp-sbom-${{ github.sha }}
+          path: |
+            target/bom.json
+            target/bom.json.sha256
           if-no-files-found: error
           retention-days: 14
 
