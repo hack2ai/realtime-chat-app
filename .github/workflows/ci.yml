@@ -71,3 +71,7 @@ jobs:
       - name: Verify server image healthcheck
         run: |
           test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{json .Config.Healthcheck.Test}}')" = '["CMD-SHELL","test -f /tmp/chatapp.ready"]'
+
+      - name: Verify server image stop signal
+        run: |
+          test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{.Config.StopSignal}}')" = "SIGTERM"
