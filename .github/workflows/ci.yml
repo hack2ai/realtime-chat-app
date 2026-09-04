@@ -68,6 +68,12 @@ jobs:
           printf '%s\n' "$config" | jq -e '.services.server.cap_drop == ["ALL"]' >/dev/null
           printf '%s\n' "$config" | jq -e '.services.server.security_opt == ["no-new-privileges:true"]' >/dev/null
           printf '%s\n' "$config" | jq -e '.networks.backend.internal == true' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.logging.driver == "json-file"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.logging.options["max-size"] == "10m"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.logging.options["max-file"] == "3"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.logging.driver == "json-file"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.logging.options["max-size"] == "10m"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.logging.options["max-file"] == "3"' >/dev/null
 
       - name: Build server container image
         run: docker build --pull --tag realtime-chat-app:${{ github.sha }} .
