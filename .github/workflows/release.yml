@@ -57,6 +57,11 @@ jobs:
           sha256sum --check "chatapp-server-${RELEASE_VERSION}.jar.sha256"
           sha256sum --check "chatapp-sbom-${RELEASE_VERSION}.json.sha256"
 
+      - name: Attest release server artifact
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-path: "chatapp-server-${{ github.ref_name }}.jar"
+
       - name: Login to GitHub Container Registry
         env:
           GH_TOKEN: ${{ github.token }}
