@@ -40,6 +40,25 @@ jobs:
             exit 1
           fi
 
+      - name: Require safe runtime directives
+        run: |
+          if ! grep -nE '^STOPSIGNAL\s+SIGTERM\s*$' Dockerfile; then
+            echo 'Dockerfile must declare STOPSIGNAL SIGTERM for graceful server shutdown.'
+            exit 1
+          fi
+          if ! grep -nE '^HEALTHCHECK\s+' Dockerfile; then
+            echo 'Dockerfile must declare a HEALTHCHECK.'
+            exit 1
+          fi
+          if ! grep -nE '^VOLUME\s+\[' Dockerfile; then
+            echo 'Dockerfile must declare a volume for runtime attachment storage.'
+            exit 1
+          fi
+          if ! grep -nF 'ENTRYPOINT ["java", "-jar", "/app/chatapp-server.jar"]' Dockerfile; then
+            echo 'Dockerfile must start the packaged server JAR with the expected Java entrypoint.'
+            exit 1
+          fi
+
       - name: Reject remote Dockerfile fetches and piped installers
         run: |
           if grep -nE '^\s*ADD\s+https?://|\b(curl|wget)[[:space:]].*\|[[:space:]]*(sh|bash)([[:space:]]|$)' Dockerfile; then
