@@ -85,7 +85,7 @@ public final class AppConfig {
         return "jdbc:mysql://" + getDbHost() + ":" + getDbPort() + "/" + getDbName()
                 + "?useSSL=" + isDbUseSsl()
                 + "&allowPublicKeyRetrieval=" + isDbAllowPublicKeyRetrieval()
-                + "&serverTimezone=UTC&characterEncoding=utf8mb4&useUnicode=true";
+                + "&serverTimezone=UTC&characterEncoding=UTF-8&useUnicode=true";
     }
     public static int getServerPort() { return requirePort("server.port"); }
     public static String getServerBindAddress() { return require("server.bindAddress"); }
