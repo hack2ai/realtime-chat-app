@@ -256,6 +256,40 @@ jobs:
         run: |
           timeout 5 bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/5050'
 
+      - name: Smoke test framed PING/PONG protocol
+        run: |
+          python3 - <<'PY'
+          import json
+          import socket
+          import struct
+          import time
+
+          request = json.dumps({
+              "type": "PING",
+              "payload": None,
+              "timestamp": int(time.time() * 1000),
+          }, separators=(",", ":")).encode("utf-8")
+
+          with socket.create_connection(("127.0.0.1", 5050), timeout=5) as sock:
+              sock.sendall(struct.pack(">i", len(request)) + request)
+              header = sock.recv(4)
+              if len(header) != 4:
+                  raise SystemExit("server returned an incomplete response frame")
+              length = struct.unpack(">i", header)[0]
+              if length <= 0 or length > 8 * 1024 * 1024:
+                  raise SystemExit(f"invalid response frame length: {length}")
+              response = b""
+              while len(response) < length:
+                  chunk = sock.recv(length - len(response))
+                  if not chunk:
+                      raise SystemExit("server closed the connection before the response was complete")
+                  response += chunk
+
+          envelope = json.loads(response.decode("utf-8"))
+          if envelope.get("type") != "PONG":
+              raise SystemExit(f"expected PONG response, received: {envelope.get('type')!r}")
+          PY
+
       - name: Verify server filesystem is read-only
         env:
           CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
