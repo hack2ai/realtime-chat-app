@@ -19,5 +19,6 @@ RUN mkdir -p /app/data/attachments && useradd --system --create-home --uid 10001
 USER chatapp
 STOPSIGNAL SIGTERM
 EXPOSE 5050
+VOLUME ["/app/data/attachments"]
 HEALTHCHECK --interval=10s --timeout=3s --retries=5 --start-period=10s CMD test -f /tmp/chatapp.ready
 ENTRYPOINT ["java", "-jar", "/app/chatapp-server.jar"]
