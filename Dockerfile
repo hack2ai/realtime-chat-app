@@ -7,8 +7,9 @@ RUN mvn --batch-mode --no-transfer-progress -DskipTests package
 FROM eclipse-temurin:21-jre
 WORKDIR /app
 COPY --from=build /workspace/target/chatapp-server.jar /app/chatapp-server.jar
-RUN mkdir -p /app/data/attachments && useradd --system --create-home --uid 10001 chatapp && chown -R chatapp:chatapp /app
+RUN mkdir -p /app/data/attachments && useradd --system --create-home --uid 10001 chatapp && chown -R chatapp:chatapp /app/data
 USER chatapp
 STOPSIGNAL SIGTERM
 EXPOSE 5050
+HEALTHCHECK --interval=10s --timeout=3s --retries=5 --start-period=10s CMD test -f /tmp/chatapp.ready
 ENTRYPOINT ["java", "-jar", "/app/chatapp-server.jar"]
