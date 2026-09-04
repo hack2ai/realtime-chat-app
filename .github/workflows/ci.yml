@@ -83,7 +83,7 @@ jobs:
       - name: Verify server image runs as non-root
         run: |
           test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{.Config.User}}')" = "chatapp"
-          test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{.Config.User}}' | xargs docker run --rm --entrypoint id realtime-chat-app:${{ github.sha }} -u)" = "uid=10001(chatapp) gid=10001(chatapp) groups=10001(chatapp)"
+          test "$(docker run --rm --entrypoint id realtime-chat-app:${{ github.sha }} -u)" = "10001"
 
       - name: Verify server image entrypoint
         run: |
