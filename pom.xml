@@ -119,6 +119,9 @@
                                 <requireMavenVersion>
                                     <version>[3.8,4)</version>
                                 </requireMavenVersion>
+                                <requireReleaseDeps>
+                                    <message>Release builds must not depend on SNAPSHOT artifacts.</message>
+                                </requireReleaseDeps>
                             </rules>
                         </configuration>
                     </execution>
