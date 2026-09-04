@@ -99,7 +99,19 @@ jobs:
           printf '%s\n' "$config" | jq -e '.services.db.logging.options["max-file"] == "3"' >/dev/null
 
       - name: Build server container image
-        run: docker build --pull --tag realtime-chat-app:${{ github.sha }} .
+        run: |
+          docker build --pull \
+            --build-arg VCS_REF="${{ github.sha }}" \
+            --build-arg VERSION="${{ github.sha }}" \
+            --tag realtime-chat-app:${{ github.sha }} .
+
+      - name: Verify server image metadata
+        run: |
+          image=realtime-chat-app:${{ github.sha }}
+          test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.source"}}')" = "https://github.com/hack2ai/realtime-chat-app"
+          test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.licenses"}}')" = "MIT"
+          test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "${{ github.sha }}"
+          test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.version"}}')" = "${{ github.sha }}"
 
       - name: Verify server image runs as non-root
         run: |
