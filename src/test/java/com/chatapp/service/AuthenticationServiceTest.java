@@ -232,6 +232,23 @@ class AuthenticationServiceTest {
         assertThrows(AuthenticationException.class, () -> service.validateSession(null));
     }
 
+    @Test
+    void oversizedSessionTokenIsRejectedBeforeDigesting() {
+        AuthenticationService service = new AuthenticationService(new InMemoryUserDAO(null));
+
+        AuthenticationException error = assertThrows(AuthenticationException.class,
+                () -> service.validateSession("x".repeat(65)));
+
+        assertEquals("Session is invalid or has expired. Please log in again.", error.getMessage());
+    }
+
+    @Test
+    void oversizedLogoutTokenIsIgnored() {
+        AuthenticationService service = new AuthenticationService(new InMemoryUserDAO(null));
+
+        assertDoesNotThrow(() -> service.logout("x".repeat(65)));
+    }
+
     private static User userWithHash(String username, String hash) {
         User user = new User(username, username + "@example.com", hash);
         user.setId(42);
