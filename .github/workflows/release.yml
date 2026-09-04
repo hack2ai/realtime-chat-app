@@ -67,6 +67,7 @@ jobs:
         run: |
           IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
           test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{.Config.User}}')" = "chatapp"
+          test "$(docker run --rm --entrypoint id "${IMAGE_NAME}:${RELEASE_VERSION}" -u)" = "10001"
 
       - name: Verify release image entrypoint
         env:
