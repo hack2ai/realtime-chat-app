@@ -39,6 +39,26 @@ jobs:
             exit 1
           fi
 
+      - name: Verify Docker build context excludes sensitive files
+        run: |
+          required_patterns=(
+            '.git'
+            '.env'
+            '.env.*'
+            'config.properties'
+            '*.p12'
+            '*.pfx'
+            '*.jks'
+            '*.key'
+            '*.pem'
+          )
+          for pattern in "${required_patterns[@]}"; do
+            if ! grep -Fqx "$pattern" .dockerignore; then
+              echo "Missing required .dockerignore exclusion: $pattern"
+              exit 1
+            fi
+          done
+
       - name: Verify unbounded executor usage remains absent
         run: |
           if git grep -nE 'Executors\.newCachedThreadPool' -- 'src/main/java'; then
