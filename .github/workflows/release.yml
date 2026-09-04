@@ -47,7 +47,7 @@ jobs:
       - name: Verify runnable server package
         run: |
           test -s target/chatapp-server.jar
-          unzip -p target/chatapp-server.jar META-INF/MANIFEST.MF | grep -Eq '^Main-Class: com\\.chatapp\\.server\\.ChatServer[[:space:]]*$'
+          unzip -p target/chatapp-server.jar META-INF/MANIFEST.MF | grep -Eq '^Main-Class: com\.chatapp\.server\.ChatServer[[:space:]]*$'
 
       - name: Verify generated SBOM
         run: |
