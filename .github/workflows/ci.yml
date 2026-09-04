@@ -97,11 +97,13 @@ jobs:
           sha256sum --check target/bom.json.sha256
 
       - name: Attest server build artifact
+        if: github.event_name != 'pull_request'
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
         with:
           subject-path: target/chatapp-server.jar
 
       - name: Attest generated SBOM
+        if: github.event_name != 'pull_request'
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
         with:
           subject-path: target/bom.json
