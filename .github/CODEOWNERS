@@ -1,0 +1,12 @@
+# Default owner for repository changes.
+* @hack2ai
+
+# Security-sensitive application and deployment configuration.
+/src/main/java/com/chatapp/server/ @hack2ai
+/src/main/java/com/chatapp/service/ @hack2ai
+/src/main/java/com/chatapp/database/ @hack2ai
+/src/main/java/com/chatapp/socket/ @hack2ai
+/.github/workflows/ @hack2ai
+/Dockerfile @hack2ai
+/docker-compose.yml @hack2ai
+/SECURITY.md @hack2ai
