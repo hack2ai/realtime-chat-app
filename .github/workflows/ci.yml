@@ -34,7 +34,7 @@ jobs:
       - name: Verify runnable server package
         run: |
           test -s target/chatapp-server.jar
-          unzip -p target/chatapp-server.jar META-INF/MANIFEST.MF | grep -Eq '^Main-Class: com\.chatapp\.server\.ChatServer[[:space:]]*$'
+          unzip -p target/chatapp-server.jar META-INF/MANIFEST.MF | grep -Eq '^Main-Class: com\\.chatapp\\.server\\.ChatServer[[:space:]]*$'
 
       - name: Generate and verify server checksum
         run: |
@@ -83,6 +83,7 @@ jobs:
       - name: Verify server image runs as non-root
         run: |
           test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{.Config.User}}')" = "chatapp"
+          test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{.Config.User}}' | xargs docker run --rm --entrypoint id realtime-chat-app:${{ github.sha }} -u)" = "uid=10001(chatapp) gid=10001(chatapp) groups=10001(chatapp)"
 
       - name: Verify server image entrypoint
         run: |
