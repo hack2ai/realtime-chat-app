@@ -117,6 +117,16 @@ jobs:
           IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
           test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{.Config.StopSignal}}')" = "SIGTERM"
 
+      - name: Verify release image filesystem policy
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          image="${IMAGE_NAME}:${RELEASE_VERSION}"
+          test "$(docker image inspect "$image" --format '{{.Config.WorkingDir}}')" = "/app"
+          test "$(docker image inspect "$image" --format '{{json .Config.Volumes}}')" = '{"/app/data/attachments":{}}'
+
       - name: Push release container
         env:
           IMAGE_NAME: ghcr.io/${{ github.repository }}
