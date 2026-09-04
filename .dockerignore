@@ -6,6 +6,8 @@
 target
 /data
 *.log
+*.md
+LICENSE
 .DS_Store
 Thumbs.db
 .env
