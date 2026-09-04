@@ -6,7 +6,10 @@
 /src/main/java/com/chatapp/service/ @hack2ai
 /src/main/java/com/chatapp/database/ @hack2ai
 /src/main/java/com/chatapp/socket/ @hack2ai
+/src/main/resources/sql/ @hack2ai
 /.github/workflows/ @hack2ai
+/.github/dependabot.yml @hack2ai
 /Dockerfile @hack2ai
 /docker-compose.yml @hack2ai
+/pom.xml @hack2ai
 /SECURITY.md @hack2ai
