@@ -39,13 +39,21 @@ jobs:
           test -s target/chatapp-server.jar
           unzip -p target/chatapp-server.jar META-INF/MANIFEST.MF | grep -Eq '^Main-Class: com\.chatapp\.server\.ChatServer[[:space:]]*$'
 
+      - name: Verify generated SBOM
+        run: |
+          test -s target/bom.json
+          jq -e '.bomFormat == "CycloneDX" and (.specVersion | type == "string")' target/bom.json >/dev/null
+
       - name: Prepare release assets
         env:
           RELEASE_VERSION: ${{ github.ref_name }}
         run: |
           cp target/chatapp-server.jar "chatapp-server-${RELEASE_VERSION}.jar"
+          cp target/bom.json "chatapp-sbom-${RELEASE_VERSION}.json"
           sha256sum "chatapp-server-${RELEASE_VERSION}.jar" > "chatapp-server-${RELEASE_VERSION}.jar.sha256"
+          sha256sum "chatapp-sbom-${RELEASE_VERSION}.json" > "chatapp-sbom-${RELEASE_VERSION}.json.sha256"
           sha256sum --check "chatapp-server-${RELEASE_VERSION}.jar.sha256"
+          sha256sum --check "chatapp-sbom-${RELEASE_VERSION}.json.sha256"
 
       - name: Login to GitHub Container Registry
         env:
@@ -110,5 +118,7 @@ jobs:
           gh release create "$RELEASE_VERSION" \
             "chatapp-server-${RELEASE_VERSION}.jar" \
             "chatapp-server-${RELEASE_VERSION}.jar.sha256" \
+            "chatapp-sbom-${RELEASE_VERSION}.json" \
+            "chatapp-sbom-${RELEASE_VERSION}.json.sha256" \
             --title "$RELEASE_VERSION" \
             --generate-notes
