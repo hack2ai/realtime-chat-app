@@ -67,3 +67,7 @@ jobs:
       - name: Verify server image entrypoint
         run: |
           test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{json .Config.Entrypoint}}')" = '["java","-jar","/app/chatapp-server.jar"]'
+
+      - name: Verify server image healthcheck
+        run: |
+          test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{json .Config.Healthcheck.Test}}')" = '["CMD-SHELL","test -f /tmp/chatapp.ready"]'
