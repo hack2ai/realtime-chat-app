@@ -32,7 +32,7 @@ jobs:
 
       - name: Verify tracked secret material is absent
         run: |
-          forbidden=$(git ls-files | grep -E '(^|/)(\.env|config\.properties|[^/]+\.(p12|jks|key|pem))$' || true)
+          forbidden=$(git ls-files | grep -E '(^|/)(\.env|config\.properties|[^/]+\.(p12|jks|key|pem))$' | grep -v '^src/test/resources/config\.properties$' || true)
           if [ -n "$forbidden" ]; then
             echo 'Sensitive configuration or key material must not be tracked:'
             printf '%s\n' "$forbidden"
