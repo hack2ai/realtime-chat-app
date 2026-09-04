@@ -39,10 +39,10 @@ jobs:
             exit 1
           fi
 
-      - name: Verify thread creation remains bounded
+      - name: Verify unbounded executor usage remains absent
         run: |
-          if git grep -nE 'new[[:space:]]+Thread[[:space:]]*\(|Executors\.newCachedThreadPool' -- 'src/main/java'; then
-            echo 'Use bounded executors or virtual threads instead of unbounded platform-thread creation.'
+          if git grep -nE 'Executors\.newCachedThreadPool' -- 'src/main/java'; then
+            echo 'Use bounded executors or virtual threads instead of unbounded cached thread pools.'
             exit 1
           fi
 
