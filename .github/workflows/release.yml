@@ -48,13 +48,28 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
 
-      - name: Build and push release container
+      - name: Build release container image
         env:
           IMAGE_NAME: ghcr.io/${{ github.repository }}
           RELEASE_VERSION: ${{ github.ref_name }}
         run: |
           IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
           docker build --pull --tag "${IMAGE_NAME}:${RELEASE_VERSION}" --tag "${IMAGE_NAME}:latest" .
+
+      - name: Verify release image runs as non-root
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{.Config.User}}')" = "chatapp"
+
+      - name: Push release container
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
           docker push "${IMAGE_NAME}:${RELEASE_VERSION}"
           docker push "${IMAGE_NAME}:latest"
 
