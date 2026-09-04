@@ -39,3 +39,10 @@ jobs:
             echo 'Dockerfile must not explicitly switch the runtime back to root.'
             exit 1
           fi
+
+      - name: Reject remote Dockerfile fetches and piped installers
+        run: |
+          if grep -nE '^\s*ADD\s+https?://|\b(curl|wget)[[:space:]].*\|[[:space:]]*(sh|bash)([[:space:]]|$)' Dockerfile; then
+            echo 'Dockerfile must not fetch remote content or pipe network downloads into a shell.'
+            exit 1
+          fi
