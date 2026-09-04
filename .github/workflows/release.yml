@@ -179,8 +179,7 @@ jobs:
           docker push "${IMAGE_NAME}:${RELEASE_VERSION}"
           docker push "${IMAGE_NAME}:latest"
 
-      - name: Attest release container provenance
-        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+      - name: Determine release container digest
         env:
           IMAGE_NAME: ghcr.io/${{ github.repository }}
           RELEASE_VERSION: ${{ github.ref_name }}
