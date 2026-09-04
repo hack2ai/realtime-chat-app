@@ -39,7 +39,7 @@ jobs:
       - name: Verify runnable server package
         run: |
           test -s target/chatapp-server.jar
-          unzip -p target/chatapp-server.jar META-INF/MANIFEST.MF | grep -Eq '^Main-Class: com\.chatapp\.server\.ChatServer[[:space:]]*$'
+          unzip -p target/chatapp-server.jar META-INF/MANIFEST.MF | grep -Eq '^Main-Class: com\\.chatapp\\.server\\.ChatServer[[:space:]]*$'
 
       - name: Verify generated SBOM
         run: |
@@ -91,6 +91,8 @@ jobs:
         run: |
           IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
           image="${IMAGE_NAME}:${RELEASE_VERSION}"
+          test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.title"}}')" = "Real-Time Chat Application"
+          test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.description"}}')" = "Secure Java 21 TCP chat server with MySQL persistence and optional TLS"
           test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.source"}}')" = "https://github.com/hack2ai/realtime-chat-app"
           test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.licenses"}}')" = "MIT"
           test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "${{ github.sha }}"
