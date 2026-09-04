@@ -68,6 +68,16 @@ public class ChatServer {
         this.clientThreadPool.allowCoreThreadTimeOut(true);
     }
 
+    public static void main(String[] args) {
+        ChatServer server = new ChatServer(new AuthenticationService());
+        try {
+            server.start();
+        } catch (IOException | RuntimeException e) {
+            logger.error("Chat server failed to start.", e);
+            server.stop();
+        }
+    }
+
     public void start() throws IOException {
         if (running) return;
         verifyDatabaseReady();
