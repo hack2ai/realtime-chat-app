@@ -117,3 +117,8 @@ jobs:
       - name: Verify server image stop signal
         run: |
           test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{.Config.StopSignal}}')" = "SIGTERM"
+
+      - name: Verify server image filesystem policy
+        run: |
+          test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{.Config.WorkingDir}}')" = "/app"
+          test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{json .Config.Volumes}}')" = '{"/app/data/attachments":{}}'
