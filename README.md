@@ -233,6 +233,14 @@ Start the stack:
 docker compose up --build -d
 ```
 
+Check service health after startup:
+
+```bash
+docker compose ps
+```
+
+The `db` and `server` services should report `healthy` before clients connect. The server healthcheck is backed by the readiness marker created only after the database connection has been validated and the TCP listener is ready.
+
 The TCP server listens on port `5050`. The JavaFX desktop client can connect to the Docker host using that address and port. Stop the stack with:
 
 ```bash
