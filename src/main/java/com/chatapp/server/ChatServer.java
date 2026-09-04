@@ -25,11 +25,13 @@ import java.sql.SQLException;
 import java.time.Duration;
 import java.util.Collection;
 import java.util.Set;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.RejectedExecutionException;
 
 /** Main TCP chat server and connection registry. */
 public class ChatServer {
@@ -37,6 +39,7 @@ public class ChatServer {
     private static final RequestRateLimiter CONNECTION_RATE_LIMITER = new RequestRateLimiter(30, Duration.ofSeconds(10), 10_000);
     private static final ReadinessMarker READINESS_MARKER = new ReadinessMarker(
             Path.of(System.getProperty("java.io.tmpdir"), "chatapp.ready"));
+    private static final long METRICS_INTERVAL_SECONDS = 60L;
 
     private final AuthenticationService authService;
     private final ChatService chatService = new ChatService();
@@ -44,6 +47,8 @@ public class ChatServer {
     private final ConcurrentHashMap<Integer, ClientHandler> connectedClients = new ConcurrentHashMap<>();
     private final Set<ClientHandler> activeHandlers = ConcurrentHashMap.newKeySet();
     private final ThreadPoolExecutor clientThreadPool;
+    private final ScheduledExecutorService metricsScheduler = Executors.newSingleThreadScheduledExecutor(
+            Thread.ofVirtual().name("chat-server-metrics-").factory());
     private final Thread shutdownHook = new Thread(this::stop, "chat-server-shutdown");
     private volatile boolean shutdownHookRegistered;
     private volatile boolean running;
@@ -73,15 +78,33 @@ public class ChatServer {
             running = true;
             READINESS_MARKER.markReady();
             registerShutdownHook();
+            scheduleRuntimeMetrics();
             logger.info("Chat server listening on {}:{} (TLS: {})", bindAddress, port, AppConfig.isTlsEnabled());
             acceptLoop();
         } catch (IOException | RuntimeException e) {
             running = false;
             READINESS_MARKER.clear();
+            metricsScheduler.shutdownNow();
             closeQuietly(serverSocket);
             serverSocket = null;
             throw e;
         }
+    }
+
+    private void scheduleRuntimeMetrics() {
+        metricsScheduler.scheduleAtFixedRate(this::logRuntimeMetrics,
+                METRICS_INTERVAL_SECONDS, METRICS_INTERVAL_SECONDS, TimeUnit.SECONDS);
+    }
+
+    private void logRuntimeMetrics() {
+        if (!running) return;
+        logger.info("Server metrics: connectedUsers={}, activeHandlers={}, poolActive={}, poolSize={}, queueDepth={}, completedHandlers={}",
+                connectedClients.size(),
+                activeHandlers.size(),
+                clientThreadPool.getActiveCount(),
+                clientThreadPool.getPoolSize(),
+                clientThreadPool.getQueue().size(),
+                clientThreadPool.getCompletedTaskCount());
     }
 
     private void verifyDatabaseReady() throws IOException {
@@ -207,10 +230,12 @@ public class ChatServer {
     public void stop() {
         if (!running) {
             READINESS_MARKER.clear();
+            metricsScheduler.shutdownNow();
             return;
         }
         running = false;
         READINESS_MARKER.clear();
+        metricsScheduler.shutdownNow();
         unregisterShutdownHook();
         logger.info("Shutting down chat server ({} active connections)...", activeHandlers.size());
         closeQuietly(serverSocket);
