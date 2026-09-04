@@ -169,6 +169,12 @@ jobs:
           subject-digest: ${{ env.IMAGE_DIGEST }}
           push-to-registry: true
 
+      - name: Prepare container digest asset
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          printf 'ghcr.io/%s@%s\n' "${{ github.repository }}" "${IMAGE_DIGEST}" > "chatapp-container-${RELEASE_VERSION}.digest"
+
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -179,5 +185,6 @@ jobs:
             "chatapp-server-${RELEASE_VERSION}.jar.sha256" \
             "chatapp-sbom-${RELEASE_VERSION}.json" \
             "chatapp-sbom-${RELEASE_VERSION}.json.sha256" \
+            "chatapp-container-${RELEASE_VERSION}.digest" \
             --title "$RELEASE_VERSION" \
             --generate-notes
