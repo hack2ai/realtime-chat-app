@@ -59,3 +59,7 @@ jobs:
 
       - name: Build server container image
         run: docker build --pull --tag realtime-chat-app:${{ github.sha }} .
+
+      - name: Verify server image runs as non-root
+        run: |
+          test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{.Config.User}}')" = "chatapp"
