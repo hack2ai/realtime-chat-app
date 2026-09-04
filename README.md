@@ -284,6 +284,8 @@ Notifications      S2C_NOTIFICATION
 realtime-chat-app/
 ├── .github/workflows/ci.yml
 ├── .github/workflows/codeql.yml
+├── .github/workflows/container-policy.yml
+├── .github/workflows/dependency-review.yml
 ├── .github/workflows/release.yml
 ├── .github/dependabot.yml
 ├── .dockerignore
