@@ -7,6 +7,11 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - dependencies
+    groups:
+      maven-minor-patch:
+        update-types:
+          - minor
+          - patch
 
   - package-ecosystem: github-actions
     directory: "/"
@@ -15,6 +20,11 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - dependencies
+    groups:
+      github-actions-minor-patch:
+        update-types:
+          - minor
+          - patch
 
   - package-ecosystem: docker
     directory: "/"
@@ -23,3 +33,8 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - dependencies
+    groups:
+      docker-minor-patch:
+        update-types:
+          - minor
+          - patch
