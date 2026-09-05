@@ -49,6 +49,25 @@ jobs:
             puts "All workflows declare explicit top-level permissions."
           '
 
+      - name: Verify safe workflow triggers and permissions
+        run: |
+          set -eu
+          ruby -e '
+            require "yaml"
+            paths = Dir[".github/workflows/*.yml", ".github/workflows/*.yaml"].sort
+            paths.each do |path|
+              workflow = YAML.load_file(path, aliases: true)
+              if workflow.key?("pull_request_target")
+                abort "Unsafe trigger pull_request_target is forbidden in #{path}."
+              end
+              permissions = workflow["permissions"]
+              if permissions == "write-all" || permissions == { "write-all" => true }
+                abort "Broad write-all permissions are forbidden in #{path}."
+              end
+            end
+            puts "Workflow triggers and permissions satisfy the security policy."
+          '
+
       - name: Verify immutable workflow actions
         run: |
           if grep -RInP '^\s*uses:\s*[^@#\s]+@(?![0-9a-fA-F]{40}\b)[^#\s]+' .github/workflows; then
