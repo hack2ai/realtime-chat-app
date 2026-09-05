@@ -160,6 +160,8 @@ jobs:
           printf '%s\n' "$config" | jq -e '.services.server.init == true' >/dev/null
           printf '%s\n' "$config" | jq -e '.services.server.restart == "unless-stopped"' >/dev/null
           printf '%s\n' "$config" | jq -e '.services.server.pids_limit == 256' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.mem_limit == "1g"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.cpus == 2' >/dev/null
           printf '%s\n' "$config" | jq -e '.services.server.cap_drop == ["ALL"]' >/dev/null
           printf '%s\n' "$config" | jq -e '.services.server.security_opt == ["no-new-privileges:true"]' >/dev/null
           printf '%s\n' "$config" | jq -e '(.services.server.tmpfs // []) | index("/tmp:rw,noexec,nosuid,size=64m") != null' >/dev/null
@@ -247,6 +249,8 @@ jobs:
           docker inspect "$container_id" | jq -e '.[0].HostConfig.CapDrop == ["ALL"]' >/dev/null
           docker inspect "$container_id" | jq -e '.[0].HostConfig.SecurityOpt | index("no-new-privileges:true") != null' >/dev/null
           docker inspect "$container_id" | jq -e '.[0].HostConfig.PidsLimit == 256' >/dev/null
+          docker inspect "$container_id" | jq -e '.[0].HostConfig.Memory == 1073741824' >/dev/null
+          docker inspect "$container_id" | jq -e '.[0].HostConfig.NanoCpus == 2000000000' >/dev/null
 
       - name: Verify attachment volume is writable
         run: |
