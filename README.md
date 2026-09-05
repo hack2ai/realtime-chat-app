@@ -10,7 +10,7 @@
 
 **Phase 6 — production hardening and deployment readiness.**
 
-The application provides secure authentication, real-time private messaging, presence and typing events, delivery/read states, paginated history, group chat, private file sharing, message search, MySQL persistence, a responsive JavaFX desktop client, automated dependency updates, container packaging, SBOM generation, CI/CD checks, and configurable TLS transport.
+The application provides secure authentication, real-time private messaging, presence and typing events, delivery/read states, paginated history, group chat, private file sharing, message search, MySQL persistence, a responsive JavaFX desktop client, automated dependency updates, container packaging, SBOM generation, CI/CD checks, configurable TLS transport, and lightweight runtime metrics.
 
 ## Highlights
 
@@ -31,6 +31,7 @@ The application provides secure authentication, real-time private messaging, pre
 - Private attachment upload/download with participant authorization, 5 MB limit, safe filenames, and SHA-256 integrity verification
 - Private message search with bounded result sets
 - Java 21 virtual threads for asynchronous message pushes
+- Periodic runtime metrics for connections, requests, protocol errors, and handler-pool usage
 - Environment-variable and JVM-property configuration overrides
 - JUnit protocol tests and GitHub Actions CI
 - Docker image and Docker Compose deployment support
@@ -108,6 +109,10 @@ The JavaFX client provides:
 - Private file upload/download controls
 - Non-blocking socket reads/writes so the UI stays responsive
 
+### Operational metrics
+
+The server maintains thread-safe counters for accepted and rejected connections, processed requests, and protocol errors. It periodically logs these counters together with connected-user count, active handlers, executor pool size, queue depth, and completed handler tasks for lightweight operational visibility.
+
 ## Security
 
 Current defensive controls include:
@@ -132,8 +137,9 @@ Current defensive controls include:
 - bounded container logs in Docker Compose
 - OCI image metadata for traceability
 - CycloneDX SBOM generation and checksum verification
+- periodic runtime metrics for basic capacity and protocol-error visibility
 
-**Important:** this is a portfolio/learning project, not a security-audited production service. A production deployment still needs certificate lifecycle management, secret rotation, hardened database permissions, monitoring, threat modeling, malware/content scanning for uploads, and security testing.
+**Important:** this is a portfolio/learning project, not a security-audited production service. A production deployment still needs certificate lifecycle management, secret rotation, hardened database permissions, centralized monitoring/alerting, threat modeling, malware/content scanning for uploads, and security testing.
 
 See [SECURITY.md](SECURITY.md) for reporting guidance.
 
@@ -303,7 +309,7 @@ realtime-chat-app/
     │   ├── database/            # Pool, manager, DAOs
     │   ├── exception/           # Application exceptions
     │   ├── model/               # Domain models and DTOs
-    │   ├── server/              # Server and connection handlers
+    │   ├── server/              # Server, metrics, and connection handlers
     │   ├── service/             # Business logic
     │   ├── socket/protocol/     # Envelope, framing, message types
     │   └── util/                # Validation helpers
@@ -321,8 +327,8 @@ realtime-chat-app/
 - [x] Phase 3 — group chat and membership controls
 - [x] Phase 4 — JavaFX desktop client
 - [x] Phase 5 — file sharing and message search
-- [x] Phase 6 — notifications, deployment packaging, CI/CD hardening, rate limiting, dependency automation, configurable TLS, container hardening, SBOM generation, and release verification
-- [ ] Phase 7 — production observability, managed storage, certificate lifecycle automation, and external security testing
+- [x] Phase 6 — notifications, deployment packaging, CI/CD hardening, rate limiting, dependency automation, configurable TLS, container hardening, SBOM generation, runtime metrics, and release verification
+- [ ] Phase 7 — centralized observability and alerting, managed storage, certificate lifecycle automation, and external security testing
 
 ## Development
 
