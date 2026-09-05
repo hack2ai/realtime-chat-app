@@ -4,6 +4,8 @@ services:
     restart: unless-stopped
     networks:
       - backend
+    mem_limit: 1g
+    cpus: 2.0
     environment:
       MYSQL_ROOT_PASSWORD: ${CHATAPP_MYSQL_ROOT_PASSWORD:?set CHATAPP_MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: chatapp_db
