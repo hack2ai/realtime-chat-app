@@ -67,6 +67,12 @@ jobs:
           grep -Fqx 'db.allowPublicKeyRetrieval=false' src/main/resources/config.properties.example
           grep -Fqx 'server.bindAddress=127.0.0.1' src/main/resources/config.properties.example
 
+      - name: Verify TLS transport policy
+        run: |
+          grep -F 'setEnabledProtocols(new String[]{"TLSv1.3", "TLSv1.2"})' src/main/java/com/chatapp/server/ChatServer.java
+          grep -F 'setEnabledProtocols(new String[]{"TLSv1.3", "TLSv1.2"})' src/main/java/com/chatapp/client/ChatClientConnection.java
+          grep -F 'parameters.setEndpointIdentificationAlgorithm("HTTPS")' src/main/java/com/chatapp/client/ChatClientConnection.java
+
       - name: Verify unbounded executor usage remains absent
         run: |
           if git grep -nE 'Executors\.newCachedThreadPool' -- 'src/main/java'; then
