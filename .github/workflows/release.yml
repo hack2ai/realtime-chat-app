@@ -215,6 +215,16 @@ jobs:
           published_digest=$(docker image inspect "$image" --format '{{index .RepoDigests 0}}' | sed 's/^.*@//')
           test "$published_digest" = "${IMAGE_DIGEST}"
 
+      - name: Verify latest tag matches release digest
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+        run: |
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          image="${IMAGE_NAME}:latest"
+          docker pull "$image"
+          latest_digest=$(docker image inspect "$image" --format '{{index .RepoDigests 0}}' | sed 's/^.*@//')
+          test "$latest_digest" = "${IMAGE_DIGEST}"
+
       - name: Publish release container provenance
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
         with:
