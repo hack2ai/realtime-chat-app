@@ -37,6 +37,20 @@ jobs:
           test -n "$RELEASE_VERSION"
           docker pull "${IMAGE_NAME}:${RELEASE_VERSION}"
 
+      - name: Verify image matches released commit
+        env:
+          RELEASE_VERSION: ${{ github.event.workflow_run.head_branch }}
+          RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+        run: |
+          set -eu
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          image="${IMAGE_NAME}:${RELEASE_VERSION}"
+          revision=$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')
+          version=$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.version"}}')
+          test "$revision" = "$RELEASE_SHA"
+          test "$version" = "$RELEASE_VERSION"
+
       - name: Resolve image digest
         id: image
         env:
