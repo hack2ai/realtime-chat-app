@@ -51,6 +51,18 @@ jobs:
           test "$revision" = "$RELEASE_SHA"
           test "$version" = "$RELEASE_VERSION"
 
+      - name: Verify published image runtime identity
+        env:
+          RELEASE_VERSION: ${{ github.event.workflow_run.head_branch }}
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+        run: |
+          set -eu
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          image="${IMAGE_NAME}:${RELEASE_VERSION}"
+          test "$(docker image inspect "$image" --format '{{.Config.User}}')" = "chatapp"
+          test "$(docker run --rm --entrypoint id "$image" -u)" = "10001"
+          test "$(docker image inspect "$image" --format '{{json .Config.Entrypoint}}')" = '["java","-jar","/app/chatapp-server.jar"]'
+
       - name: Resolve image digest
         id: image
         env:
