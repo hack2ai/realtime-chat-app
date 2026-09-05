@@ -191,7 +191,7 @@ jobs:
           printf '%s\n' "$config" | jq -e '.services.db.logging.driver == "json-file"' >/dev/null
           printf '%s\n' "$config" | jq -e '.services.db.logging.options["max-size"] == "10m"' >/dev/null
           printf '%s\n' "$config" | jq -e '.services.db.logging.options["max-file"] == "3"' >/dev/null
-          printf '%s\n' "$config" | jq -e '(.services.server.ports // [])[0].host_ip == "127.0.0.1"' >/dev/null
+          docker compose config | grep -Fq '127.0.0.1:5050:5050'
 
       - name: Build server container image
         run: |
