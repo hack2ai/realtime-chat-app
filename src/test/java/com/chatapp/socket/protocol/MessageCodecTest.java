@@ -139,6 +139,17 @@ class MessageCodecTest {
     }
 
     @Test
+    void writeRejectsFrameThatExceedsByteLimitWithMultibyteUtf8() {
+        String oversizedPayload = "€".repeat(3_000_000);
+        Envelope envelope = codec.wrap(MessageType.C2S_PRIVATE_MESSAGE,
+                new Payload("alice", oversizedPayload));
+
+        assertTrue(codec.getGson().toJson(envelope).getBytes(StandardCharsets.UTF_8).length > MAX_FRAME_BYTES);
+        assertThrows(IOException.class, () ->
+                codec.write(new DataOutputStream(new ByteArrayOutputStream()), envelope));
+    }
+
+    @Test
     void wrapRejectsNullMessageType() {
         assertThrows(IllegalArgumentException.class, () ->
                 codec.wrap(null, new Payload("alice", "password")));
