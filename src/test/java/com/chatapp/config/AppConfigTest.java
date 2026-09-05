@@ -18,6 +18,7 @@ class AppConfigTest {
         }
         System.clearProperty("chatapp.db.useSsl");
         System.clearProperty("chatapp.db.allowPublicKeyRetrieval");
+        System.clearProperty("chatapp.db.connectTimeoutMs");
     }
 
     @Test
@@ -34,6 +35,19 @@ class AppConfigTest {
 
         assertTrue(jdbcUrl.contains("characterEncoding=UTF-8"));
         assertTrue(jdbcUrl.contains("useUnicode=true"));
+        assertTrue(jdbcUrl.contains("connectTimeout=10000"));
         assertFalse(jdbcUrl.contains("characterEncoding=utf8mb4"));
+    }
+
+    @Test
+    void jdbcUrlUsesConfiguredConnectTimeout() {
+        System.setProperty("chatapp.db.host", "localhost");
+        System.setProperty("chatapp.db.port", "3306");
+        System.setProperty("chatapp.db.name", "chatapp_db");
+        System.setProperty("chatapp.db.user", "chatapp_user");
+        System.setProperty("chatapp.db.password", "test-password");
+        System.setProperty("chatapp.db.connectTimeoutMs", "2500");
+
+        assertTrue(AppConfig.getJdbcUrl().contains("connectTimeout=2500"));
     }
 }
