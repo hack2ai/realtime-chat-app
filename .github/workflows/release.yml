@@ -86,12 +86,12 @@ jobs:
           sha256sum --check "chatapp-sbom-${RELEASE_VERSION}.json.sha256"
 
       - name: Attest release server artifact
-        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: "chatapp-server-${{ github.ref_name }}.jar"
 
       - name: Attest release SBOM
-        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: "chatapp-sbom-${{ github.ref_name }}.json"
 
@@ -233,7 +233,7 @@ jobs:
           test "$latest_digest" = "${IMAGE_DIGEST}"
 
       - name: Publish release container provenance
-        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ghcr.io/${{ github.repository }}
           subject-digest: ${{ env.IMAGE_DIGEST }}
