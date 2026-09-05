@@ -4,7 +4,7 @@ COPY pom.xml .
 COPY src ./src
 RUN mvn --batch-mode --no-transfer-progress verify
 
-FROM eclipse-temurin:21-jre
+FROM eclipse-temurin:25-jre
 ARG VCS_REF=unknown
 ARG VERSION=dev
 LABEL org.opencontainers.image.title="Real-Time Chat Application" \
