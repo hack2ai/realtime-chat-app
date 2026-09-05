@@ -327,6 +327,7 @@ realtime-chat-app/
     │   ├── config.properties.example
     │   └── sql/schema.sql
     └── test/java/com/chatapp/   # Automated tests
+```
 
 ## Roadmap
 
