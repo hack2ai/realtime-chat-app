@@ -288,9 +288,12 @@ jobs:
 
           with socket.create_connection(("127.0.0.1", 5050), timeout=5) as sock:
               sock.sendall(struct.pack(">i", len(request)) + request)
-              header = sock.recv(4)
-              if len(header) != 4:
-                  raise SystemExit("server returned an incomplete response frame")
+              header = b""
+              while len(header) < 4:
+                  chunk = sock.recv(4 - len(header))
+                  if not chunk:
+                      raise SystemExit("server closed the connection before the response header was complete")
+                  header += chunk
               length = struct.unpack(">i", header)[0]
               if length <= 0 or length > 8 * 1024 * 1024:
                   raise SystemExit(f"invalid response frame length: {length}")
