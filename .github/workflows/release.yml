@@ -170,6 +170,16 @@ jobs:
           test "$(docker image inspect "$image" --format '{{.Config.WorkingDir}}')" = "/app"
           test "$(docker image inspect "$image" --format '{{json .Config.Volumes}}')" = '{"/app/data/attachments":{}}'
 
+      - name: Verify release image JVM safety options
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          image="${IMAGE_NAME}:${RELEASE_VERSION}"
+          env_json=$(docker image inspect "$image" --format '{{json .Config.Env}}')
+          printf '%s\n' "$env_json" | jq -e 'index("JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError") != null' >/dev/null
+
       - name: Push release container
         env:
           IMAGE_NAME: ghcr.io/${{ github.repository }}
