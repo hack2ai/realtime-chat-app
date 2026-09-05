@@ -2,7 +2,12 @@ package com.chatapp.config;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -15,6 +20,7 @@ class AppConfigTest {
     void clearDatabaseOverrides() {
         for (String key : DB_KEYS) {
             System.clearProperty("chatapp.db." + key);
+            System.clearProperty("chatapp.db." + key + ".file");
         }
         System.clearProperty("chatapp.db.useSsl");
         System.clearProperty("chatapp.db.allowPublicKeyRetrieval");
@@ -79,5 +85,14 @@ class AppConfigTest {
         System.setProperty("chatapp.client.tls.enabled", "true");
 
         assertTrue(AppConfig.isClientTlsEnabled());
+    }
+
+    @Test
+    void databasePasswordCanBeLoadedFromJvmSecretFile(@TempDir Path tempDir) throws Exception {
+        Path secretFile = tempDir.resolve("db-password");
+        Files.writeString(secretFile, "file-based-secret\n");
+        System.setProperty("chatapp.db.password.file", secretFile.toString());
+
+        assertEquals("file-based-secret", AppConfig.getDbPassword());
     }
 }
