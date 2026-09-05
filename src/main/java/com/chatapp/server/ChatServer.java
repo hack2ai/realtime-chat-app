@@ -30,6 +30,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
@@ -51,6 +52,7 @@ public class ChatServer {
     private final ScheduledExecutorService metricsScheduler = Executors.newSingleThreadScheduledExecutor(
             Thread.ofVirtual().name("chat-server-metrics-").factory());
     private final Thread shutdownHook = new Thread(this::stop, "chat-server-shutdown");
+    private volatile ScheduledFuture<?> metricsTask;
     private volatile boolean shutdownHookRegistered;
     private volatile boolean running;
     private ServerSocket serverSocket;
@@ -95,16 +97,26 @@ public class ChatServer {
         } catch (IOException | RuntimeException e) {
             running = false;
             READINESS_MARKER.clear();
-            metricsScheduler.shutdownNow();
+            cancelRuntimeMetrics();
             closeQuietly(serverSocket);
             serverSocket = null;
             throw e;
         }
     }
 
-    private void scheduleRuntimeMetrics() {
-        metricsScheduler.scheduleAtFixedRate(this::logRuntimeMetrics,
+    private synchronized void scheduleRuntimeMetrics() {
+        cancelRuntimeMetrics();
+        if (metricsScheduler.isShutdown()) {
+            throw new IllegalStateException("Metrics scheduler is unavailable.");
+        }
+        metricsTask = metricsScheduler.scheduleAtFixedRate(this::logRuntimeMetrics,
                 METRICS_INTERVAL_SECONDS, METRICS_INTERVAL_SECONDS, TimeUnit.SECONDS);
+    }
+
+    private synchronized void cancelRuntimeMetrics() {
+        if (metricsTask == null) return;
+        metricsTask.cancel(false);
+        metricsTask = null;
     }
 
     private void logRuntimeMetrics() {
@@ -258,11 +270,13 @@ public class ChatServer {
     public void stop() {
         if (!running) {
             READINESS_MARKER.clear();
+            cancelRuntimeMetrics();
             metricsScheduler.shutdownNow();
             return;
         }
         running = false;
         READINESS_MARKER.clear();
+        cancelRuntimeMetrics();
         metricsScheduler.shutdownNow();
         unregisterShutdownHook();
         logger.info("Shutting down chat server ({} active connections)...", activeHandlers.size());
