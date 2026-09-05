@@ -49,6 +49,27 @@ jobs:
             puts "All workflows declare explicit top-level permissions."
           '
 
+      - name: Verify workflow concurrency and job timeouts
+        run: |
+          set -eu
+          ruby -e '
+            require "yaml"
+            paths = Dir[".github/workflows/*.yml", ".github/workflows/*.yaml"].sort
+            paths.each do |path|
+              workflow = YAML.load_file(path, aliases: true)
+              abort "Workflow #{path} must declare top-level concurrency." unless workflow.key?("concurrency")
+              jobs = workflow["jobs"] || {}
+              abort "Workflow #{path} must define at least one job." if jobs.empty?
+              jobs.each do |job_name, job|
+                timeout = job.is_a?(Hash) ? job["timeout-minutes"] : nil
+                unless timeout.is_a?(Integer) && timeout.positive?
+                  abort "Job #{job_name} in #{path} must declare a positive timeout-minutes value."
+                end
+              end
+            end
+            puts "All workflows declare concurrency and positive job timeouts."
+          '
+
       - name: Verify safe workflow triggers and permissions
         run: |
           set -eu
