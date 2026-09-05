@@ -323,6 +323,15 @@ jobs:
               raise SystemExit(f"unexpected response type: {payload.get('type')!r}")
           PY
 
+      - name: Verify graceful server shutdown
+        run: |
+          container_id=$(docker compose ps -q server)
+          test -n "$container_id"
+          docker stop --time 10 "$container_id"
+          exit_code=$(docker inspect "$container_id" --format '{{.State.ExitCode}}')
+          test "$exit_code" = "0"
+          test "$(docker inspect "$container_id" --format '{{.State.Status}}')" = "exited"
+
       - name: Show service logs on failure
         if: failure()
         env:
