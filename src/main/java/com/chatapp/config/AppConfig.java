@@ -79,13 +79,15 @@ public final class AppConfig {
         return value;
     }
     public static int getDbConnectionTimeoutMs() { return requireRange("db.pool.connectionTimeoutMs", 1000, 120000); }
+    public static int getDbConnectTimeoutMs() { return requireRange("db.connectTimeoutMs", 1000, 120000); }
     public static boolean isDbUseSsl() { return optionalBoolean("db.useSsl", true); }
     public static boolean isDbAllowPublicKeyRetrieval() { return optionalBoolean("db.allowPublicKeyRetrieval", false); }
     public static String getJdbcUrl() {
         return "jdbc:mysql://" + getDbHost() + ":" + getDbPort() + "/" + getDbName()
                 + "?useSSL=" + isDbUseSsl()
                 + "&allowPublicKeyRetrieval=" + isDbAllowPublicKeyRetrieval()
-                + "&serverTimezone=UTC&characterEncoding=UTF-8&useUnicode=true";
+                + "&serverTimezone=UTC&characterEncoding=UTF-8&useUnicode=true"
+                + "&connectTimeout=" + getDbConnectTimeoutMs();
     }
     public static int getServerPort() { return requirePort("server.port"); }
     public static String getServerBindAddress() { return require("server.bindAddress"); }
