@@ -316,7 +316,7 @@ realtime-chat-app/
     │   ├── client/              # JavaFX and CLI clients
     │   ├── config/              # Runtime configuration
     │   ├── database/            # Pool, manager, DAOs
-    │   ├── exception/            # Application exceptions
+    │   ├── exception/           # Application exceptions
     │   ├── model/               # Domain models and DTOs
     │   ├── server/              # Server, metrics, and connection handlers
     │   ├── service/             # Business logic
