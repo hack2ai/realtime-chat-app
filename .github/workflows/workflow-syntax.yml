@@ -35,6 +35,20 @@ jobs:
             end
           '
 
+      - name: Verify explicit workflow permissions
+        run: |
+          set -eu
+          ruby -e '
+            require "yaml"
+            paths = Dir[".github/workflows/*.yml", ".github/workflows/*.yaml"].sort
+            missing = paths.select do |path|
+              workflow = YAML.load_file(path, aliases: true)
+              !workflow.key?("permissions")
+            end
+            abort "Workflows missing explicit top-level permissions: #{missing.join(", ")}" unless missing.empty?
+            puts "All workflows declare explicit top-level permissions."
+          '
+
       - name: Verify immutable workflow actions
         run: |
           if grep -RInP '^\s*uses:\s*[^@#\s]+@(?![0-9a-fA-F]{40}\b)[^#\s]+' .github/workflows; then
