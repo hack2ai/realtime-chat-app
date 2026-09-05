@@ -13,6 +13,7 @@ LABEL org.opencontainers.image.title="Real-Time Chat Application" \
       org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.revision="$VCS_REF" \
       org.opencontainers.image.version="$VERSION"
+ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError"
 WORKDIR /app
 COPY --from=build /workspace/target/chatapp-server.jar /app/chatapp-server.jar
 RUN mkdir -p /app/data/attachments && useradd --system --create-home --uid 10001 chatapp && chown -R chatapp:chatapp /app
