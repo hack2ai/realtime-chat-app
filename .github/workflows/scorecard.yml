@@ -34,6 +34,11 @@ jobs:
           results_format: sarif
           publish_results: true
 
+      - name: Verify Scorecard report
+        run: |
+          test -s results.sarif
+          jq -e '.version and (.runs | type == "array")' results.sarif >/dev/null
+
       - name: Upload Scorecard results
         uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
         with:
