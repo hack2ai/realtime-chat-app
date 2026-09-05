@@ -11,6 +11,8 @@ db.password=CHANGE_ME
 db.pool.minIdle=2
 db.pool.maxSize=10
 db.pool.connectionTimeoutMs=5000
+# Timeout for establishing a new JDBC connection, in milliseconds.
+db.connectTimeoutMs=10000
 # TLS is enabled by default. Disable only for trusted local development.
 db.useSsl=true
 # Keep false unless the MySQL server explicitly requires RSA public-key retrieval.
