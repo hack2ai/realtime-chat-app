@@ -32,8 +32,24 @@ public final class ConnectionPool {
         this.connectionTimeoutMs = AppConfig.getDbConnectionTimeoutMs();
         this.availableConnections = new ArrayBlockingQueue<>(maxSize);
         int minIdle = AppConfig.getDbPoolMinIdle();
-        for (int i = 0; i < minIdle; i++) availableConnections.offer(createConnection());
+        try {
+            for (int i = 0; i < minIdle; i++) availableConnections.offer(createConnection());
+        } catch (RuntimeException e) {
+            cleanupStartupConnections();
+            throw e;
+        }
         logger.info("Connection pool initialized with {} idle connections (max size {})", minIdle, maxSize);
+    }
+
+    private void cleanupStartupConnections() {
+        Connection conn;
+        while ((conn = availableConnections.poll()) != null) {
+            trackedConnections.remove(conn);
+            closeQuietly(conn);
+        }
+        trackedConnections.forEach(this::closeQuietly);
+        trackedConnections.clear();
+        totalCreated.set(0);
     }
 
     public static ConnectionPool getInstance() {
