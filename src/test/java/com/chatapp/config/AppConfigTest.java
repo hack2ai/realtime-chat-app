@@ -19,6 +19,8 @@ class AppConfigTest {
         System.clearProperty("chatapp.db.useSsl");
         System.clearProperty("chatapp.db.allowPublicKeyRetrieval");
         System.clearProperty("chatapp.db.connectTimeoutMs");
+        System.clearProperty("chatapp.tls.enabled");
+        System.clearProperty("chatapp.client.tls.enabled");
     }
 
     @Test
@@ -49,5 +51,33 @@ class AppConfigTest {
         System.setProperty("chatapp.db.connectTimeoutMs", "2500");
 
         assertTrue(AppConfig.getJdbcUrl().contains("connectTimeout=2500"));
+    }
+
+    @Test
+    void applicationTlsIsDisabledByDefault() {
+        System.clearProperty("chatapp.tls.enabled");
+
+        assertFalse(AppConfig.isTlsEnabled());
+    }
+
+    @Test
+    void applicationTlsCanBeEnabledThroughJvmOverride() {
+        System.setProperty("chatapp.tls.enabled", "true");
+
+        assertTrue(AppConfig.isTlsEnabled());
+    }
+
+    @Test
+    void clientTlsIsDisabledByDefault() {
+        System.clearProperty("chatapp.client.tls.enabled");
+
+        assertFalse(AppConfig.isClientTlsEnabled());
+    }
+
+    @Test
+    void clientTlsCanBeEnabledThroughJvmOverride() {
+        System.setProperty("chatapp.client.tls.enabled", "true");
+
+        assertTrue(AppConfig.isClientTlsEnabled());
     }
 }
