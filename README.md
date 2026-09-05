@@ -32,7 +32,7 @@ The application provides secure authentication, real-time private messaging, pre
 - Private message search with bounded result sets
 - Java 21 virtual threads for asynchronous message pushes
 - Periodic runtime metrics for connections, requests, protocol errors, and handler-pool usage
-- Environment-variable and JVM-property configuration overrides
+- Environment-variable, JVM-property, and optional file-based configuration overrides
 - JUnit protocol tests and GitHub Actions CI
 - Docker image and Docker Compose deployment support
 - Non-root container execution with read-only server filesystem and dropped Linux capabilities
@@ -130,7 +130,7 @@ Current defensive controls include:
 - attachment filename/path sanitization
 - attachment size limits and SHA-256 integrity verification
 - no application password or admin seed account in the database schema
-- secrets can be supplied through environment variables or JVM system properties
+- secrets can be supplied through environment variables, JVM system properties, or file-based secret overrides
 - runtime attachment data is excluded from Git
 - optional TLS for the application TCP transport
 - non-root server container with dropped Linux capabilities and read-only root filesystem
@@ -174,7 +174,16 @@ export CHATAPP_DB_PASSWORD='your-secret'
 export CHATAPP_DB_USER='chatapp_user'
 ```
 
-The precedence is: **JVM system property → environment variable → config file**.
+For stronger secret isolation, the same setting can be loaded from a file. Use either a JVM property named `<key>.file` or an environment variable named `<ENV_KEY>_FILE`:
+
+```bash
+java -Dchatapp.db.password.file=/run/secrets/db_password \
+  -jar target/chatapp-server.jar
+```
+
+For example, `CHATAPP_DB_PASSWORD_FILE=/run/secrets/db_password` loads the password from that file. Secret files are trimmed, must be non-empty, and are limited to 16 KiB. Existing direct environment/JVM/config-file configuration remains supported.
+
+The precedence is: **JVM system property → JVM secret-file property → environment secret-file override → environment variable → config file**.
 
 Attachment files default to `data/attachments` and are intentionally excluded from version control. For production, replace local storage with durable object storage and keep only attachment metadata in MySQL.
 
@@ -318,7 +327,6 @@ realtime-chat-app/
     │   ├── config.properties.example
     │   └── sql/schema.sql
     └── test/java/com/chatapp/   # Automated tests
-```
 
 ## Roadmap
 
