@@ -40,18 +40,25 @@ jobs:
             exit 1
           fi
 
+      - name: Require stable runtime identity
+        run: |
+          if ! grep -nF 'useradd --system --create-home --uid 10001 chatapp' Dockerfile; then
+            echo 'The chatapp runtime user must use the fixed UID 10001.'
+            exit 1
+          fi
+
       - name: Require safe runtime directives
         run: |
           if ! grep -nE '^STOPSIGNAL\s+SIGTERM\s*$' Dockerfile; then
             echo 'Dockerfile must declare STOPSIGNAL SIGTERM for graceful server shutdown.'
             exit 1
           fi
-          if ! grep -nE '^HEALTHCHECK\s+' Dockerfile; then
-            echo 'Dockerfile must declare a HEALTHCHECK.'
+          if ! grep -nF 'HEALTHCHECK --interval=10s --timeout=3s --retries=5 --start-period=10s CMD test -f /tmp/chatapp.ready' Dockerfile; then
+            echo 'Dockerfile must declare the expected readiness healthcheck.'
             exit 1
           fi
-          if ! grep -nE '^VOLUME\s+\[' Dockerfile; then
-            echo 'Dockerfile must declare a volume for runtime attachment storage.'
+          if ! grep -nF 'VOLUME ["/app/data/attachments"]' Dockerfile; then
+            echo 'Dockerfile must declare the attachment storage volume at the expected path.'
             exit 1
           fi
           if ! grep -nF 'ENTRYPOINT ["java", "-jar", "/app/chatapp-server.jar"]' Dockerfile; then
