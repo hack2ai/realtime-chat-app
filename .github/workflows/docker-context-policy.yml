@@ -1,0 +1,48 @@
+name: Docker Context Policy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-context-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Verify required Docker ignore rules
+        run: |
+          required_patterns=(
+            '.git'
+            '.github'
+            'target'
+            '/data'
+            '*.log'
+            '.env'
+            '.env.*'
+            'config.properties'
+            '*.p12'
+            '*.pfx'
+            '*.jks'
+            '*.key'
+            '*.pem'
+          )
+          for pattern in "${required_patterns[@]}"; do
+            if ! grep -Fqx "$pattern" .dockerignore; then
+              echo "Missing required .dockerignore exclusion: $pattern"
+              exit 1
+            fi
+          done
