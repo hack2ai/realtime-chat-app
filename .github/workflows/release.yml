@@ -69,6 +69,14 @@ jobs:
           test -s target/bom.json
           jq -e '.bomFormat == "CycloneDX" and (.specVersion | type == "string")' target/bom.json >/dev/null
 
+      - name: Verify SBOM project identity
+        run: |
+          project_version=$(mvn --batch-mode --no-transfer-progress help:evaluate -Dexpression=project.version -q -DforceStdout)
+          jq -e --arg version "$project_version" '
+            .metadata.component.name == "realtime-chat-app" and
+            .metadata.component.version == $version
+          ' target/bom.json >/dev/null
+
       - name: Validate Docker Compose configuration
         env:
           CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
