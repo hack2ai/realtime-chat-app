@@ -1,0 +1,64 @@
+name: Container Attestation
+
+on:
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+
+permissions:
+  contents: read
+  packages: read
+  attestations: write
+  id-token: write
+
+concurrency:
+  group: container-attestation-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+jobs:
+  attest:
+    name: Attest published release image
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Login to GitHub Container Registry
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+
+      - name: Pull released image
+        env:
+          RELEASE_VERSION: ${{ github.event.workflow_run.head_branch }}
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+        run: |
+          set -eu
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          test -n "$RELEASE_VERSION"
+          docker pull "${IMAGE_NAME}:${RELEASE_VERSION}"
+
+      - name: Resolve image digest
+        id: image
+        env:
+          RELEASE_VERSION: ${{ github.event.workflow_run.head_branch }}
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+        run: |
+          set -eu
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          image="${IMAGE_NAME}:${RELEASE_VERSION}"
+          repo_digest=$(docker image inspect "$image" --format '{{index .RepoDigests 0}}')
+          digest="${repo_digest##*@}"
+          test -n "$digest"
+          case "$digest" in
+            sha256:*) ;;
+            *) echo 'Published image did not resolve to a sha256 digest.'; exit 1 ;;
+          esac
+          echo "subject_name=${IMAGE_NAME}" >> "$GITHUB_OUTPUT"
+          echo "subject_digest=${digest}" >> "$GITHUB_OUTPUT"
+
+      - name: Attest published container image
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-name: ${{ steps.image.outputs.subject_name }}
+          subject-digest: ${{ steps.image.outputs.subject_digest }}
+          push-to-registry: true
