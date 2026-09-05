@@ -34,6 +34,7 @@ services:
     restart: unless-stopped
     networks:
       - backend
+    user: "10001"
     init: true
     read_only: true
     pids_limit: 256
