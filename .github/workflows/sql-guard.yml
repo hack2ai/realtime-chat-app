@@ -1,0 +1,33 @@
+name: SQL Guard
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sql-guard-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sql-guard:
+    name: Reject raw JDBC statements
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Verify raw JDBC APIs remain absent
+        run: |
+          set -eu
+          if git grep -nE 'java\.sql\.(Statement|CallableStatement)|\.createStatement\(|\.prepareCall\(' -- 'src/main/java'; then
+            echo 'Raw JDBC statement APIs are forbidden; use PreparedStatement with parameter binding instead.'
+            exit 1
+          fi
