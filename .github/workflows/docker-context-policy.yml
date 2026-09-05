@@ -39,6 +39,9 @@ jobs:
             '*.jks'
             '*.key'
             '*.pem'
+            '*.sqlite'
+            '*.sqlite3'
+            '*.db'
           )
           for pattern in "${required_patterns[@]}"; do
             if ! grep -Fqx "$pattern" .dockerignore; then
