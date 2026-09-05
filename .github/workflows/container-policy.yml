@@ -59,6 +59,17 @@ jobs:
             exit 1
           fi
 
+      - name: Require Compose database privilege protection
+        run: |
+          if ! grep -A8 '^  db:' docker-compose.yml | grep -q '^    security_opt:$'; then
+            echo 'The Compose database service must configure no-new-privileges.'
+            exit 1
+          fi
+          if ! grep -A10 '^  db:' docker-compose.yml | grep -q 'no-new-privileges:true'; then
+            echo 'The Compose database service must use no-new-privileges:true.'
+            exit 1
+          fi
+
       - name: Reject remote Dockerfile fetches and piped installers
         run: |
           if grep -nE '^\s*ADD\s+https?://|\b(curl|wget)[[:space:]].*\|[[:space:]]*(sh|bash)([[:space:]]|$)' Dockerfile; then
