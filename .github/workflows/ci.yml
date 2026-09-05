@@ -61,6 +61,12 @@ jobs:
             fi
           done
 
+      - name: Verify secure configuration defaults
+        run: |
+          grep -Fqx 'db.useSsl=true' src/main/resources/config.properties.example
+          grep -Fqx 'db.allowPublicKeyRetrieval=false' src/main/resources/config.properties.example
+          grep -Fqx 'server.bindAddress=127.0.0.1' src/main/resources/config.properties.example
+
       - name: Verify unbounded executor usage remains absent
         run: |
           if git grep -nE 'Executors\.newCachedThreadPool' -- 'src/main/java'; then
@@ -317,10 +323,3 @@ jobs:
           CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
           CHATAPP_DB_PASSWORD: ci-app-password
         run: docker compose logs --no-color server db
-
-      - name: Tear down Docker Compose stack
-        if: always()
-        env:
-          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
-          CHATAPP_DB_PASSWORD: ci-app-password
-        run: docker compose down -v
