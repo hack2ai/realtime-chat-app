@@ -9,6 +9,7 @@ services:
     pids_limit: 256
     security_opt:
       - no-new-privileges:true
+    stop_grace_period: 30s
     environment:
       MYSQL_ROOT_PASSWORD: ${CHATAPP_MYSQL_ROOT_PASSWORD:?set CHATAPP_MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: chatapp_db
