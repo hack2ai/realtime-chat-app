@@ -12,6 +12,8 @@ src/main/resources/config.properties
 config.properties
 .env
 .env.*
+secrets/
+**/secrets/
 
 # Local certificate / key material
 *.p12
