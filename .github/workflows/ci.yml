@@ -236,6 +236,11 @@ jobs:
           test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{.Config.WorkingDir}}')" = "/app"
           test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{json .Config.Volumes}}')" = '{"/app/data/attachments":{}}'
 
+      - name: Verify server image JVM safety options
+        run: |
+          env_json=$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{json .Config.Env}}')
+          printf '%s\n' "$env_json" | jq -e 'index("JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError") != null' >/dev/null
+
       - name: Start Docker Compose stack
         env:
           CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
