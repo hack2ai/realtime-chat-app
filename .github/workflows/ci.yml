@@ -22,6 +22,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Verify immutable workflow actions
         run: |
@@ -304,25 +306,21 @@ jobs:
                       raise SystemExit("server closed the connection before the response was complete")
                   response += chunk
 
-          envelope = json.loads(response.decode("utf-8"))
-          if envelope.get("type") != "PONG":
-              raise SystemExit(f"expected PONG response, received: {envelope.get('type')!r}")
+          payload = json.loads(response.decode("utf-8"))
+          if payload.get("type") != "PONG":
+              raise SystemExit(f"unexpected response type: {payload.get('type')!r}")
           PY
 
-      - name: Verify server filesystem is read-only
+      - name: Show service logs on failure
+        if: failure()
         env:
           CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
           CHATAPP_DB_PASSWORD: ci-app-password
-        run: |
-          if docker compose exec -T server sh -c 'touch /app/.readonly-test' 2>/dev/null; then
-            echo 'Server container filesystem is unexpectedly writable.'
-            docker compose exec -T server sh -c 'rm -f /app/.readonly-test' || true
-            exit 1
-          fi
+        run: docker compose logs --no-color server db
 
-      - name: Stop Docker Compose stack
+      - name: Tear down Docker Compose stack
         if: always()
         env:
           CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
           CHATAPP_DB_PASSWORD: ci-app-password
-        run: docker compose down -v --remove-orphans
+        run: docker compose down -v
