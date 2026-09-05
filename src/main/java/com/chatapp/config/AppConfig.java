@@ -2,6 +2,9 @@ package com.chatapp.config;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Locale;
 import java.util.Properties;
 
@@ -9,6 +12,7 @@ import java.util.Properties;
 public final class AppConfig {
     private static final String CONFIG_FILE = "config.properties";
     private static final String ENV_PREFIX = "CHATAPP_";
+    private static final int MAX_SECRET_FILE_BYTES = 16 * 1024;
     private static final Properties PROPERTIES = new Properties();
 
     static {
@@ -21,19 +25,59 @@ public final class AppConfig {
 
     private AppConfig() {}
 
-    private static String require(String key) {
+    private static String environmentKey(String key) {
+        return ENV_PREFIX + key.replace('.', '_').toUpperCase(Locale.ROOT);
+    }
+
+    private static String readSecretFile(String key, String filePath) {
+        try {
+            Path path = Path.of(filePath);
+            if (!Files.isRegularFile(path) || Files.size(path) > MAX_SECRET_FILE_BYTES) {
+                throw new IllegalStateException("Secret file for config key '" + key + "' is missing or too large.");
+            }
+            String value = Files.readString(path, StandardCharsets.UTF_8).trim();
+            if (value.isBlank()) {
+                throw new IllegalStateException("Secret file for config key '" + key + "' is blank.");
+            }
+            return value;
+        } catch (IOException | RuntimeException e) {
+            if (e instanceof IllegalStateException state) {
+                throw state;
+            }
+            throw new IllegalStateException("Failed to read secret file for config key '" + key + "'.", e);
+        }
+    }
+
+    private static String resolve(String key) {
         String value = System.getProperty("chatapp." + key);
-        if (value == null || value.isBlank()) value = System.getenv(ENV_PREFIX + key.replace('.', '_').toUpperCase(Locale.ROOT));
-        if (value == null || value.isBlank()) value = PROPERTIES.getProperty(key);
-        if (value == null || value.isBlank()) throw new IllegalStateException("Missing required config key: " + key);
-        return value.trim();
+        if (value != null && !value.isBlank()) return value.trim();
+
+        String systemPropertyFile = System.getProperty("chatapp." + key + ".file");
+        if (systemPropertyFile != null && !systemPropertyFile.isBlank()) {
+            return readSecretFile(key, systemPropertyFile.trim());
+        }
+
+        String environmentFile = System.getenv(environmentKey(key) + "_FILE");
+        if (environmentFile != null && !environmentFile.isBlank()) {
+            return readSecretFile(key, environmentFile.trim());
+        }
+
+        value = System.getenv(environmentKey(key));
+        if (value != null && !value.isBlank()) return value.trim();
+
+        value = PROPERTIES.getProperty(key);
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private static String require(String key) {
+        String value = resolve(key);
+        if (value == null) throw new IllegalStateException("Missing required config key: " + key);
+        return value;
     }
 
     private static String optional(String key, String defaultValue) {
-        String value = System.getProperty("chatapp." + key);
-        if (value == null || value.isBlank()) value = System.getenv(ENV_PREFIX + key.replace('.', '_').toUpperCase(Locale.ROOT));
-        if (value == null || value.isBlank()) value = PROPERTIES.getProperty(key);
-        return value == null || value.isBlank() ? defaultValue : value.trim();
+        String value = resolve(key);
+        return value == null ? defaultValue : value;
     }
 
     private static int requireInt(String key) {
