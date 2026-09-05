@@ -8,7 +8,7 @@
 
 ## Status
 
-**Phase 6 — production hardening and deployment readiness.**
+**Phase 6 complete — production hardening and deployment readiness.**
 
 The application provides secure authentication, real-time private messaging, presence and typing events, delivery/read states, paginated history, group chat, private file sharing, message search, MySQL persistence, a responsive JavaFX desktop client, automated dependency updates, container packaging, SBOM generation, CI/CD checks, configurable TLS transport, and lightweight runtime metrics.
 
@@ -316,7 +316,7 @@ realtime-chat-app/
     │   ├── client/              # JavaFX and CLI clients
     │   ├── config/              # Runtime configuration
     │   ├── database/            # Pool, manager, DAOs
-    │   ├── exception/           # Application exceptions
+    │   ├── exception/            # Application exceptions
     │   ├── model/               # Domain models and DTOs
     │   ├── server/              # Server, metrics, and connection handlers
     │   ├── service/             # Business logic
