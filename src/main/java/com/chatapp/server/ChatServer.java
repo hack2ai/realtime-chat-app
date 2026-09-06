@@ -271,13 +271,11 @@ public class ChatServer {
         if (!running) {
             READINESS_MARKER.clear();
             cancelRuntimeMetrics();
-            metricsScheduler.shutdownNow();
             return;
         }
         running = false;
         READINESS_MARKER.clear();
         cancelRuntimeMetrics();
-        metricsScheduler.shutdownNow();
         unregisterShutdownHook();
         logger.info("Shutting down chat server ({} active connections)...", activeHandlers.size());
         closeQuietly(serverSocket);
