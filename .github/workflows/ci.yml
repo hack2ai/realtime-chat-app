@@ -184,6 +184,9 @@ jobs:
           printf '%s\n' "$config" | jq -e '.services.db.pids_limit == 256' >/dev/null
           printf '%s\n' "$config" | jq -e '.services.db.mem_limit == "1g"' >/dev/null
           printf '%s\n' "$config" | jq -e '.services.db.cpus == 2' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.cap_drop == ["ALL"]' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.security_opt == ["no-new-privileges:true"]' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.stop_grace_period == "30s"' >/dev/null
           printf '%s\n' "$config" | jq -e '.networks.backend.internal == true' >/dev/null
           printf '%s\n' "$config" | jq -e '(.services.db.ports // []) == []' >/dev/null
           printf '%s\n' "$config" | jq -e '.services.server.logging.driver == "json-file"' >/dev/null
@@ -277,13 +280,16 @@ jobs:
           docker inspect "$container_id" | jq -e '.[0].HostConfig.Memory == 1073741824' >/dev/null
           docker inspect "$container_id" | jq -e '.[0].HostConfig.NanoCpus == 2000000000' >/dev/null
 
-      - name: Verify database container resource limits
+      - name: Verify database container hardening
         run: |
           container_id=$(docker compose ps -q db)
           test -n "$container_id"
+          docker inspect "$container_id" | jq -e '.[0].HostConfig.CapDrop == ["ALL"]' >/dev/null
+          docker inspect "$container_id" | jq -e '.[0].HostConfig.SecurityOpt | index("no-new-privileges:true") != null' >/dev/null
           docker inspect "$container_id" | jq -e '.[0].HostConfig.PidsLimit == 256' >/dev/null
           docker inspect "$container_id" | jq -e '.[0].HostConfig.Memory == 1073741824' >/dev/null
           docker inspect "$container_id" | jq -e '.[0].HostConfig.NanoCpus == 2000000000' >/dev/null
+          docker inspect "$container_id" | jq -e '.[0].HostConfig.NetworkMode | endswith("_backend")' >/dev/null
 
       - name: Verify attachment volume is writable
         run: |
