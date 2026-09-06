@@ -10,6 +10,10 @@ services:
     security_opt:
       - no-new-privileges:true
     stop_grace_period: 30s
+    ulimits:
+      nofile:
+        soft: 4096
+        hard: 8192
     environment:
       MYSQL_ROOT_PASSWORD: ${CHATAPP_MYSQL_ROOT_PASSWORD:?set CHATAPP_MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: chatapp_db
