@@ -89,6 +89,24 @@ class MessageCodecTest {
     }
 
     @Test
+    void readRejectsMalformedUtf8() throws Exception {
+        byte[] payload = {
+                '{', '"', 't', 'y', 'p', 'e', '"', ':', '"',
+                'C', '2', 'S', '_', 'L', 'O', 'G', 'I', 'N', '"', ',',
+                '"', 'p', 'a', 'y', 'l', 'o', 'a', 'd', '"', ':', '{',
+                '"', 'u', 's', 'e', 'r', 'n', 'a', 'm', 'e', '"', ':', '"',
+                'a', 'l', (byte) 0xFF, 'i', 'c', 'e', '"', '}', '}'
+        };
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        DataOutputStream out = new DataOutputStream(bytes);
+        out.writeInt(payload.length);
+        out.write(payload);
+
+        assertThrows(IOException.class, () ->
+                codec.read(new DataInputStream(new ByteArrayInputStream(bytes.toByteArray()))));
+    }
+
+    @Test
     void readRejectsEnvelopeWithoutMessageType() throws Exception {
         byte[] payload = "{\"payload\":{\"username\":\"alice\"}}".getBytes(StandardCharsets.UTF_8);
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
