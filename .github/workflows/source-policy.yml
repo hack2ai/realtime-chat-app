@@ -44,3 +44,10 @@ jobs:
             echo 'Production database access must use PreparedStatement rather than raw JDBC Statement APIs.'
             exit 1
           fi
+
+      - name: Reject weak cryptographic hashes
+        run: |
+          if git grep -nEi 'MessageDigest\.getInstance\(["'"'](MD5|SHA-1)["'"']\)|\b(MD5|SHA-1)\b' -- src/main/java; then
+            echo 'Do not introduce MD5 or SHA-1 into production cryptographic code.'
+            exit 1
+          fi
