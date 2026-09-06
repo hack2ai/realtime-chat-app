@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   sql-guard:
-    name: Reject raw JDBC statements
+    name: Reject unsafe SQL patterns
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -29,5 +29,13 @@ jobs:
           set -eu
           if git grep -nE 'java\.sql\.(Statement|CallableStatement)|import[[:space:]]+java\.sql\.(Statement|CallableStatement)[[:space:]]*;|\.createStatement\(|\.prepareCall\(' -- 'src/main/java'; then
             echo 'Raw JDBC statement APIs are forbidden; use PreparedStatement with parameter binding instead.'
+            exit 1
+          fi
+
+      - name: Verify schema contains no destructive or privilege-changing SQL
+        run: |
+          set -eu
+          if grep -nEi '(^|[[:space:];])(DROP|TRUNCATE)[[:space:]]+(DATABASE|TABLE|USER)|ALTER[[:space:]]+USER|GRANT[[:space:]]|REVOKE[[:space:]]|SET[[:space:]]+PASSWORD' src/main/resources/sql/schema.sql; then
+            echo 'schema.sql must not contain destructive DDL or database privilege/password changes.'
             exit 1
           fi
