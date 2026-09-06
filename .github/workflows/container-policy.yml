@@ -89,6 +89,14 @@ jobs:
             echo 'The Compose database service must use no-new-privileges:true.'
             exit 1
           fi
+          if ! grep -A12 '^  db:' docker-compose.yml | grep -q '^    cap_drop:$'; then
+            echo 'The Compose database service must configure capability dropping.'
+            exit 1
+          fi
+          if ! grep -A14 '^  db:' docker-compose.yml | grep -q '^      - ALL$'; then
+            echo 'The Compose database service must drop all Linux capabilities.'
+            exit 1
+          fi
 
       - name: Require localhost-only server publishing
         env:
