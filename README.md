@@ -3,7 +3,7 @@
 > A professional Java 21 networking project for building a secure, database-backed real-time chat system over TCP.
 
 [![Java](https://img.shields.io/badge/Java-21-ED8B00?style=for-the-badge&logo=openjdk&logoColor=white)](https://www.java.com/)
-[![Maven](https://img.shields.io/badge/Maven-3.8%2B-C71A36?style=for-the-badge&logo=apachemaven&logoColor=white)](https://maven.apache.org/)
+[![Maven](https://img.shields.io/badge/Maven-3.9%2B-C71A36?style=for-the-badge&logo=apachemaven&logoColor=white)](https://maven.apache.org/)
 [![MySQL](https://img.shields.io/badge/MySQL-8-4479A1?style=for-the-badge&logo=mysql&logoColor=white)](https://www.mysql.com/)
 
 ## Status
@@ -148,7 +148,7 @@ See [SECURITY.md](SECURITY.md) for reporting guidance.
 ### Prerequisites
 
 - JDK 21+
-- Maven 3.8+
+- Maven 3.9+
 - MySQL 8+
 
 ### 1. Create the database
