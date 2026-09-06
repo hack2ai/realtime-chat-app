@@ -161,15 +161,11 @@ public final class ConnectionPool {
         catch (SQLException e) { logger.warn("Error closing database connection ({}).", e.getClass().getSimpleName()); }
     }
 
-    /** Idempotently closes all currently idle connections. Borrowed connections are rejected after shutdown. */
+    /** Idempotently closes every tracked connection, including connections currently borrowed by callers. */
     public void shutdown() {
         if (!shutdown.compareAndSet(false, true)) return;
-        Connection conn;
-        while ((conn = availableConnections.poll()) != null) {
-            trackedConnections.remove(conn);
-            closeQuietly(conn);
-            totalCreated.updateAndGet(current -> Math.max(0, current - 1));
-        }
+        for (Connection conn : trackedConnections.toArray(Connection[]::new)) discardConnection(conn);
+        availableConnections.clear();
         logger.info("Connection pool shut down.");
     }
 }
