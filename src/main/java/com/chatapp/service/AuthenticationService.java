@@ -123,7 +123,17 @@ public class AuthenticationService {
 
         String token = generateSessionToken();
         String tokenDigest = digestToken(token);
-        LocalDateTime expiry = LocalDateTime.now().plusHours(AppConfig.getSessionExpiryHours());
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime expiry = now.plusHours(AppConfig.getSessionExpiryHours());
+
+        String existingDigest = activeTokenByUser.get(user.getId());
+        if (existingDigest != null) {
+            Session existingSession = activeSessions.get(existingDigest);
+            if (existingSession != null && !now.isBefore(existingSession.expiresAt)) {
+                expireSession(existingDigest, existingSession);
+            }
+        }
+
         Session session = new Session(user.getId(), expiry);
         if (activeTokenByUser.putIfAbsent(user.getId(), tokenDigest) != null) {
             throw new AuthenticationException("This account is already connected.");
