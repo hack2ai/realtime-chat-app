@@ -9,6 +9,8 @@ services:
     pids_limit: 256
     security_opt:
       - no-new-privileges:true
+    cap_drop:
+      - ALL
     stop_grace_period: 30s
     ulimits:
       nofile:
