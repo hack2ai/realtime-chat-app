@@ -20,18 +20,36 @@ public final class ConnectionPool {
     private static final Logger logger = LoggerFactory.getLogger(ConnectionPool.class);
     private static volatile ConnectionPool instance;
 
+    @FunctionalInterface
+    interface ConnectionFactory {
+        Connection open() throws SQLException;
+    }
+
     private final BlockingQueue<Connection> availableConnections;
     private final Set<Connection> trackedConnections = ConcurrentHashMap.newKeySet();
     private final int maxSize;
     private final int connectionTimeoutMs;
+    private final ConnectionFactory connectionFactory;
     private final AtomicInteger totalCreated = new AtomicInteger();
     private final AtomicBoolean shutdown = new AtomicBoolean();
 
     private ConnectionPool() {
-        this.maxSize = AppConfig.getDbPoolMaxSize();
-        this.connectionTimeoutMs = AppConfig.getDbConnectionTimeoutMs();
+        this(
+                AppConfig.getDbPoolMinIdle(),
+                AppConfig.getDbPoolMaxSize(),
+                AppConfig.getDbConnectionTimeoutMs(),
+                () -> DriverManager.getConnection(AppConfig.getJdbcUrl(), AppConfig.getDbUser(), AppConfig.getDbPassword())
+        );
+    }
+
+    ConnectionPool(int minIdle, int maxSize, int connectionTimeoutMs, ConnectionFactory connectionFactory) {
+        if (minIdle < 0 || maxSize <= 0 || minIdle > maxSize || connectionTimeoutMs < 0 || connectionFactory == null) {
+            throw new IllegalArgumentException("Invalid connection pool configuration.");
+        }
+        this.maxSize = maxSize;
+        this.connectionTimeoutMs = connectionTimeoutMs;
+        this.connectionFactory = connectionFactory;
         this.availableConnections = new ArrayBlockingQueue<>(maxSize);
-        int minIdle = AppConfig.getDbPoolMinIdle();
         try {
             for (int i = 0; i < minIdle; i++) availableConnections.offer(createConnection());
         } catch (RuntimeException e) {
@@ -64,7 +82,7 @@ public final class ConnectionPool {
     private Connection createConnection() {
         if (shutdown.get()) throw new IllegalStateException("Database connection pool is shut down.");
         try {
-            Connection conn = DriverManager.getConnection(AppConfig.getJdbcUrl(), AppConfig.getDbUser(), AppConfig.getDbPassword());
+            Connection conn = connectionFactory.open();
             if (shutdown.get()) {
                 closeQuietly(conn);
                 throw new IllegalStateException("Database connection pool is shut down.");
@@ -118,7 +136,7 @@ public final class ConnectionPool {
             throw new SQLException("Database connection pool is shut down.");
         }
         try {
-            Connection conn = DriverManager.getConnection(AppConfig.getJdbcUrl(), AppConfig.getDbUser(), AppConfig.getDbPassword());
+            Connection conn = connectionFactory.open();
             if (shutdown.get()) {
                 closeQuietly(conn);
                 totalCreated.decrementAndGet();
