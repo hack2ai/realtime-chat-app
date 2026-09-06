@@ -44,3 +44,10 @@ jobs:
             echo 'Resolve production TODO/FIXME/XXX markers before merging.'
             exit 1
           fi
+
+      - name: Reject high-risk dynamic execution and deserialization APIs
+        run: |
+          if git grep -nE 'ObjectInputStream|Runtime\.getRuntime\(\)\.exec|ScriptEngineManager|InitialContext' -- 'src/main/java'; then
+            echo 'Avoid high-risk dynamic execution, JNDI, and native Java deserialization APIs in production sources.'
+            exit 1
+          fi
