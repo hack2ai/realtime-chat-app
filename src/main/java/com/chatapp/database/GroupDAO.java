@@ -14,6 +14,8 @@ import java.util.List;
 
 /** Persistence operations for groups, membership, and group messages. */
 public class GroupDAO {
+    private static final int MAX_GROUP_MEMBERS = 200;
+
     public GroupSummary create(int ownerId, String name) {
         return DatabaseManager.executeTransaction(conn -> {
             int id;
@@ -42,7 +44,29 @@ public class GroupDAO {
     public boolean isOwner(int groupId, int userId) { return DatabaseManager.execute(conn -> { try (PreparedStatement stmt = conn.prepareStatement("SELECT 1 FROM chat_groups WHERE id = ? AND created_by = ?")) { stmt.setInt(1, groupId); stmt.setInt(2, userId); try (ResultSet rs = stmt.executeQuery()) { return rs.next(); } } }); }
     public int adminCount(int groupId) { return DatabaseManager.execute(conn -> { try (PreparedStatement stmt = conn.prepareStatement("SELECT COUNT(*) FROM group_members WHERE group_id = ? AND role = 'ADMIN'")) { stmt.setInt(1, groupId); try (ResultSet rs = stmt.executeQuery()) { return rs.next() ? rs.getInt(1) : 0; } } }); }
     public boolean isMember(int groupId, int userId) { return DatabaseManager.execute(conn -> { try (PreparedStatement stmt = conn.prepareStatement("SELECT 1 FROM group_members WHERE group_id = ? AND user_id = ?")) { stmt.setInt(1, groupId); stmt.setInt(2, userId); try (ResultSet rs = stmt.executeQuery()) { return rs.next(); } } }); }
-    public boolean addMember(int groupId, int userId) { return DatabaseManager.execute(conn -> { try (PreparedStatement stmt = conn.prepareStatement("INSERT IGNORE INTO group_members (group_id, user_id) VALUES (?, ?)")) { stmt.setInt(1, groupId); stmt.setInt(2, userId); return stmt.executeUpdate() > 0; } }); }
+    public boolean addMember(int groupId, int userId) {
+        return DatabaseManager.executeTransaction(conn -> {
+            try (PreparedStatement lockGroup = conn.prepareStatement("SELECT id FROM chat_groups WHERE id = ? FOR UPDATE")) {
+                lockGroup.setInt(1, groupId);
+                try (ResultSet rs = lockGroup.executeQuery()) {
+                    if (!rs.next()) return false;
+                }
+            }
+            int memberCount;
+            try (PreparedStatement count = conn.prepareStatement("SELECT COUNT(*) FROM group_members WHERE group_id = ?")) {
+                count.setInt(1, groupId);
+                try (ResultSet rs = count.executeQuery()) {
+                    memberCount = rs.next() ? rs.getInt(1) : 0;
+                }
+            }
+            if (memberCount >= MAX_GROUP_MEMBERS) return false;
+            try (PreparedStatement stmt = conn.prepareStatement("INSERT IGNORE INTO group_members (group_id, user_id) VALUES (?, ?)")) {
+                stmt.setInt(1, groupId);
+                stmt.setInt(2, userId);
+                return stmt.executeUpdate() > 0;
+            }
+        });
+    }
     public boolean removeMember(int groupId, int userId) { return DatabaseManager.execute(conn -> { try (PreparedStatement stmt = conn.prepareStatement("DELETE FROM group_members WHERE group_id = ? AND user_id = ?")) { stmt.setInt(1, groupId); stmt.setInt(2, userId); return stmt.executeUpdate() > 0; } }); }
     public List<Integer> memberIds(int groupId) { return DatabaseManager.execute(conn -> { try (PreparedStatement stmt = conn.prepareStatement("SELECT user_id FROM group_members WHERE group_id = ? ORDER BY user_id")) { stmt.setInt(1, groupId); try (ResultSet rs = stmt.executeQuery()) { List<Integer> ids = new ArrayList<>(); while (rs.next()) ids.add(rs.getInt(1)); return ids; } } }); }
     public List<GroupSummary> findForUser(int userId) {
