@@ -68,6 +68,17 @@ jobs:
             exit 1
           fi
 
+      - name: Require immutable server binary
+        run: |
+          if ! grep -nF 'chown root:root /app/chatapp-server.jar' Dockerfile; then
+            echo 'The server JAR must remain owned by root in the runtime image.'
+            exit 1
+          fi
+          if ! grep -nF 'chmod 0444 /app/chatapp-server.jar' Dockerfile; then
+            echo 'The server JAR must be read-only in the runtime image.'
+            exit 1
+          fi
+
       - name: Require Compose database privilege protection
         run: |
           if ! grep -A8 '^  db:' docker-compose.yml | grep -q '^    security_opt:$'; then
