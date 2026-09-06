@@ -70,6 +70,30 @@ jobs:
             puts "All workflows declare concurrency and positive job timeouts."
           '
 
+      - name: Verify safe checkout configuration
+        run: |
+          set -eu
+          ruby -e '
+            require "yaml"
+            paths = Dir[".github/workflows/*.yml", ".github/workflows/*.yaml"].sort
+            paths.each do |path|
+              workflow = YAML.load_file(path, aliases: true)
+              (workflow["jobs"] || {}).each do |job_name, job|
+                steps = job.is_a?(Hash) ? job["steps"] : nil
+                next unless steps.is_a?(Array)
+                steps.each do |step|
+                  next unless step.is_a?(Hash) && step["uses"].is_a?(String)
+                  next unless step["uses"].start_with?("actions/checkout@")
+                  with = step["with"]
+                  unless with.is_a?(Hash) && with["persist-credentials"] == false
+                    abort "Checkout step in #{job_name} within #{path} must set persist-credentials: false."
+                  end
+                end
+              end
+            end
+            puts "All actions/checkout steps disable credential persistence."
+          '
+
       - name: Verify safe workflow triggers and permissions
         run: |
           set -eu
