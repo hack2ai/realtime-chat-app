@@ -37,3 +37,10 @@ jobs:
             echo 'Private key material must not be committed.'
             exit 1
           fi
+
+      - name: Require prepared JDBC statements
+        run: |
+          if git grep -nE '(^|[^A-Za-z])createStatement[[:space:]]*\(|(^|[^A-Za-z])Statement[[:space:]]+[A-Za-z_]' -- src/main/java; then
+            echo 'Production database access must use PreparedStatement rather than raw JDBC Statement APIs.'
+            exit 1
+          fi
