@@ -124,6 +124,7 @@ public final class AppConfig {
     }
     public static int getDbConnectionTimeoutMs() { return requireRange("db.pool.connectionTimeoutMs", 1000, 120000); }
     public static int getDbConnectTimeoutMs() { return requireRange("db.connectTimeoutMs", 1000, 120000); }
+    public static int getDbSocketTimeoutMs() { return requireRange("db.socketTimeoutMs", 1000, 300000); }
     public static boolean isDbUseSsl() { return optionalBoolean("db.useSsl", true); }
     public static boolean isDbAllowPublicKeyRetrieval() { return optionalBoolean("db.allowPublicKeyRetrieval", false); }
     public static String getJdbcUrl() {
@@ -131,7 +132,8 @@ public final class AppConfig {
                 + "?useSSL=" + isDbUseSsl()
                 + "&allowPublicKeyRetrieval=" + isDbAllowPublicKeyRetrieval()
                 + "&serverTimezone=UTC&characterEncoding=UTF-8&useUnicode=true"
-                + "&connectTimeout=" + getDbConnectTimeoutMs();
+                + "&connectTimeout=" + getDbConnectTimeoutMs()
+                + "&socketTimeout=" + getDbSocketTimeoutMs();
     }
     public static int getServerPort() { return requirePort("server.port"); }
     public static String getServerBindAddress() { return require("server.bindAddress"); }
