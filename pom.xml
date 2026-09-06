@@ -125,6 +125,7 @@
                                 <requireUpperBoundDeps>
                                     <message>All dependency versions must resolve to their declared upper bounds.</message>
                                 </requireUpperBoundDeps>
+                                <dependencyConvergence/>
                             </rules>
                         </configuration>
                     </execution>
