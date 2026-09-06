@@ -89,13 +89,22 @@ jobs:
           CHATAPP_DB_PASSWORD: ci-app-password
         run: |
           config=$(docker compose config --format json)
+          printf '%s\n' "$config" | jq -e '.services.server.user == "10001"' >/dev/null
           printf '%s\n' "$config" | jq -e '.services.server.read_only == true' >/dev/null
           printf '%s\n' "$config" | jq -e '.services.server.init == true' >/dev/null
           printf '%s\n' "$config" | jq -e '.services.server.pids_limit == 256' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.mem_limit == "1g"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.cpus == 2' >/dev/null
           printf '%s\n' "$config" | jq -e '.services.server.cap_drop == ["ALL"]' >/dev/null
           printf '%s\n' "$config" | jq -e '.services.server.security_opt == ["no-new-privileges:true"]' >/dev/null
           printf '%s\n' "$config" | jq -e '.services.server.restart == "unless-stopped"' >/dev/null
           printf '%s\n' "$config" | jq -e '.services.db.restart == "unless-stopped"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.pids_limit == 256' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.mem_limit == "1g"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.cpus == 2' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.cap_drop == ["ALL"]' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.security_opt == ["no-new-privileges:true"]' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.stop_grace_period == "30s"' >/dev/null
           printf '%s\n' "$config" | jq -e '.networks.backend.internal == true' >/dev/null
           printf '%s\n' "$config" | jq -e '(.services.db.ports // []) == []' >/dev/null
           printf '%s\n' "$config" | jq -e '.services.server.logging.driver == "json-file"' >/dev/null
