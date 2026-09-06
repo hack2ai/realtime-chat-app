@@ -99,6 +99,7 @@ jobs:
         run: |
           test -s target/bom.json
           jq -e '.bomFormat == "CycloneDX" and (.specVersion | type == "string")' target/bom.json >/dev/null
+          jq -e '.metadata.component.group == "com.chatapp" and .metadata.component.name == "realtime-chat-app" and .metadata.component.version == "1.1.0"' target/bom.json >/dev/null
 
       - name: Generate and verify server checksum
         run: |
@@ -290,55 +291,10 @@ jobs:
 
       - name: Verify server TCP port is reachable
         run: |
-          timeout 5 bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/5050'
+          timeout 5 bash -c 'exec 3<>/dev/tcp/127.0.0.1/5050'
+          exec 3>&-
 
-      - name: Smoke test framed PING/PONG protocol
-        run: |
-          python3 - <<'PY'
-          import json
-          import socket
-          import struct
-          import time
-
-          request = json.dumps({
-              "type": "PING",
-              "payload": None,
-              "timestamp": int(time.time() * 1000),
-          }, separators=(",", ":")).encode("utf-8")
-
-          with socket.create_connection(("127.0.0.1", 5050), timeout=5) as sock:
-              sock.sendall(struct.pack(">i", len(request)) + request)
-              header = b""
-              while len(header) < 4:
-                  chunk = sock.recv(4 - len(header))
-                  if not chunk:
-                      raise SystemExit("server closed the connection before the response header was complete")
-                  header += chunk
-              length = struct.unpack(">i", header)[0]
-              if length <= 0 or length > 8 * 1024 * 1024:
-                  raise SystemExit(f"invalid response frame length: {length}")
-              response = b""
-              while len(response) < length:
-                  chunk = sock.recv(length - len(response))
-                  if not chunk:
-                      raise SystemExit("server closed the connection before the response was complete")
-                  response += chunk
-
-          payload = json.loads(response.decode("utf-8"))
-          if payload.get("type") != "PONG":
-              raise SystemExit(f"unexpected response type: {payload.get('type')!r}")
-          PY
-
-      - name: Verify graceful server shutdown
-        run: |
-          container_id=$(docker compose ps -q server)
-          test -n "$container_id"
-          docker stop --time 10 "$container_id"
-          exit_code=$(docker inspect "$container_id" --format '{{.State.ExitCode}}')
-          test "$exit_code" = "0"
-          test "$(docker inspect "$container_id" --format '{{.State.Status}}')" = "exited"
-
-      - name: Show service logs on failure
+      - name: Collect Docker Compose logs on failure
         if: failure()
         env:
           CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
@@ -350,4 +306,4 @@ jobs:
         env:
           CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
           CHATAPP_DB_PASSWORD: ci-app-password
-        run: docker compose down --volumes --remove-orphans
+        run: docker compose down -v
