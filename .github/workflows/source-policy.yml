@@ -26,7 +26,7 @@ jobs:
 
       - name: Reject unsafe debug and deserialization APIs
         run: |
-          if git grep -nE 'printStackTrace|System\.(out|err)|ObjectInputStream|Runtime\.getRuntime\(\)\.exec\(' -- src/main/java; then
+          if git grep -nE 'printStackTrace|System\.(out|err)|ObjectInputStream|Runtime\.getRuntime\(\)\.exec\(|new[[:space:]]+ProcessBuilder([[:space:](]|\.)' -- src/main/java; then
             echo 'Unsafe debug, console, object-deserialization, or process-execution APIs must not be introduced into production source.'
             exit 1
           fi
