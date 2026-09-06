@@ -18,6 +18,7 @@ Please allow reasonable time for investigation and remediation before public dis
 ## Security expectations
 
 - Never commit `config.properties`, passwords, tokens, private keys, or other secrets.
+- Never log passwords, session tokens, database credentials, private keys, or full authentication payloads.
 - Use TLS before exposing the TCP server outside a trusted local network.
 - Use a dedicated database account with the minimum required privileges.
 - Rotate credentials if they are accidentally exposed.
