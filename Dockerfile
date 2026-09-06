@@ -27,5 +27,5 @@ USER chatapp
 STOPSIGNAL SIGTERM
 EXPOSE 5050
 VOLUME ["/app/data/attachments"]
-HEALTHCHECK --interval=10s --timeout=3s --retries=5 --start-period=10s CMD test -f /tmp/chatapp.ready
+HEALTHCHECK --interval=30s --timeout=3s --retries=3 --start-period=20s CMD-SHELL test -f /tmp/chatapp.ready
 ENTRYPOINT ["java", "-jar", "/app/chatapp-server.jar"]
