@@ -268,6 +268,21 @@ The server container runs as a non-root user. The Compose database is intended f
 
 Pushing a semantic version tag such as `v1.1.0` triggers the release workflow. It verifies the Maven build, validates the runnable server JAR and CycloneDX SBOM, publishes the versioned server JAR, SHA-256 checksums, and SBOM to a GitHub Release, and builds and pushes the tagged and `latest` server image to GHCR after validating its non-root identity, entrypoint, healthcheck, stop signal, filesystem policy, and OCI metadata.
 
+Before consuming a release, verify the published checksums from the GitHub Release page:
+
+```bash
+sha256sum --check chatapp-server-v1.1.0.jar.sha256
+sha256sum --check chatapp-sbom-v1.1.0.json.sha256
+```
+
+The release also publishes `chatapp-container-v1.1.0.digest`. Use that digest rather than the mutable `latest` tag when an immutable container reference is required:
+
+```text
+ghcr.io/hack2ai/realtime-chat-app@sha256:<verified-digest>
+```
+
+CI and the release workflow also publish build-provenance attestations for the server artifact and SBOM, and the release workflow publishes provenance for the container image. Treat the recorded checksums, image digest, and provenance together as the integrity record for a release.
+
 ## Protocol
 
 Every message is encoded as:
