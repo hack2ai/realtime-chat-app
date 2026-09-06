@@ -5,9 +5,11 @@ import com.chatapp.config.AppConfig;
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManagerFactory;
+import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.GeneralSecurityException;
 import java.security.KeyStore;
 
 /** Builds TLS contexts from deployment-provided keystores and truststores. */
@@ -34,7 +36,7 @@ public final class TlsContextFactory {
             } finally {
                 java.util.Arrays.fill(password, '\0');
             }
-        } catch (Exception e) {
+        } catch (IOException | GeneralSecurityException | RuntimeException e) {
             throw new IllegalStateException("Unable to initialize TLS server context.", e);
         }
     }
@@ -60,7 +62,7 @@ public final class TlsContextFactory {
             SSLContext context = SSLContext.getInstance(TLS_PROTOCOL);
             context.init(null, trustManagers.getTrustManagers(), null);
             return context;
-        } catch (Exception e) {
+        } catch (IOException | GeneralSecurityException | RuntimeException e) {
             throw new IllegalStateException("Unable to initialize TLS client context.", e);
         }
     }
