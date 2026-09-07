@@ -9,6 +9,7 @@ import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AppConfigTest {
@@ -17,7 +18,7 @@ class AppConfigTest {
     };
 
     @AfterEach
-    void clearDatabaseOverrides() {
+    void clearConfigurationOverrides() {
         for (String key : DB_KEYS) {
             System.clearProperty("chatapp.db." + key);
             System.clearProperty("chatapp.db." + key + ".file");
@@ -32,11 +33,7 @@ class AppConfigTest {
 
     @Test
     void jdbcUrlUsesJavaUtf8EncodingName() {
-        System.setProperty("chatapp.db.host", "localhost");
-        System.setProperty("chatapp.db.port", "3306");
-        System.setProperty("chatapp.db.name", "chatapp_db");
-        System.setProperty("chatapp.db.user", "chatapp_user");
-        System.setProperty("chatapp.db.password", "test-password");
+        setRequiredDatabaseProperties();
         System.setProperty("chatapp.db.useSsl", "false");
         System.setProperty("chatapp.db.allowPublicKeyRetrieval", "false");
         System.setProperty("chatapp.db.connectTimeoutMs", "10000");
@@ -53,11 +50,7 @@ class AppConfigTest {
 
     @Test
     void jdbcUrlUsesConfiguredConnectTimeout() {
-        System.setProperty("chatapp.db.host", "localhost");
-        System.setProperty("chatapp.db.port", "3306");
-        System.setProperty("chatapp.db.name", "chatapp_db");
-        System.setProperty("chatapp.db.user", "chatapp_user");
-        System.setProperty("chatapp.db.password", "test-password");
+        setRequiredDatabaseProperties();
         System.setProperty("chatapp.db.connectTimeoutMs", "2500");
 
         assertTrue(AppConfig.getJdbcUrl().contains("connectTimeout=2500"));
@@ -65,14 +58,31 @@ class AppConfigTest {
 
     @Test
     void jdbcUrlUsesConfiguredSocketTimeout() {
-        System.setProperty("chatapp.db.host", "localhost");
-        System.setProperty("chatapp.db.port", "3306");
-        System.setProperty("chatapp.db.name", "chatapp_db");
-        System.setProperty("chatapp.db.user", "chatapp_user");
-        System.setProperty("chatapp.db.password", "test-password");
+        setRequiredDatabaseProperties();
         System.setProperty("chatapp.db.socketTimeoutMs", "15000");
 
         assertTrue(AppConfig.getJdbcUrl().contains("socketTimeout=15000"));
+    }
+
+    @Test
+    void databaseTlsIsEnabledByDefault() {
+        System.clearProperty("chatapp.db.useSsl");
+
+        assertTrue(AppConfig.isDbUseSsl());
+    }
+
+    @Test
+    void publicKeyRetrievalIsDisabledByDefault() {
+        System.clearProperty("chatapp.db.allowPublicKeyRetrieval");
+
+        assertFalse(AppConfig.isDbAllowPublicKeyRetrieval());
+    }
+
+    @Test
+    void invalidDatabaseTlsSettingIsRejected() {
+        System.setProperty("chatapp.db.useSsl", "maybe");
+
+        assertThrows(IllegalStateException.class, AppConfig::isDbUseSsl);
     }
 
     @Test
@@ -110,5 +120,13 @@ class AppConfigTest {
         System.setProperty("chatapp.db.password.file", secretFile.toString());
 
         assertEquals("file-based-secret", AppConfig.getDbPassword());
+    }
+
+    private static void setRequiredDatabaseProperties() {
+        System.setProperty("chatapp.db.host", "localhost");
+        System.setProperty("chatapp.db.port", "3306");
+        System.setProperty("chatapp.db.name", "chatapp_db");
+        System.setProperty("chatapp.db.user", "chatapp_user");
+        System.setProperty("chatapp.db.password", "test-password");
     }
 }
