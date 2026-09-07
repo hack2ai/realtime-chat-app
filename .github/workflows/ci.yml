@@ -249,6 +249,7 @@ jobs:
         run: |
           test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{.Config.WorkingDir}}')" = "/app"
           test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{json .Config.Volumes}}')" = '{"/app/data/attachments":{}}'
+          test "$(docker run --rm --entrypoint stat realtime-chat-app:${{ github.sha }} -c '%u:%g:%a' /app/chatapp-server.jar)" = "0:0:444"
 
       - name: Verify server image JVM safety options
         run: |
