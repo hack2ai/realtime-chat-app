@@ -110,7 +110,8 @@ jobs:
         run: |
           test -s target/bom.json
           jq -e '.bomFormat == "CycloneDX" and (.specVersion | type == "string")' target/bom.json >/dev/null
-          jq -e '.metadata.component.group == "com.chatapp" and .metadata.component.name == "realtime-chat-app" and .metadata.component.version == "1.1.0"' target/bom.json >/dev/null
+          project_version=$(mvn --batch-mode --no-transfer-progress help:evaluate -Dexpression=project.version -q -DforceStdout)
+          jq -e --arg version "$project_version" '.metadata.component.group == "com.chatapp" and .metadata.component.name == "realtime-chat-app" and .metadata.component.version == $version' target/bom.json >/dev/null
 
       - name: Generate and verify server checksum
         run: |
