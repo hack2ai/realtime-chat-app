@@ -4,7 +4,10 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Locale;
 import java.util.Properties;
 
@@ -32,14 +35,22 @@ public final class AppConfig {
     private static String readSecretFile(String key, String filePath) {
         try {
             Path path = Path.of(filePath);
-            if (!Files.isRegularFile(path) || Files.size(path) > MAX_SECRET_FILE_BYTES) {
-                throw new IllegalStateException("Secret file for config key '" + key + "' is missing or too large.");
+            BasicFileAttributes attributes = Files.readAttributes(path, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+            if (!attributes.isRegularFile()) {
+                throw new IllegalStateException("Secret file for config key '" + key + "' is missing, not a regular file, or is a symlink.");
             }
-            String value = Files.readString(path, StandardCharsets.UTF_8).trim();
-            if (value.isBlank()) {
-                throw new IllegalStateException("Secret file for config key '" + key + "' is blank.");
+
+            try (InputStream in = Files.newInputStream(path, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)) {
+                byte[] bytes = in.readNBytes(MAX_SECRET_FILE_BYTES + 1);
+                if (bytes.length > MAX_SECRET_FILE_BYTES) {
+                    throw new IllegalStateException("Secret file for config key '" + key + "' is too large.");
+                }
+                String value = new String(bytes, StandardCharsets.UTF_8).trim();
+                if (value.isBlank()) {
+                    throw new IllegalStateException("Secret file for config key '" + key + "' is blank.");
+                }
+                return value;
             }
-            return value;
         } catch (IOException | RuntimeException e) {
             if (e instanceof IllegalStateException state) {
                 throw state;
