@@ -268,27 +268,27 @@ public class ChatServer {
     public GroupService getGroupService() { return groupService; }
 
     public void stop() {
-        if (!running) {
-            READINESS_MARKER.clear();
-            cancelRuntimeMetrics();
-            return;
-        }
+        boolean wasRunning = running;
         running = false;
         READINESS_MARKER.clear();
         cancelRuntimeMetrics();
         unregisterShutdownHook();
-        logger.info("Shutting down chat server ({} active connections)...", activeHandlers.size());
         closeQuietly(serverSocket);
         serverSocket = null;
         for (ClientHandler handler : activeHandlers.toArray(ClientHandler[]::new)) handler.closeConnection();
+        activeHandlers.clear();
+        connectedClients.clear();
+
         clientThreadPool.shutdownNow();
         try {
             if (!clientThreadPool.awaitTermination(5, TimeUnit.SECONDS)) logger.warn("Client handler pool did not terminate within 5 seconds");
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
+
+        metricsScheduler.shutdownNow();
         ConnectionPool.getInstance().shutdown();
-        logger.info("Chat server stopped.");
+        if (wasRunning) logger.info("Chat server stopped.");
     }
 
     private static void closeQuietly(AutoCloseable closeable) {
