@@ -143,6 +143,12 @@ Current defensive controls include:
 
 See [SECURITY.md](SECURITY.md) for reporting guidance.
 
+## GitHub Security Prerequisites
+
+The repository's Dependency Review workflow requires GitHub's **Dependency graph** to be enabled. Enable it under **Repository Settings → Security → Advanced Security → Dependency graph** before relying on Dependency Review checks for pull requests.
+
+Do not disable or bypass the Dependency Review workflow when the feature is unavailable; the intended behavior is to restore the repository setting and rerun the affected pull-request checks.
+
 ## Getting Started
 
 ### Prerequisites
