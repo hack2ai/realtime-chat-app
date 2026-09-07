@@ -65,6 +65,16 @@ class MessageCodecTest {
     }
 
     @Test
+    void readRejectsFrameOneByteOverMaximum() throws Exception {
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream(Integer.BYTES);
+        DataOutputStream out = new DataOutputStream(bytes);
+        out.writeInt(MAX_FRAME_BYTES + 1);
+
+        assertThrows(IOException.class, () ->
+                codec.read(new DataInputStream(new ByteArrayInputStream(bytes.toByteArray()))));
+    }
+
+    @Test
     void readRejectsTruncatedFrame() throws Exception {
         byte[] payload = "{\"type\":\"C2S_LOGIN\"}".getBytes(StandardCharsets.UTF_8);
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
