@@ -87,7 +87,7 @@ services:
     secrets:
       - db_password
     healthcheck:
-      test: ["CMD-SHELL", "test -f /tmp/chatapp.ready"]
+      test: ["CMD", "java", "-cp", "/app/chatapp-server.jar", "com.chatapp.server.ServerHealthCheck"]
       interval: 10s
       timeout: 3s
       retries: 5
