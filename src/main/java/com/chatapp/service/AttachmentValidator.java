@@ -2,16 +2,17 @@ package com.chatapp.service;
 
 import com.chatapp.exception.ValidationException;
 
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.Locale;
 import java.util.Set;
-import java.util.zip.ZipInputStream;
+import java.util.zip.ZipFile;
 
 /** Validates attachment metadata and file signatures before storage. */
 public final class AttachmentValidator {
@@ -92,18 +93,30 @@ public final class AttachmentValidator {
         if (!startsWith(value, new byte[]{0x50, 0x4b, 0x03, 0x04})) {
             throw new ValidationException("File content does not match its declared " + type + " type.");
         }
-        Set<String> entries = new HashSet<>();
-        try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(value), StandardCharsets.UTF_8)) {
-            java.util.zip.ZipEntry entry;
-            while ((entry = zip.getNextEntry()) != null) {
-                entries.add(entry.getName());
-                zip.closeEntry();
+
+        Path temp = null;
+        try {
+            temp = Files.createTempFile("chatapp-ooxml-", ".zip");
+            Files.write(temp, value);
+            Set<String> entries = new HashSet<>();
+            try (ZipFile zip = new ZipFile(temp.toFile(), StandardCharsets.UTF_8)) {
+                zip.stream().map(entry -> entry.getName()).forEach(entries::add);
             }
+            if (!entries.contains("[Content_Types].xml") || !entries.contains(requiredEntry)) {
+                throw new ValidationException("File content does not match its declared " + type + " structure.");
+            }
+        } catch (ValidationException e) {
+            throw e;
         } catch (IOException | RuntimeException e) {
             throw new ValidationException("Invalid " + type + " archive.");
-        }
-        if (!entries.contains("[Content_Types].xml") || !entries.contains(requiredEntry)) {
-            throw new ValidationException("File content does not match its declared " + type + " structure.");
+        } finally {
+            if (temp != null) {
+                try {
+                    Files.deleteIfExists(temp);
+                } catch (IOException ignored) {
+                    // Best-effort cleanup; never expose filesystem details to clients.
+                }
+            }
         }
     }
 
