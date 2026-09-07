@@ -122,7 +122,7 @@ public class ChatServer {
     private void logRuntimeMetrics() {
         if (!running) return;
         ServerMetrics.Snapshot snapshot = metrics.snapshot();
-        logger.info("Server metrics: connectedUsers={}, activeHandlers={}, acceptedConnections={}, rejectedConnections={}, requests={}, protocolErrors={}, poolActive={}, poolSize={}, queueDepth={}, completedHandlers={}",
+        logger.info("Server metrics: connectedUsers={}, activeHandlers={}, acceptedConnections={}, rejectedConnections={}, requests={}, protocolErrors={}, poolActive={}, poolSize={}, queueDepth={}, completedHandlers={}, poolTotalCreated={} ",
                 connectedClients.size(),
                 activeHandlers.size(),
                 snapshot.acceptedConnections(),
@@ -132,7 +132,8 @@ public class ChatServer {
                 clientThreadPool.getActiveCount(),
                 clientThreadPool.getPoolSize(),
                 clientThreadPool.getQueue().size(),
-                clientThreadPool.getCompletedTaskCount());
+                clientThreadPool.getCompletedTaskCount(),
+                ConnectionPool.getInstance().getTotalCreated());
     }
 
     private void verifyDatabaseReady() throws IOException {
@@ -287,7 +288,7 @@ public class ChatServer {
         }
 
         metricsScheduler.shutdownNow();
-        ConnectionPool.getInstance().shutdown();
+        ConnectionPool.shutdownInstance();
         if (wasRunning) logger.info("Chat server stopped.");
     }
 
