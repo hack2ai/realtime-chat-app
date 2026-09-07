@@ -53,6 +53,20 @@ class RequestRateLimiterTest {
     }
 
     @Test
+    void evictsOldestKeyWhenCapacityIsFull() throws Exception {
+        RequestRateLimiter limiter = new RequestRateLimiter(1, Duration.ofMinutes(1), 2);
+        assertTrue(limiter.allow("oldest"));
+        Thread.sleep(5);
+        assertTrue(limiter.allow("middle"));
+        Thread.sleep(5);
+        assertTrue(limiter.allow("newest"));
+
+        assertEquals(2, limiter.size());
+        assertTrue(limiter.allow("oldest"), "oldest key should be evicted when capacity is full");
+        assertFalse(limiter.allow("newest"), "newest key should remain tracked");
+    }
+
+    @Test
     void remainsBoundedUnderConcurrentNewKeys() throws Exception {
         int maxKeys = 25;
         int workers = 16;
