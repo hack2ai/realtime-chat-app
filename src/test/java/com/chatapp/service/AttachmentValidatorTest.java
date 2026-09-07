@@ -60,6 +60,16 @@ class AttachmentValidatorTest {
     }
 
     @Test
+    void rejectsMalformedUtf8Json() {
+        byte[] malformedJson = {
+                '{', '"', 'm', 'e', 's', 's', 'a', 'g', 'e', '"', ':', '"',
+                'h', 'i', (byte) 0xFF, '"', '}'
+        };
+        assertThrows(ValidationException.class,
+                () -> AttachmentValidator.validateContent("application/json", malformedJson));
+    }
+
+    @Test
     void acceptsValidJson() throws Exception {
         AttachmentValidator.validateContent("application/json", "{\"message\":\"hello\",\"ok\":true}".getBytes(StandardCharsets.UTF_8));
     }
