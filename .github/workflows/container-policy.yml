@@ -89,22 +89,23 @@ jobs:
 
       - name: Require Compose database privilege protection
         run: |
-          if ! grep -A8 '^  db:' docker-compose.yml | grep -q '^    security_opt:$'; then
+          db_block=$(sed -n '/^  db:/,/^  server:/p' docker-compose.yml)
+          printf '%s\n' "$db_block" | grep -q '^    security_opt:$' || {
             echo 'The Compose database service must configure no-new-privileges.'
             exit 1
-          fi
-          if ! grep -A10 '^  db:' docker-compose.yml | grep -q 'no-new-privileges:true'; then
+          }
+          printf '%s\n' "$db_block" | grep -q 'no-new-privileges:true' || {
             echo 'The Compose database service must use no-new-privileges:true.'
             exit 1
-          fi
-          if ! grep -A12 '^  db:' docker-compose.yml | grep -q '^    cap_drop:$'; then
+          }
+          printf '%s\n' "$db_block" | grep -q '^    cap_drop:$' || {
             echo 'The Compose database service must configure capability dropping.'
             exit 1
-          fi
-          if ! grep -A14 '^  db:' docker-compose.yml | grep -q '^      - ALL$'; then
+          }
+          printf '%s\n' "$db_block" | grep -q '^      - ALL$' || {
             echo 'The Compose database service must drop all Linux capabilities.'
             exit 1
-          fi
+          }
 
       - name: Require secret-backed database configuration
         env:
