@@ -54,6 +54,14 @@ jobs:
           test "$(docker image inspect "$image" --format '{{json .Config.Volumes}}')" = '{"/app/data/attachments":{}}'
           test "$(docker image inspect "$image" --format '{{json .Config.Healthcheck.Test}}')" = '["CMD-SHELL","test -f /tmp/chatapp.ready"]'
 
+      - name: Verify healthcheck policy
+        run: |
+          image=realtime-chat-app:${{ github.sha }}
+          test "$(docker image inspect "$image" --format '{{.Config.Healthcheck.Interval}}')" = "10s"
+          test "$(docker image inspect "$image" --format '{{.Config.Healthcheck.Timeout}}')" = "3s"
+          test "$(docker image inspect "$image" --format '{{.Config.Healthcheck.Retries}}')" = "5"
+          test "$(docker image inspect "$image" --format '{{.Config.Healthcheck.StartPeriod}}')" = "10s"
+
       - name: Verify JVM resource safety
         run: |
           image=realtime-chat-app:${{ github.sha }}
