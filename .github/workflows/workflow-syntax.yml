@@ -109,6 +109,9 @@ jobs:
               if permissions == "write-all" || permissions == { "write-all" => true }
                 abort "Broad write-all permissions are forbidden in #{path}."
               end
+              if permissions.is_a?(Hash) && permissions["contents"] == "write" && path != ".github/workflows/release.yml"
+                abort "contents: write is reserved for the release workflow: #{path}."
+              end
             end
             puts "Workflow triggers and permissions satisfy the security policy."
           '
