@@ -14,6 +14,7 @@
 - [ ] I reviewed authentication, authorization, input validation, persistence, protocol, and rate-limiting impact when applicable.
 - [ ] I reviewed container/deployment security impact when applicable.
 - [ ] I reviewed any new dependency, GitHub Action, permission, or external service for least privilege.
+- [ ] I confirmed passwords, session tokens, database credentials, and private file contents are not written to logs.
 - [ ] I updated `SECURITY.md` or documentation when security behavior changed.
 
 ## Release / compatibility
