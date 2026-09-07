@@ -63,7 +63,7 @@ class AuthenticationServiceConcurrencyTest {
     }
 
     @Test
-    void failedOnlineStatusPersistenceRollsBackSessionState() {
+    void failedOnlineStatusPersistenceRollsBackSessionState() throws Exception {
         User user = new User(
                 "alice",
                 "alice@example.com",
