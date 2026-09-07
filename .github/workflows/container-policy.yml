@@ -145,6 +145,18 @@ jobs:
           printf '%s\n' "$config" | jq -e '.services.server.ports[0].host_ip == "127.0.0.1"' >/dev/null
           printf '%s\n' "$config" | jq -e '.services.server.ports[0] | ((.target | tostring) == "5050" and (.published | tostring) == "5050" and .protocol == "tcp")' >/dev/null
 
+      - name: Reject tracked credential patterns
+        run: |
+          set +e
+          matches=$(git grep -nEI 'BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9_]{20,}' -- ':!target' ':!*.md')
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ] && [ -n "$matches" ]; then
+            echo 'Tracked source files contain a private-key header or credential-token pattern:'
+            printf '%s\n' "$matches"
+            exit 1
+          fi
+
       - name: Reject remote Dockerfile fetches and piped installers
         run: |
           if grep -nE '^\s*ADD\s+https?://|\b(curl|wget)[[:space:]].*\|[[:space:]]*(sh|bash)([[:space:]]|$)' Dockerfile; then
