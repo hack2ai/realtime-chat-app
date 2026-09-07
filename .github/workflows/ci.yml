@@ -304,6 +304,7 @@ jobs:
           docker inspect "$container_id" | jq -e '.[0].HostConfig.PidsLimit == 256' >/dev/null
           docker inspect "$container_id" | jq -e '.[0].HostConfig.Memory == 1073741824' >/dev/null
           docker inspect "$container_id" | jq -e '.[0].HostConfig.NanoCpus == 2000000000' >/dev/null
+          test "$(docker compose exec -T server id -u)" = "10001"
 
       - name: Verify database container hardening
         run: |
