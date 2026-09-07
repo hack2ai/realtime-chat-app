@@ -10,9 +10,20 @@
 *.sql text eol=lf
 *.sh text eol=lf
 
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
 *.jar binary
 *.p12 binary
 *.pfx binary
 *.jks binary
 *.key binary
 *.pem binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
