@@ -216,6 +216,13 @@ class MessageCodecTest {
     }
 
     @Test
+    void unwrapRejectsNullPayloadTypeWhenEnvelopeHasNoPayload() {
+        Envelope envelope = new Envelope(MessageType.C2S_LOGIN, null);
+
+        assertThrows(IllegalArgumentException.class, () -> codec.unwrap(envelope, null));
+    }
+
+    @Test
     void unwrapReturnsNullForMissingPayload() {
         Envelope envelope = new Envelope(MessageType.C2S_LOGIN, null);
         assertNull(codec.unwrap(envelope, Payload.class));
