@@ -13,7 +13,14 @@ public final class ServerHealthCheck {
     }
 
     public static void main(String[] args) {
-        int port = resolvePort();
+        final int port;
+        try {
+            port = resolvePort();
+        } catch (IllegalArgumentException e) {
+            System.exit(1);
+            return;
+        }
+
         try (Socket socket = new Socket()) {
             socket.connect(new InetSocketAddress("127.0.0.1", port), CONNECT_TIMEOUT_MILLIS);
         } catch (IOException e) {
@@ -22,19 +29,22 @@ public final class ServerHealthCheck {
     }
 
     private static int resolvePort() {
-        String configuredPort = System.getenv("CHATAPP_SERVER_PORT");
+        return parsePort(System.getenv("CHATAPP_SERVER_PORT"));
+    }
+
+    static int parsePort(String configuredPort) {
         if (configuredPort == null || configuredPort.isBlank()) {
             return DEFAULT_PORT;
         }
+        final int port;
         try {
-            int port = Integer.parseInt(configuredPort);
-            if (port < 1 || port > 65_535) {
-                System.exit(1);
-            }
-            return port;
+            port = Integer.parseInt(configuredPort);
         } catch (NumberFormatException e) {
-            System.exit(1);
-            return DEFAULT_PORT;
+            throw new IllegalArgumentException("CHATAPP_SERVER_PORT must be a valid TCP port.", e);
         }
+        if (port < 1 || port > 65_535) {
+            throw new IllegalArgumentException("CHATAPP_SERVER_PORT must be between 1 and 65535.");
+        }
+        return port;
     }
 }
