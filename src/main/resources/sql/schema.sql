@@ -42,6 +42,8 @@ CREATE TABLE IF NOT EXISTS private_attachments (
     size_bytes BIGINT UNSIGNED NOT NULL,
     sha256 CHAR(64) NOT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CHECK (size_bytes BETWEEN 1 AND 5242880),
+    CHECK (REGEXP_LIKE(sha256, '^[0-9A-Fa-f]{64}$')),
     FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (receiver_id) REFERENCES users(id) ON DELETE CASCADE,
     INDEX idx_attachment_sender (sender_id, created_at),
