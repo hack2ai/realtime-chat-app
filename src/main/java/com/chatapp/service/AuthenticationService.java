@@ -75,7 +75,7 @@ public class AuthenticationService {
             return new ValidationException("Username '" + username + "' is already taken.");
         }
         if (userDAO.emailExists(email)) {
-            return new ValidationException("An account with this email already exists.");
+            return new ValidationException("An account with these details already exists.");
         }
         return new ValidationException("An account with these details already exists.");
     }
@@ -135,16 +135,18 @@ public class AuthenticationService {
         }
 
         Session session = new Session(user.getId(), expiry);
-        if (activeTokenByUser.putIfAbsent(user.getId(), tokenDigest) != null) {
-            throw new AuthenticationException("This account is already connected.");
-        }
-        activeSessions.put(tokenDigest, session);
-        try {
-            userDAO.updateStatus(user.getId(), User.Status.ONLINE);
-        } catch (RuntimeException e) {
-            activeSessions.remove(tokenDigest, session);
-            activeTokenByUser.remove(user.getId(), tokenDigest);
-            throw e;
+        synchronized (activeTokenByUser) {
+            if (activeTokenByUser.putIfAbsent(user.getId(), tokenDigest) != null) {
+                throw new AuthenticationException("This account is already connected.");
+            }
+            activeSessions.put(tokenDigest, session);
+            try {
+                userDAO.updateStatus(user.getId(), User.Status.ONLINE);
+            } catch (RuntimeException e) {
+                activeSessions.remove(tokenDigest, session);
+                activeTokenByUser.remove(user.getId(), tokenDigest);
+                throw e;
+            }
         }
         return new LoginResult(user, token, expiry);
     }
@@ -195,15 +197,20 @@ public class AuthenticationService {
      * while the next successful lifecycle operation can repair persisted status.
      */
     private void markOfflineSafely(int userId) {
-        try {
-            userDAO.updateStatus(userId, User.Status.OFFLINE);
-        } catch (RuntimeException e) {
-            logger.warn("Failed to persist offline status for user {} ({}).", userId, e.getClass().getSimpleName());
-        }
-        try {
-            userDAO.updateLastSeen(userId, LocalDateTime.now());
-        } catch (RuntimeException e) {
-            logger.warn("Failed to persist last-seen timestamp for user {} ({}).", userId, e.getClass().getSimpleName());
+        synchronized (activeTokenByUser) {
+            if (activeTokenByUser.containsKey(userId)) {
+                return;
+            }
+            try {
+                userDAO.updateStatus(userId, User.Status.OFFLINE);
+            } catch (RuntimeException e) {
+                logger.warn("Failed to persist offline status for user {} ({}).", userId, e.getClass().getSimpleName());
+            }
+            try {
+                userDAO.updateLastSeen(userId, LocalDateTime.now());
+            } catch (RuntimeException e) {
+                logger.warn("Failed to persist last-seen timestamp for user {} ({}).", userId, e.getClass().getSimpleName());
+            }
         }
     }
 
