@@ -22,7 +22,8 @@ RUN useradd --system --create-home --uid 10001 chatapp \
     && chmod 0755 /app /app/data \
     && chmod 0755 /app/data/attachments \
     && chown root:root /app/chatapp-server.jar \
-    && chmod 0444 /app/chatapp-server.jar
+    && chmod 0444 /app/chatapp-server.jar \
+    && test "$(stat -c '%u:%g:%a' /app/chatapp-server.jar)" = "0:0:444"
 USER chatapp
 STOPSIGNAL SIGTERM
 EXPOSE 5050
