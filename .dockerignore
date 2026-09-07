@@ -16,6 +16,8 @@ config.properties
 *.p12
 *.pfx
 *.jks
+*.keystore
+*.truststore
 *.key
 *.pem
 *.sqlite
