@@ -29,7 +29,7 @@ services:
       - chatapp-mysql:/var/lib/mysql
       - ./src/main/resources/sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 --silent"]
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$$(cat /run/secrets/db_password)\" mysqladmin ping -h 127.0.0.1 -u chatapp_user --silent"]
       interval: 10s
       timeout: 5s
       retries: 10
