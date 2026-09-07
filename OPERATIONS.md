@@ -40,11 +40,9 @@ Both services should report healthy before clients connect.
 
 The database healthcheck verifies that MySQL is accepting connections.
 
-The server healthcheck verifies the readiness marker created by the application after successful database validation and server startup:
+The Compose server healthcheck runs `ServerHealthCheck`, which attempts a TCP connection to `127.0.0.1:5050`. The application only reaches its accepting state after successful database validation and server startup, so a successful TCP probe confirms that the server socket is available.
 
-```text
-/tmp/chatapp.ready
-```
+The built image also defines a fallback Docker healthcheck based on `/tmp/chatapp.ready`; Compose overrides that image healthcheck with the TCP probe above.
 
 A server container that restarts without becoming healthy should be investigated before sending application traffic to it.
 
