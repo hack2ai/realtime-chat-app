@@ -79,6 +79,12 @@ public final class ConnectionPool {
         return instance;
     }
 
+    /** Shuts down the singleton only when it has already been initialized. */
+    public static void shutdownInstance() {
+        ConnectionPool current = instance;
+        if (current != null) current.shutdown();
+    }
+
     private Connection createConnection() {
         if (shutdown.get()) throw new IllegalStateException("Database connection pool is shut down.");
         try {
