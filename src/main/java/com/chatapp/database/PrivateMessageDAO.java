@@ -77,14 +77,15 @@ public class PrivateMessageDAO {
         });
     }
 
-    public void markDelivered(long messageId, int receiverId) {
+    /** Marks a message delivered only when the requesting user is its receiver and it is still SENT. */
+    public boolean markDelivered(long messageId, int receiverId) {
         String sql = "UPDATE private_messages SET msg_status = 'DELIVERED' "
                 + "WHERE id = ? AND receiver_id = ? AND msg_status = 'SENT'";
-        DatabaseManager.executeVoid(conn -> {
+        return DatabaseManager.execute(conn -> {
             try (PreparedStatement stmt = conn.prepareStatement(sql)) {
                 stmt.setLong(1, messageId);
                 stmt.setInt(2, receiverId);
-                stmt.executeUpdate();
+                return stmt.executeUpdate() > 0;
             }
         });
     }
