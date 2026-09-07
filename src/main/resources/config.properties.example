@@ -26,7 +26,7 @@ server.port=5050
 server.bindAddress=127.0.0.1
 server.maxClients=200
 # Authentication handshake timeout in milliseconds. Authenticated chat connections clear this timeout.
-server.socketReadTimeoutMs=120000
+server.socketReadTimeoutMs=30000
 
 # ---------------- Transport TLS ----------------
 # Enable for encrypted TCP transport. Keep false for local plain-TCP development only.
