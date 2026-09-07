@@ -320,9 +320,18 @@ Notifications      S2C_NOTIFICATION
 realtime-chat-app/
 ├── .github/workflows/ci.yml
 ├── .github/workflows/codeql.yml
+├── .github/workflows/container-attestation.yml
+├── .github/workflows/container-hardening.yml
 ├── .github/workflows/container-policy.yml
+├── .github/workflows/container-scan.yml
 ├── .github/workflows/dependency-review.yml
+├── .github/workflows/docker-context-policy.yml
 ├── .github/workflows/release.yml
+├── .github/workflows/scorecards.yml
+├── .github/workflows/secret-material.yml
+├── .github/workflows/secret-scan.yml
+├── .github/workflows/source-hygiene.yml
+├── .github/workflows/source-policy.yml
 ├── .github/dependabot.yml
 ├── .dockerignore
 ├── Dockerfile
