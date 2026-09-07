@@ -21,3 +21,7 @@ config.properties
 *.sqlite
 *.sqlite3
 *.db
+*.credentials
+*.secret
+credentials.*
+secrets.*
