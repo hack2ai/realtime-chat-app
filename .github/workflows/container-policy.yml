@@ -18,6 +18,7 @@ jobs:
     name: Check container base images
     runs-on: ubuntu-latest
     timeout-minutes: 5
+
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -104,6 +105,21 @@ jobs:
             echo 'The Compose database service must drop all Linux capabilities.'
             exit 1
           fi
+
+      - name: Require secret-backed database configuration
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: |
+          config=$(docker compose config --format json)
+          printf '%s\n' "$config" | jq -e '.services.db.environment.MYSQL_ROOT_PASSWORD_FILE == "/run/secrets/mysql_root_password"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.environment.MYSQL_PASSWORD_FILE == "/run/secrets/db_password"' >/dev/null
+          printf '%s\n' "$config" | jq -e '(.services.db.secrets // []) | map(.source) | sort == ["db_password", "mysql_root_password"]' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.healthcheck.test[0] == "CMD-SHELL"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.healthcheck.test[1] | contains("/run/secrets/db_password") and contains("-u chatapp_user") and contains("mysqladmin ping")' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.environment.CHATAPP_DB_PASSWORD_FILE == "/run/secrets/db_password"' >/dev/null
+          printf '%s\n' "$config" | jq -e '(.services.server.secrets // []) | map(.source) == ["db_password"]' >/dev/null
+          printf '%s\n' "$config" | jq -e '(.services.server.environment | keys | any(. == "CHATAPP_DB_PASSWORD")) | not' >/dev/null
 
       - name: Require bounded container logging
         env:
