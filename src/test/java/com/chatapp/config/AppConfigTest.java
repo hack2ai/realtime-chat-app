@@ -4,6 +4,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -11,6 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 class AppConfigTest {
     private static final String[] DB_KEYS = {
@@ -120,6 +122,24 @@ class AppConfigTest {
         System.setProperty("chatapp.db.password.file", secretFile.toString());
 
         assertEquals("file-based-secret", AppConfig.getDbPassword());
+    }
+
+    @Test
+    void databasePasswordRejectsSymlinkedSecretFile(@TempDir Path tempDir) throws Exception {
+        Path secretFile = tempDir.resolve("real-secret");
+        Path symlink = tempDir.resolve("db-password");
+        Files.writeString(secretFile, "file-based-secret\n");
+        try {
+            Files.createSymbolicLink(symlink, secretFile);
+        } catch (UnsupportedOperationException | SecurityException e) {
+            assumeTrue(false, "Symbolic links are unavailable in this test environment");
+        } catch (IOException e) {
+            assumeTrue(false, "Symbolic links are unavailable in this test environment: " + e.getMessage());
+        }
+
+        System.setProperty("chatapp.db.password.file", symlink.toString());
+
+        assertThrows(IllegalStateException.class, AppConfig::getDbPassword);
     }
 
     private static void setRequiredDatabaseProperties() {
