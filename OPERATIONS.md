@@ -70,7 +70,6 @@ Compose rotates both service logs at 10 MiB per file with three files retained. 
 
 ```bash
 docker compose ps
-
 docker compose logs --no-color server
 ```
 
@@ -133,6 +132,12 @@ docker compose down
 ```
 
 Do not use `docker compose down -v` during normal operations because that removes named volumes and can delete database and attachment data.
+
+## CI and dependency analysis
+
+GitHub Dependency Review requires the repository **Dependency Graph** to be enabled under the repository's security settings. Keep Dependency Review enabled and configured to fail on high-severity dependency changes; do not bypass a failed review because the graph is unavailable.
+
+After enabling Dependency Graph, rerun or update pending Dependabot pull requests so Dependency Review can analyze their dependency changes.
 
 ## Release verification
 
