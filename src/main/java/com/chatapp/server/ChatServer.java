@@ -122,7 +122,7 @@ public class ChatServer {
     private void logRuntimeMetrics() {
         if (!running) return;
         ServerMetrics.Snapshot snapshot = metrics.snapshot();
-        logger.info("Server metrics: connectedUsers={}, activeHandlers={}, acceptedConnections={}, rejectedConnections={}, requests={}, protocolErrors={}, poolActive={}, poolSize={}, queueDepth={}, completedHandlers={}, poolTotalCreated={} ",
+        logger.info("Server metrics: connectedUsers={}, activeHandlers={}, acceptedConnections={}, rejectedConnections={}, requests={}, protocolErrors={}, poolActive={}, poolSize={}, queueDepth={}, completedHandlers={}",
                 connectedClients.size(),
                 activeHandlers.size(),
                 snapshot.acceptedConnections(),
@@ -132,8 +132,7 @@ public class ChatServer {
                 clientThreadPool.getActiveCount(),
                 clientThreadPool.getPoolSize(),
                 clientThreadPool.getQueue().size(),
-                clientThreadPool.getCompletedTaskCount(),
-                ConnectionPool.getInstance().getTotalCreated());
+                clientThreadPool.getCompletedTaskCount());
     }
 
     private void verifyDatabaseReady() throws IOException {
