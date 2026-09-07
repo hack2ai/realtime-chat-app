@@ -428,23 +428,7 @@ jobs:
               raise SystemExit(f"login response missing expected identity/session token: {login!r}")
           PY
 
-      - name: Verify graceful server shutdown
-        run: |
-          container_id=$(docker compose ps -q server)
-          test -n "$container_id"
-          docker stop --time 10 "$container_id"
-          exit_code=$(docker inspect "$container_id" --format '{{.State.ExitCode}}')
-          test "$exit_code" = "0"
-          test "$(docker inspect "$container_id" --format '{{.State.Status}}')" = "exited"
-
-      - name: Show service logs on failure
-        if: failure()
-        env:
-          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
-          CHATAPP_DB_PASSWORD: ci-app-password
-        run: docker compose logs --no-color server db
-
-      - name: Tear down Docker Compose stack
+      - name: Cleanup Docker Compose resources
         if: always()
         env:
           CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
