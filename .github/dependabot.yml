@@ -7,6 +7,9 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - dependencies
+    commit-message:
+      prefix: deps
+      include: scope
     groups:
       maven-minor-patch:
         update-types:
@@ -20,6 +23,9 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - dependencies
+    commit-message:
+      prefix: ci(deps)
+      include: scope
     groups:
       github-actions-minor-patch:
         update-types:
@@ -33,6 +39,9 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - dependencies
+    commit-message:
+      prefix: docker(deps)
+      include: scope
     groups:
       docker-minor-patch:
         update-types:
