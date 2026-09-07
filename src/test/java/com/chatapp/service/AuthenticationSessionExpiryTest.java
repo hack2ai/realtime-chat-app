@@ -44,6 +44,25 @@ class AuthenticationSessionExpiryTest {
         assertEquals(user.getId(), service.validateSession(second.sessionToken()));
     }
 
+    @Test
+    void sessionTokenUsesExpectedBase64UrlLengthAndRejectsOversizedTokens() throws Exception {
+        String password = "correct-password";
+        User user = new User("bob", "bob@example.com",
+                new BCryptPasswordEncoder(10).encode(password));
+        user.setId(43);
+
+        AuthenticationService service = new AuthenticationService(new InMemoryUserDAO(user));
+        AuthenticationService.LoginResult result = service.login("bob", password);
+
+        assertEquals(43, result.sessionToken().length());
+        assertTrue(result.sessionToken().matches("[A-Za-z0-9_-]+"));
+        assertEquals(user.getId(), service.validateSession(result.sessionToken()));
+        assertThrows(AuthenticationException.class, () -> service.validateSession("x".repeat(65)));
+
+        service.logout(result.sessionToken());
+        assertThrows(AuthenticationException.class, () -> service.validateSession(result.sessionToken()));
+    }
+
     private static final class InMemoryUserDAO extends UserDAO {
         private final User user;
 
