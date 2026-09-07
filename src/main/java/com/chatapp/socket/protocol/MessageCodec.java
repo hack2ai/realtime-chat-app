@@ -98,8 +98,8 @@ public final class MessageCodec {
     }
 
     public <T> T unwrap(Envelope envelope, Class<T> payloadType) {
-        if (envelope == null || envelope.getPayload() == null || envelope.getPayload().isJsonNull()) return null;
         if (payloadType == null) throw new IllegalArgumentException("Payload type must not be null.");
+        if (envelope == null || envelope.getPayload() == null || envelope.getPayload().isJsonNull()) return null;
         try {
             return gson.fromJson(envelope.getPayload(), payloadType);
         } catch (RuntimeException e) {
