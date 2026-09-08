@@ -8,9 +8,9 @@
 
 ## Status
 
-**Phase 6 complete — production hardening and deployment readiness.**
+**Phase 6 complete — entering Phase 7 production follow-through.**
 
-The application provides secure authentication, real-time private messaging, presence and typing events, delivery/read states, paginated history, group chat, private file sharing, message search, MySQL persistence, a responsive JavaFX desktop client, automated dependency updates, container packaging, SBOM generation, CI/CD checks, configurable TLS transport, and lightweight runtime metrics.
+The application provides secure authentication, real-time private messaging, presence and typing events, delivery/read states, paginated history, group chat, private file sharing, message search, MySQL persistence, a responsive JavaFX desktop client, automated dependency updates, container packaging, SBOM generation, CI/CD checks, configurable TLS transport, and lightweight runtime metrics. Phase 7 focuses on centralized observability and alerting, managed storage, certificate lifecycle automation, and external security testing.
 
 ## Highlights
 
