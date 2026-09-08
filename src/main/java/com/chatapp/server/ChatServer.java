@@ -88,6 +88,7 @@ public class ChatServer {
         String bindAddress = AppConfig.getServerBindAddress();
         int port = AppConfig.getServerPort();
         InetAddress address = InetAddress.getByName(bindAddress);
+        validateTransportSecurity(address);
         serverSocket = createServerSocket(address, port);
         try {
             running = true;
@@ -105,6 +106,13 @@ public class ChatServer {
             closeQuietly(serverSocket);
             serverSocket = null;
             throw e;
+        }
+    }
+
+    private void validateTransportSecurity(InetAddress address) throws IOException {
+        if (AppConfig.isTlsEnabled() || AppConfig.isPlaintextRemoteAllowed()) return;
+        if (address.isAnyLocalAddress() || !address.isLoopbackAddress()) {
+            throw new IOException("Remote plaintext server binding is disabled. Enable TLS or explicitly set server.allowPlaintextRemote=true.");
         }
     }
 
