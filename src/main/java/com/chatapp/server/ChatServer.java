@@ -133,8 +133,9 @@ public class ChatServer {
 
     private void logRuntimeMetrics() {
         if (!running) return;
+        int expiredSessions = authService.cleanupExpiredSessions();
         ServerMetrics.Snapshot snapshot = metrics.snapshot();
-        logger.info("Server metrics: connectedUsers={}, activeHandlers={}, acceptedConnections={}, rejectedConnections={}, requests={}, protocolErrors={}, poolActive={}, poolSize={}, queueDepth={}, completedHandlers={}",
+        logger.info("Server metrics: connectedUsers={}, activeHandlers={}, acceptedConnections={}, rejectedConnections={}, requests={}, protocolErrors={}, poolActive={}, poolSize={}, queueDepth={}, completedHandlers={}, expiredSessions={}",
                 connectedClients.size(),
                 activeHandlers.size(),
                 snapshot.acceptedConnections(),
@@ -144,7 +145,8 @@ public class ChatServer {
                 clientThreadPool.getActiveCount(),
                 clientThreadPool.getPoolSize(),
                 clientThreadPool.getQueue().size(),
-                clientThreadPool.getCompletedTaskCount());
+                clientThreadPool.getCompletedTaskCount(),
+                expiredSessions);
     }
 
     private void verifyDatabaseReady() throws IOException {
