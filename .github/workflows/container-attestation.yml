@@ -75,10 +75,7 @@ jobs:
           repo_digest=$(docker image inspect "$image" --format '{{index .RepoDigests 0}}')
           digest="${repo_digest##*@}"
           test -n "$digest"
-          case "$digest" in
-            sha256:*) ;;
-            *) echo 'Published image did not resolve to a sha256 digest.'; exit 1 ;;
-          esac
+          printf '%s\n' "$digest" | grep -Eq '^sha256:[0-9a-f]{64}$'
           echo "subject_name=${IMAGE_NAME}" >> "$GITHUB_OUTPUT"
           echo "subject_digest=${digest}" >> "$GITHUB_OUTPUT"
 
