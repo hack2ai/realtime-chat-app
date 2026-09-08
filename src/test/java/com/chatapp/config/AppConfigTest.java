@@ -88,6 +88,31 @@ class AppConfigTest {
     }
 
     @Test
+    void databaseHostAcceptsHostnameAndIpv6() {
+        System.setProperty("chatapp.db.host", "db.internal.example");
+        assertEquals("db.internal.example", AppConfig.getDbHost());
+
+        System.setProperty("chatapp.db.host", "[2001:db8::10]");
+        assertEquals("[2001:db8::10]", AppConfig.getDbHost());
+    }
+
+    @Test
+    void databaseHostRejectsJdbcQueryInjection() {
+        System.setProperty("chatapp.db.host", "db.internal?useSSL=false");
+
+        assertThrows(IllegalStateException.class, AppConfig::getDbHost);
+    }
+
+    @Test
+    void databaseHostRejectsPathAndWhitespaceInjection() {
+        System.setProperty("chatapp.db.host", "db.internal/other");
+        assertThrows(IllegalStateException.class, AppConfig::getDbHost);
+
+        System.setProperty("chatapp.db.host", "db.internal other");
+        assertThrows(IllegalStateException.class, AppConfig::getDbHost);
+    }
+
+    @Test
     void databaseTlsIsEnabledByDefault() {
         System.clearProperty("chatapp.db.useSsl");
 
