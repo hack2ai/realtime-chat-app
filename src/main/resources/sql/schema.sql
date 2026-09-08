@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS private_messages (
     msg_status ENUM('SENT','DELIVERED','READ') NOT NULL DEFAULT 'SENT',
     sent_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CHECK (sender_id <> receiver_id),
+    CHECK (CHAR_LENGTH(message) BETWEEN 1 AND 4000),
     FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (receiver_id) REFERENCES users(id) ON DELETE CASCADE,
     INDEX idx_pm_sender (sender_id), INDEX idx_pm_receiver (receiver_id),
@@ -57,6 +58,7 @@ CREATE TABLE IF NOT EXISTS chat_groups (
     id INT PRIMARY KEY AUTO_INCREMENT,
     group_name VARCHAR(50) NOT NULL, description VARCHAR(255) DEFAULT NULL,
     created_by INT NOT NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CHECK (CHAR_LENGTH(group_name) BETWEEN 1 AND 50),
     FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE,
     INDEX idx_groups_created_by (created_by)
 ) ENGINE=InnoDB;
@@ -73,6 +75,7 @@ CREATE TABLE IF NOT EXISTS group_members (
 CREATE TABLE IF NOT EXISTS group_messages (
     id BIGINT PRIMARY KEY AUTO_INCREMENT, group_id INT NOT NULL, sender_id INT NOT NULL,
     message TEXT NOT NULL, sent_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CHECK (CHAR_LENGTH(message) BETWEEN 1 AND 4000),
     FOREIGN KEY (group_id) REFERENCES chat_groups(id) ON DELETE CASCADE,
     FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
     INDEX idx_gmsg_group_time (group_id, sent_at)
