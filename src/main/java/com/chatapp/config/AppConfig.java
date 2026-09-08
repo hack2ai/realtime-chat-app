@@ -58,7 +58,7 @@ public final class AppConfig {
             if (e instanceof IllegalStateException state) {
                 throw state;
             }
-            throw new IllegalStateException("Failed to read secret file for config key '" + key + ".", e);
+            throw new IllegalStateException("Failed to read secret file for config key '" + key + "'.", e);
         }
     }
 
