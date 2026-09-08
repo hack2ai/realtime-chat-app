@@ -217,7 +217,8 @@ jobs:
         run: |
           docker build --pull \
             --build-arg VCS_REF="${{ github.sha }}" \
-            --build-arg VERSION="${{ github.sha }}" .
+            --build-arg VERSION="${{ github.sha }}" \
+            --tag realtime-chat-app:${{ github.sha }} .
 
       - name: Verify server image metadata
         run: |
