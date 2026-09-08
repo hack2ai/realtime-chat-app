@@ -1,6 +1,7 @@
 FROM maven:3.9.11-eclipse-temurin-21 AS build
 WORKDIR /workspace
 COPY pom.xml .
+RUN mvn --batch-mode --no-transfer-progress --strict-checksums dependency:go-offline
 COPY src ./src
 RUN mvn --batch-mode --no-transfer-progress --strict-checksums verify
 
