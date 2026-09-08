@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  security-events: write
 
 concurrency:
   group: container-security-${{ github.workflow }}-${{ github.ref }}
@@ -38,8 +39,24 @@ jobs:
         with:
           scan-type: image
           image-ref: realtime-chat-app:security
-          format: table
+          format: sarif
+          output: trivy-results.sarif
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: '1'
           vuln-type: os,library
+
+      - name: Upload Trivy results to code scanning
+        if: always() && hashFiles('trivy-results.sarif') != ''
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
+        with:
+          sarif_file: trivy-results.sarif
+
+      - name: Upload Trivy SARIF artifact
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: trivy-container-security-results
+          path: trivy-results.sarif
+          if-no-files-found: ignore
+          retention-days: 14
