@@ -37,6 +37,11 @@ class ServerHealthCheckTest {
     }
 
     @Test
+    void invalidSystemPropertyCannotBeBypassedByEnvironment() {
+        assertThrows(IllegalArgumentException.class, () -> ServerHealthCheck.resolvePort("not-a-port", "7000"));
+    }
+
+    @Test
     void environmentValueIsUsedWhenPropertyIsBlank() {
         assertEquals(7000, ServerHealthCheck.resolvePort("   ", "7000"));
     }
