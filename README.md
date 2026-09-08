@@ -111,7 +111,17 @@ The JavaFX client provides:
 
 ### Operational metrics
 
-The server maintains thread-safe counters for accepted and rejected connections, processed requests, and protocol errors. It periodically logs these counters together with connected-user count, active handlers, executor pool size, queue depth, and completed handler tasks for lightweight operational visibility.
+The server exposes an optional read-only Prometheus-style endpoint at `GET /metrics`. It is **disabled by default** and binds to `127.0.0.1:9100` when enabled.
+
+Enable it with:
+
+```properties
+metrics.enabled=true
+metrics.bindAddress=127.0.0.1
+metrics.port=9100
+```
+
+The endpoint reports connected users, active handlers, accepted/rejected connections, processed requests, protocol errors, handler-pool activity/queue depth, completed handler tasks, JVM memory usage, uptime, and live thread count. For remote scraping, bind it to a trusted interface and protect it at the network layer; the endpoint does not provide application authentication.
 
 ## Security
 
