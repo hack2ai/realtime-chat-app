@@ -45,6 +45,34 @@ class AuthenticationSessionExpiryTest {
     }
 
     @Test
+    void cleanupExpiredSessionsRemovesExpiredSessionAndMarksUserOffline() throws Exception {
+        String password = "correct-password";
+        User user = new User("cleanup", "cleanup@example.com",
+                new BCryptPasswordEncoder(10).encode(password));
+        user.setId(44);
+
+        AuthenticationService service = new AuthenticationService(new InMemoryUserDAO(user));
+        AuthenticationService.LoginResult result = service.login("cleanup", password);
+        assertEquals(User.Status.ONLINE, user.getStatus());
+
+        Field sessionsField = AuthenticationService.class.getDeclaredField("activeSessions");
+        sessionsField.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> sessions = (Map<String, Object>) sessionsField.get(service);
+        String digest = sessions.keySet().iterator().next();
+
+        Class<?> sessionClass = Class.forName("com.chatapp.service.AuthenticationService$Session");
+        Constructor<?> constructor = sessionClass.getDeclaredConstructor(int.class, LocalDateTime.class);
+        constructor.setAccessible(true);
+        sessions.put(digest, constructor.newInstance(user.getId(), LocalDateTime.now().minusMinutes(1)));
+
+        assertEquals(1, service.cleanupExpiredSessions());
+        assertEquals(User.Status.OFFLINE, user.getStatus());
+        assertThrows(AuthenticationException.class, () -> service.validateSession(result.sessionToken()));
+        assertEquals(0, service.cleanupExpiredSessions());
+    }
+
+    @Test
     void sessionTokenUsesExpectedBase64UrlLengthAndRejectsOversizedTokens() throws Exception {
         String password = "correct-password";
         User user = new User("bob", "bob@example.com",
