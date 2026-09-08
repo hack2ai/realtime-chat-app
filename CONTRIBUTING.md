@@ -17,6 +17,16 @@ Thanks for contributing to Real-Time Chat Application.
 - Keep protocol and database changes backward-compatible where practical; document breaking changes.
 - Prefer small, reviewable commits and clear commit messages.
 
+Before submitting a pull request, verify the following:
+
+- `mvn verify` passes locally.
+- Relevant tests cover new or changed behavior.
+- Docker/Compose changes have been validated with representative configuration.
+- No secrets, private keys, local configuration, or generated artifacts are tracked.
+- Authentication, authorization, validation, rate limiting, and protocol limits were reviewed when affected.
+- Database/schema or protocol changes are documented, including compatibility considerations.
+- Documentation is updated when setup, configuration, security, or user-visible behavior changes.
+
 ## Main branch protection
 
 The `main` branch should be governed by a GitHub branch protection rule or repository ruleset. The required policy is:
