@@ -2,8 +2,13 @@ package com.chatapp.server;
 
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
+import java.net.ServerSocket;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ServerHealthCheckTest {
     @Test
@@ -49,5 +54,21 @@ class ServerHealthCheckTest {
     @Test
     void defaultIsUsedWhenBothOverridesAreBlank() {
         assertEquals(5050, ServerHealthCheck.resolvePort(null, ""));
+    }
+
+    @Test
+    void reachablePortReturnsTrue() throws IOException {
+        try (ServerSocket serverSocket = new ServerSocket(0)) {
+            assertTrue(ServerHealthCheck.isPortReachable(serverSocket.getLocalPort()));
+        }
+    }
+
+    @Test
+    void closedPortReturnsFalse() throws IOException {
+        try (ServerSocket serverSocket = new ServerSocket(0)) {
+            int port = serverSocket.getLocalPort();
+            serverSocket.close();
+            assertFalse(ServerHealthCheck.isPortReachable(port));
+        }
     }
 }
