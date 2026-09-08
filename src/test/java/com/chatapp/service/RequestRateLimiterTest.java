@@ -9,6 +9,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.Test;
 
 class RequestRateLimiterTest {
@@ -40,6 +41,10 @@ class RequestRateLimiterTest {
         assertThrows(IllegalArgumentException.class, () -> new RequestRateLimiter(0, Duration.ofMinutes(1), 10));
         assertThrows(IllegalArgumentException.class, () -> new RequestRateLimiter(1, Duration.ZERO, 10));
         assertThrows(IllegalArgumentException.class, () -> new RequestRateLimiter(1, Duration.ofMinutes(1), 0));
+        assertThrows(IllegalArgumentException.class,
+                () -> new RequestRateLimiter(1, Duration.ofSeconds(Long.MAX_VALUE), 10));
+        assertThrows(IllegalArgumentException.class,
+                () -> new RequestRateLimiter(1, Duration.ofMinutes(1), 10, null));
     }
 
     @Test
@@ -53,17 +58,41 @@ class RequestRateLimiterTest {
     }
 
     @Test
-    void evictsOldestKeyWhenCapacityIsFull() throws Exception {
-        RequestRateLimiter limiter = new RequestRateLimiter(1, Duration.ofMinutes(1), 2);
+    void evictsOldestKeyWhenCapacityIsFull() {
+        AtomicLong now = new AtomicLong(1_000_000L);
+        RequestRateLimiter limiter = new RequestRateLimiter(1, Duration.ofMinutes(1), 2, now::get);
         assertTrue(limiter.allow("oldest"));
-        Thread.sleep(5);
+        now.addAndGet(5_000_000L);
         assertTrue(limiter.allow("middle"));
-        Thread.sleep(5);
+        now.addAndGet(5_000_000L);
         assertTrue(limiter.allow("newest"));
 
         assertEquals(2, limiter.size());
         assertTrue(limiter.allow("oldest"), "oldest key should be evicted when capacity is full");
         assertFalse(limiter.allow("newest"), "newest key should remain tracked");
+    }
+
+    @Test
+    void usesMonotonicTimeWhenClockMovesBackward() {
+        AtomicLong now = new AtomicLong(1_000_000L);
+        RequestRateLimiter limiter = new RequestRateLimiter(1, Duration.ofSeconds(60), 10, now::get);
+
+        assertTrue(limiter.allow("user:1"));
+        now.set(500_000L);
+        assertFalse(limiter.allow("user:1"), "a backwards clock adjustment must not expire an active window");
+        now.set(1_000_000L + Duration.ofSeconds(60).toNanos() + 1);
+        assertTrue(limiter.allow("user:1"), "window should expire after the full monotonic interval");
+    }
+
+    @Test
+    void expiresWindowsUsingInjectedMonotonicTime() {
+        AtomicLong now = new AtomicLong(1_000_000L);
+        RequestRateLimiter limiter = new RequestRateLimiter(1, Duration.ofSeconds(25), 10, now::get);
+
+        assertTrue(limiter.allow("short-lived"));
+        assertEquals(1, limiter.size());
+        now.addAndGet(Duration.ofSeconds(25).toNanos());
+        assertEquals(0, limiter.size());
     }
 
     @Test
@@ -95,14 +124,5 @@ class RequestRateLimiterTest {
         } finally {
             executor.shutdownNow();
         }
-    }
-
-    @Test
-    void sizeRemovesExpiredWindows() throws Exception {
-        RequestRateLimiter limiter = new RequestRateLimiter(1, Duration.ofMillis(25), 10);
-        assertTrue(limiter.allow("short-lived"));
-        assertEquals(1, limiter.size());
-        Thread.sleep(40);
-        assertEquals(0, limiter.size());
     }
 }
