@@ -105,6 +105,29 @@ A production deployment should back up both application metadata and attachment 
 
 Do not delete volumes as part of routine troubleshooting. Confirm backup/restore coverage before destructive maintenance.
 
+## Disaster recovery and restore test
+
+Treat a backup as usable only after a successful restore test.
+
+At minimum, maintain:
+
+- a recent MySQL backup containing users, groups, messages, and attachment metadata
+- a corresponding attachment-storage backup or object-store replication copy
+- the exact application release tag/container digest associated with the backup
+- the deployment configuration and secret-management references needed to recreate the service
+
+For a restore drill, use an isolated environment rather than overwriting the live database:
+
+1. Provision a clean MySQL instance.
+2. Restore the selected MySQL backup and validate table counts and key relationships.
+3. Restore attachment objects into the expected storage namespace.
+4. Deploy the exact application release associated with the recovery point.
+5. Confirm database connectivity and application readiness.
+6. Test login, private messaging, message history, and an attachment upload/download.
+7. Record the restore duration, data-loss window, and any manual steps required.
+
+Never test disaster recovery by deleting the production Docker volumes.
+
 ## Upgrade procedure
 
 1. Review the release notes and compatibility impact.
