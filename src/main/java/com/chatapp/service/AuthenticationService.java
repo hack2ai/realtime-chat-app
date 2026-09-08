@@ -75,7 +75,7 @@ public class AuthenticationService {
             return new ValidationException("Username '" + username + "' is already taken.");
         }
         if (userDAO.emailExists(email)) {
-            return new ValidationException("An account with this email already exists.");
+            return new ValidationException("An account with these details already exists.");
         }
         return new ValidationException("An account with these details already exists.");
     }
@@ -182,6 +182,22 @@ public class AuthenticationService {
             throw invalidSession();
         }
         return session.userId;
+    }
+
+    /** Removes expired bearer-token sessions that have not been touched since expiry. */
+    public int cleanupExpiredSessions() {
+        LocalDateTime now = LocalDateTime.now();
+        int expiredCount = 0;
+        for (Map.Entry<String, Session> entry : activeSessions.entrySet()) {
+            Session session = entry.getValue();
+            if (now.isBefore(session.expiresAt)) continue;
+            if (activeSessions.remove(entry.getKey(), session)) {
+                activeTokenByUser.remove(session.userId, entry.getKey());
+                markOfflineSafely(session.userId);
+                expiredCount++;
+            }
+        }
+        return expiredCount;
     }
 
     private void expireSession(String tokenDigest, Session session) {
