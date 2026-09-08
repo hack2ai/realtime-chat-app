@@ -49,7 +49,7 @@ jobs:
           cache: maven
 
       - name: Verify and package
-        run: mvn --batch-mode --no-transfer-progress verify
+        run: mvn --batch-mode --no-transfer-progress -Dbuild.revision="${{ github.sha }}" verify
 
       - name: Verify release version matches Git tag
         env:
@@ -63,6 +63,10 @@ jobs:
         run: |
           test -s target/chatapp-server.jar
           unzip -p target/chatapp-server.jar META-INF/MANIFEST.MF | grep -Eq '^Main-Class: com\.chatapp\.server\.ChatServer[[:space:]]*$'
+
+      - name: Verify embedded build revision
+        run: |
+          unzip -p target/chatapp-server.jar META-INF/MANIFEST.MF | grep -Eq '^Build-Revision: ${{ github.sha }}[[:space:]]*$'
 
       - name: Verify generated SBOM
         run: |
