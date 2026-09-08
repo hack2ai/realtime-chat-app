@@ -26,7 +26,7 @@ jobs:
 
       - name: Reject unsafe debug and deserialization APIs
         run: |
-          if git grep -nE 'printStackTrace|System\.(out|err)|ObjectInputStream|Runtime\.getRuntime\(\)\.exec\(|new[[:space:]]+ProcessBuilder([[:space:](]|\.)' -- src/main/java; then
+          if git grep -nE 'printStackTrace|System\\.(out|err)|ObjectInputStream|Runtime\\.getRuntime\\(\\)\\.exec\\(|new[[:space:]]+ProcessBuilder([[:space:](]|\\.)' -- src/main/java; then
             echo 'Unsafe debug, console, object-deserialization, or process-execution APIs must not be introduced into production source.'
             exit 1
           fi
@@ -40,14 +40,14 @@ jobs:
 
       - name: Require prepared JDBC statements
         run: |
-          if git grep -nE '(^|[^A-Za-z])createStatement[[:space:]]*\(|(^|[^A-Za-z])Statement[[:space:]]+[A-Za-z_]' -- src/main/java; then
+          if git grep -nE '(^|[^A-Za-z])createStatement[[:space:]]*\\(|(^|[^A-Za-z])Statement[[:space:]]+[A-Za-z_]' -- src/main/java; then
             echo 'Production database access must use PreparedStatement rather than raw JDBC Statement APIs.'
             exit 1
           fi
 
       - name: Reject weak cryptographic hashes
         run: |
-          if git grep -nEi 'MessageDigest\.getInstance\("(MD5|SHA-1)"\)' -- src/main/java || git grep -nEi '\b(MD5|SHA-1)\b' -- src/main/java; then
+          if git grep -nEi 'MessageDigest\\.getInstance\\("(MD5|SHA-1)"\\)' -- src/main/java || git grep -nEi '\\b(MD5|SHA-1)\\b' -- src/main/java; then
             echo 'Do not introduce MD5 or SHA-1 into production cryptographic code.'
             exit 1
           fi
@@ -55,7 +55,7 @@ jobs:
       - name: Require immutable workflow actions
         run: |
           set -eu
-          if grep -RInP '^\s*uses:\s*[^@#\s]+@(?![0-9a-fA-F]{40}\b)[^#\s]+' .github/workflows; then
+          if grep -RInP '^\\s*uses:\\s*[^@#\\s]+@(?![0-9a-fA-F]{40}\\b)[^#\\s]+' .github/workflows; then
             echo 'All GitHub Actions must be pinned to a 40-character commit SHA.'
             exit 1
           fi
@@ -116,7 +116,22 @@ jobs:
               finish()
 
           if failures:
-              print('\n'.join(failures))
+              print('\\n'.join(failures))
               raise SystemExit(1)
           print('All runner-based workflow jobs declare timeout-minutes.')
           PY
+
+      - name: Require workflow concurrency controls
+        run: |
+          set -eu
+          failures=0
+          for path in .github/workflows/*.y*ml; do
+            if ! grep -q '^concurrency:' "$path"; then
+              echo "$path: missing workflow-level concurrency policy"
+              failures=1
+            fi
+          done
+          if [ "$failures" -ne 0 ]; then
+            exit 1
+          fi
+          echo 'All workflows declare workflow-level concurrency controls.'
