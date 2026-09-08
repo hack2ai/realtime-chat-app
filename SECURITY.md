@@ -4,6 +4,17 @@
 
 This repository is a learning/portfolio real-time chat application. It is not a security-audited production service.
 
+## Supported versions
+
+Security fixes are targeted at the current `1.1.x` release line.
+
+| Version | Supported |
+| --- | --- |
+| 1.1.x | Yes |
+| < 1.1.0 | No |
+
+Upgrade to the current release before reporting an issue that only affects an unsupported version.
+
 ## Reporting a vulnerability
 
 Please do not publish credentials, exploit code, or sensitive details in a public issue. Contact the repository owner privately through the contact details on the GitHub profile and include:
