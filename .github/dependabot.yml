@@ -5,8 +5,6 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
-    labels:
-      - dependencies
     commit-message:
       prefix: deps
       include: scope
@@ -21,8 +19,6 @@ updates:
     schedule:
       interval: daily
     open-pull-requests-limit: 5
-    labels:
-      - dependencies
     commit-message:
       prefix: ci(deps)
       include: scope
@@ -37,8 +33,6 @@ updates:
     schedule:
       interval: daily
     open-pull-requests-limit: 5
-    labels:
-      - dependencies
     commit-message:
       prefix: docker(deps)
       include: scope
