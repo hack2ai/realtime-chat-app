@@ -16,7 +16,7 @@ public final class ValidationUtil {
     private static final int MIN_PASSWORD_LENGTH = 8;
     private static final int MAX_PASSWORD_BYTES = 72;
     private static final int MAX_MESSAGE_LENGTH = 4000;
-    private static final int MAX_GROUP_NAME_LENGTH = 80;
+    private static final int MAX_GROUP_NAME_LENGTH = 50;
 
     private ValidationUtil() {
     }
