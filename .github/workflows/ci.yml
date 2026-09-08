@@ -238,6 +238,10 @@ jobs:
           test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{.Config.User}}')" = "chatapp"
           test "$(docker run --rm --entrypoint id realtime-chat-app:${{ github.sha }} -u)" = "10001"
 
+      - name: Verify server image Java runtime
+        run: |
+          docker run --rm --entrypoint java realtime-chat-app:${{ github.sha }} -version 2>&1 | grep -Fq '21'
+
       - name: Verify server image entrypoint
         run: |
           test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{json .Config.Entrypoint}}')" = '["java","-jar","/app/chatapp-server.jar"]'
