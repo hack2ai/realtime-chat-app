@@ -49,3 +49,10 @@ jobs:
               exit 1
             fi
           done
+
+      - name: Reject risky Dockerfile download instructions
+        run: |
+          if grep -nE '^\s*ADD\s+https?://|^\s*RUN\s+.*(curl|wget)[^\n]*(\||;|&&)[^\n]*(sh|bash)' Dockerfile; then
+            echo 'Dockerfiles must not fetch remote content directly or pipe downloads into a shell.'
+            exit 1
+          fi
