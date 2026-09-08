@@ -75,7 +75,7 @@ public class AuthenticationService {
             return new ValidationException("Username '" + username + "' is already taken.");
         }
         if (userDAO.emailExists(email)) {
-            return new ValidationException("An account with these details already exists.");
+            return new ValidationException("An account with this email already exists.");
         }
         return new ValidationException("An account with these details already exists.");
     }
