@@ -38,6 +38,17 @@ Please allow reasonable time for investigation and remediation before public dis
 - Verify release JAR and SBOM checksums before consuming published release assets.
 - Preserve build provenance and SBOM artifacts when promoting a release into another environment.
 
+## Release asset verification
+
+For a downloaded release, verify both the server JAR and the SBOM against their published SHA-256 files before promotion or execution:
+
+```bash
+sha256sum --check chatapp-server-v1.1.0.jar.sha256
+sha256sum --check chatapp-sbom-v1.1.0.json.sha256
+```
+
+A successful check means the downloaded bytes match the corresponding published checksum. For additional supply-chain assurance, retain the GitHub build-provenance attestations and use the published container digest rather than relying on a mutable tag such as `latest`.
+
 ## Container deployment
 
 The supplied Docker and Compose configuration is hardened for development/demo deployment with a non-root server user, bounded resources, a read-only server filesystem, dropped Linux capabilities, `no-new-privileges`, internal database networking, and bounded container logs.
