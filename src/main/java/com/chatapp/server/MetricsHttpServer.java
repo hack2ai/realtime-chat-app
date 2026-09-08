@@ -1,6 +1,7 @@
 package com.chatapp.server;
 
 import com.chatapp.config.AppConfig;
+import com.chatapp.service.RequestRateLimiter;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
@@ -14,6 +15,9 @@ import java.util.concurrent.Executors;
 
 /** Optional read-only HTTP endpoint for Prometheus-style operational metrics. */
 public final class MetricsHttpServer {
+    private static final RequestRateLimiter METRICS_RATE_LIMITER =
+            new RequestRateLimiter(60, java.time.Duration.ofMinutes(1), 10_000);
+
     private final ServerMetrics metrics;
     private final ChatServer server;
     private HttpServer httpServer;
@@ -58,6 +62,15 @@ public final class MetricsHttpServer {
             if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
                 exchange.getResponseHeaders().set("Allow", "GET");
                 exchange.sendResponseHeaders(405, -1);
+                return;
+            }
+
+            String key = exchange.getRemoteAddress().getAddress() == null
+                    ? "metrics:unknown"
+                    : "metrics:" + exchange.getRemoteAddress().getAddress().getHostAddress();
+            if (!METRICS_RATE_LIMITER.allow(key)) {
+                exchange.getResponseHeaders().set("Retry-After", "60");
+                exchange.sendResponseHeaders(429, -1);
                 return;
             }
 
