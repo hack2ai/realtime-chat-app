@@ -42,12 +42,12 @@ jobs:
           printf '%s\n' "$config" | jq -e '.services.server.cap_drop == ["ALL"]' >/dev/null
           printf '%s\n' "$config" | jq -e '.services.server.security_opt == ["no-new-privileges:true"]' >/dev/null
           printf '%s\n' "$config" | jq -e '.services.server.pids_limit == 256' >/dev/null
-          printf '%s\n' "$config" | jq -e '.services.server.mem_limit == "1g"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.mem_limit == 1073741824' >/dev/null
           printf '%s\n' "$config" | jq -e '.services.server.cpus == 2' >/dev/null
           printf '%s\n' "$config" | jq -e '.services.db.cap_drop == ["ALL"]' >/dev/null
           printf '%s\n' "$config" | jq -e '.services.db.security_opt == ["no-new-privileges:true"]' >/dev/null
           printf '%s\n' "$config" | jq -e '.services.db.pids_limit == 256' >/dev/null
-          printf '%s\n' "$config" | jq -e '.services.db.mem_limit == "1g"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.mem_limit == 1073741824' >/dev/null
           printf '%s\n' "$config" | jq -e '.services.db.cpus == 2' >/dev/null
           printf '%s\n' "$config" | jq -e '.networks.backend.internal == true' >/dev/null
           printf '%s\n' "$config" | jq -e '(.services.db.ports // []) == []' >/dev/null
