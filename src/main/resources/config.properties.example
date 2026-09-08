@@ -24,6 +24,8 @@ db.allowPublicKeyRetrieval=false
 server.port=5050
 # Bind to localhost by default. Set to 0.0.0.0 only when remote clients are intended.
 server.bindAddress=127.0.0.1
+# Plain TCP on a non-loopback bind is blocked by default. Prefer TLS; only opt in when a trusted network intentionally provides transport security elsewhere.
+server.allowPlaintextRemote=false
 server.maxClients=200
 # Authentication handshake timeout in milliseconds. Authenticated chat connections clear this timeout.
 server.socketReadTimeoutMs=30000
