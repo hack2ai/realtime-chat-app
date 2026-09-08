@@ -67,7 +67,7 @@ jobs:
             echo 'Dockerfile must declare STOPSIGNAL SIGTERM for graceful server shutdown.'
             exit 1
           fi
-          if ! grep -nF 'HEALTHCHECK --interval=10s --timeout=3s --retries=5 --start-period=10s CMD test -f /tmp/chatapp.ready' Dockerfile; then
+          if ! grep -nF 'HEALTHCHECK --interval=10s --timeout=3s --retries=5 --start-period=10s CMD java -cp /app/chatapp-server.jar com.chatapp.server.ServerHealthCheck' Dockerfile; then
             echo 'Dockerfile must declare the expected readiness healthcheck.'
             exit 1
           fi
@@ -90,6 +90,29 @@ jobs:
             echo 'The server JAR must be read-only in the runtime image.'
             exit 1
           fi
+
+      - name: Require Compose runtime resource policy
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: |
+          config=$(docker compose config --format json)
+          printf '%s\n' "$config" | jq -e '.services.server.read_only == true' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.init == true' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.restart == "unless-stopped"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.pids_limit == 256' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.mem_limit == "1g"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.cpus == 2' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.cap_drop == ["ALL"]' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.security_opt == ["no-new-privileges:true"]' >/dev/null
+          printf '%s\n' "$config" | jq -e '(.services.server.tmpfs // []) | index("/tmp:rw,noexec,nosuid,size=64m") != null' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.restart == "unless-stopped"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.pids_limit == 256' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.mem_limit == "1g"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.cpus == 2' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.cap_drop == ["ALL"]' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.security_opt == ["no-new-privileges:true"]' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.stop_grace_period == "30s"' >/dev/null
 
       - name: Require Compose database privilege protection
         run: |
