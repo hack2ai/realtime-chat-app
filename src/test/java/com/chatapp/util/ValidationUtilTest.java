@@ -18,6 +18,11 @@ class ValidationUtilTest {
     }
 
     @Test
+    void acceptsEmailWithSubdomain() {
+        assertDoesNotThrow(() -> ValidationUtil.validateEmail("user@mail.example.com"));
+    }
+
+    @Test
     void rejectsUnicodeLookalikeUsername() {
         assertThrows(ValidationException.class, () -> ValidationUtil.validateUsername("usеr123"));
     }
