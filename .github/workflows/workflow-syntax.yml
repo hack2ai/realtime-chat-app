@@ -105,15 +105,25 @@ jobs:
               if workflow.key?("pull_request_target")
                 abort "Unsafe trigger pull_request_target is forbidden in #{path}."
               end
-              permissions = workflow["permissions"]
-              if permissions == "write-all" || permissions == { "write-all" => true }
+              top_permissions = workflow["permissions"]
+              if top_permissions == "write-all" || top_permissions == { "write-all" => true }
                 abort "Broad write-all permissions are forbidden in #{path}."
               end
-              if permissions.is_a?(Hash) && permissions["contents"] == "write" && path != ".github/workflows/release.yml"
+              if top_permissions.is_a?(Hash) && top_permissions["contents"] == "write" && path != ".github/workflows/release.yml"
                 abort "contents: write is reserved for the release workflow: #{path}."
               end
+              (workflow["jobs"] || {}).each do |job_name, job|
+                next unless job.is_a?(Hash)
+                job_permissions = job["permissions"]
+                if job_permissions == "write-all" || job_permissions == { "write-all" => true }
+                  abort "Broad write-all job permissions are forbidden in #{job_name} within #{path}."
+                end
+                if job_permissions.is_a?(Hash) && job_permissions["contents"] == "write" && path != ".github/workflows/release.yml"
+                  abort "contents: write at job level is reserved for the release workflow: #{job_name} in #{path}."
+                end
+              end
             end
-            puts "Workflow triggers and permissions satisfy the security policy."
+            puts "Workflow triggers and top-level/job-level permissions satisfy the security policy."
           '
 
       - name: Verify immutable workflow actions
