@@ -121,6 +121,15 @@ metrics.bindAddress=127.0.0.1
 metrics.port=9100
 ```
 
+A minimal Prometheus configuration for a server where Prometheus runs on the same host is:
+
+```yaml
+scrape_configs:
+  - job_name: chatapp
+    static_configs:
+      - targets: ['127.0.0.1:9100']
+```
+
 The endpoint reports connected users, active handlers, accepted/rejected connections, processed requests, protocol errors, handler-pool activity/queue depth, completed handler tasks, JVM memory usage, uptime, and live thread count. For remote scraping, bind it to a trusted interface and protect it at the network layer; the endpoint does not provide application authentication.
 
 ## Security
@@ -367,7 +376,6 @@ realtime-chat-app/
     │   ├── config.properties.example
     │   └── sql/schema.sql
     └── test/java/com/chatapp/   # Automated tests
-```
 
 ## Roadmap
 
