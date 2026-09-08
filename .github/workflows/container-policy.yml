@@ -32,10 +32,14 @@ jobs:
             exit 1
           fi
 
-      - name: Reject mutable latest base images
+      - name: Reject mutable latest container images
         run: |
           if grep -nE '^\s*FROM\s+[^[:space:]]+:latest([[:space:]]|$)' Dockerfile; then
             echo 'Docker base images must not use the mutable :latest tag.'
+            exit 1
+          fi
+          if grep -nE '^\s*image:\s*[^[:space:]@]+:latest([[:space:]]|$)' docker-compose.yml; then
+            echo 'Compose service images must not use the mutable :latest tag.'
             exit 1
           fi
 
