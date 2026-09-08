@@ -327,7 +327,7 @@ realtime-chat-app/
 ├── .github/workflows/dependency-review.yml
 ├── .github/workflows/docker-context-policy.yml
 ├── .github/workflows/release.yml
-├── .github/workflows/scorecards.yml
+├── .github/workflows/scorecard.yml
 ├── .github/workflows/secret-material.yml
 ├── .github/workflows/secret-scan.yml
 ├── .github/workflows/source-hygiene.yml
