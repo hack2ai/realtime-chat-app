@@ -10,12 +10,14 @@ import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Locale;
 import java.util.Properties;
+import java.util.regex.Pattern;
 
 /** Centralized runtime configuration with file, environment, and JVM overrides. */
 public final class AppConfig {
     private static final String CONFIG_FILE = "config.properties";
     private static final String ENV_PREFIX = "CHATAPP_";
     private static final int MAX_SECRET_FILE_BYTES = 16 * 1024;
+    private static final Pattern DATABASE_NAME_PATTERN = Pattern.compile("[A-Za-z0-9_]+");
     private static final Properties PROPERTIES = new Properties();
 
     static {
@@ -122,9 +124,17 @@ public final class AppConfig {
         return Boolean.parseBoolean(value);
     }
 
+    private static String requireDatabaseName() {
+        String databaseName = require("db.name");
+        if (!DATABASE_NAME_PATTERN.matcher(databaseName).matches()) {
+            throw new IllegalStateException("Config key 'db.name' must contain only letters, digits, and underscores.");
+        }
+        return databaseName;
+    }
+
     public static String getDbHost() { return require("db.host"); }
     public static int getDbPort() { return requirePort("db.port"); }
-    public static String getDbName() { return require("db.name"); }
+    public static String getDbName() { return requireDatabaseName(); }
     public static String getDbUser() { return require("db.user"); }
     public static String getDbPassword() { return require("db.password"); }
     public static int getDbPoolMinIdle() { return requirePositiveInt("db.pool.minIdle"); }
