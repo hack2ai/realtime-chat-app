@@ -8,7 +8,6 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Optional;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -57,7 +56,7 @@ class GroupServiceTest {
     void joinTreatsConcurrentMembershipAsAlreadyJoined() throws ValidationException {
         StubGroupDAO groupDAO = new StubGroupDAO();
         groupDAO.addMemberResult = false;
-        groupDAO.member = true;
+        groupDAO.membershipAppearsAfterInsert = true;
 
         GroupService service = new GroupService(groupDAO, new StubUserDAO());
 
@@ -76,6 +75,7 @@ class GroupServiceTest {
         private boolean member;
         private boolean addMemberResult;
         private boolean addMemberCalled;
+        private boolean membershipAppearsAfterInsert;
 
         @Override
         public boolean exists(int groupId) {
@@ -90,6 +90,9 @@ class GroupServiceTest {
         @Override
         public boolean addMember(int groupId, int userId) {
             addMemberCalled = true;
+            if (!addMemberResult && membershipAppearsAfterInsert) {
+                member = true;
+            }
             return addMemberResult;
         }
     }
