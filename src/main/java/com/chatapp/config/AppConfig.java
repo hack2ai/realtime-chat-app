@@ -178,4 +178,7 @@ public final class AppConfig {
     public static int getBcryptStrength() { return requireRange("auth.bcrypt.strength", 10, 31); }
     public static int getSessionExpiryHours() { return requireRange("auth.session.expiryHours", 1, 8760); }
     public static String getAttachmentStoragePath() { return require("attachments.storagePath"); }
+    public static boolean isMetricsEnabled() { return optionalBoolean("metrics.enabled", false); }
+    public static String getMetricsBindAddress() { return optional("metrics.bindAddress", "127.0.0.1"); }
+    public static int getMetricsPort() { return requirePort("metrics.port"); }
 }
