@@ -17,7 +17,7 @@ public final class ServerHealthCheck {
     public static void main(String[] args) {
         final int port;
         try {
-            port = resolvePort();
+            port = resolvePort(System.getProperty(PORT_PROPERTY), System.getenv(PORT_ENVIRONMENT));
         } catch (IllegalArgumentException e) {
             System.exit(1);
             return;
@@ -30,12 +30,11 @@ public final class ServerHealthCheck {
         }
     }
 
-    private static int resolvePort() {
-        String configuredPort = System.getProperty(PORT_PROPERTY);
-        if (configuredPort != null && !configuredPort.isBlank()) {
-            return parsePort(configuredPort.trim());
+    static int resolvePort(String systemPropertyPort, String environmentPort) {
+        if (systemPropertyPort != null && !systemPropertyPort.isBlank()) {
+            return parsePort(systemPropertyPort.trim());
         }
-        return parsePort(System.getenv(PORT_ENVIRONMENT));
+        return parsePort(environmentPort);
     }
 
     static int parsePort(String configuredPort) {
