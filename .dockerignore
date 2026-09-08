@@ -27,3 +27,9 @@ config.properties
 *.secret
 credentials.*
 secrets.*
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+*.7z
+*.rar
