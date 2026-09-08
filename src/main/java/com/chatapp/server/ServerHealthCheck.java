@@ -8,6 +8,8 @@ import java.net.Socket;
 public final class ServerHealthCheck {
     private static final int DEFAULT_PORT = 5050;
     private static final int CONNECT_TIMEOUT_MILLIS = 2_000;
+    private static final String PORT_PROPERTY = "chatapp.server.port";
+    private static final String PORT_ENVIRONMENT = "CHATAPP_SERVER_PORT";
 
     private ServerHealthCheck() {
     }
@@ -29,7 +31,11 @@ public final class ServerHealthCheck {
     }
 
     private static int resolvePort() {
-        return parsePort(System.getenv("CHATAPP_SERVER_PORT"));
+        String configuredPort = System.getProperty(PORT_PROPERTY);
+        if (configuredPort != null && !configuredPort.isBlank()) {
+            return parsePort(configuredPort.trim());
+        }
+        return parsePort(System.getenv(PORT_ENVIRONMENT));
     }
 
     static int parsePort(String configuredPort) {
@@ -40,10 +46,10 @@ public final class ServerHealthCheck {
         try {
             port = Integer.parseInt(configuredPort);
         } catch (NumberFormatException e) {
-            throw new IllegalArgumentException("CHATAPP_SERVER_PORT must be a valid TCP port.", e);
+            throw new IllegalArgumentException("Configured server port must be a valid TCP port.", e);
         }
         if (port < 1 || port > 65_535) {
-            throw new IllegalArgumentException("CHATAPP_SERVER_PORT must be between 1 and 65535.");
+            throw new IllegalArgumentException("Configured server port must be between 1 and 65535.");
         }
         return port;
     }
