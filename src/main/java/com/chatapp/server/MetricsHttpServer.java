@@ -6,6 +6,7 @@ import com.sun.net.httpserver.HttpServer;
 
 import java.io.IOException;
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.Executors;
 
@@ -25,7 +26,7 @@ public final class MetricsHttpServer {
         if (!AppConfig.isMetricsEnabled()) return;
 
         InetAddress address = InetAddress.getByName(AppConfig.getMetricsBindAddress());
-        httpServer = HttpServer.create(new java.net.InetSocketAddress(address, AppConfig.getMetricsPort()), 0);
+        httpServer = HttpServer.create(new InetSocketAddress(address, AppConfig.getMetricsPort()), 0);
         httpServer.createContext("/metrics", this::handleMetrics);
         httpServer.setExecutor(Executors.newVirtualThreadPerTaskExecutor());
         httpServer.start();
@@ -57,15 +58,15 @@ public final class MetricsHttpServer {
         ServerMetrics.Snapshot snapshot = metrics.snapshot();
         Runtime runtime = Runtime.getRuntime();
         StringBuilder output = new StringBuilder(2048);
-        appendCounter(output, "chatapp_connected_users", "Currently connected authenticated users.", server.connectedUserCount());
-        appendCounter(output, "chatapp_active_handlers", "Currently active client handlers.", server.activeHandlerCount());
+        appendGauge(output, "chatapp_connected_users", "Currently connected authenticated users.", server.connectedUserCount());
+        appendGauge(output, "chatapp_active_handlers", "Currently active client handlers.", server.activeHandlerCount());
         appendCounter(output, "chatapp_accepted_connections_total", "Accepted client connections.", snapshot.acceptedConnections());
         appendCounter(output, "chatapp_rejected_connections_total", "Rejected client connections.", snapshot.rejectedConnections());
         appendCounter(output, "chatapp_requests_total", "Processed client requests.", snapshot.requests());
         appendCounter(output, "chatapp_protocol_errors_total", "Protocol errors observed.", snapshot.protocolErrors());
-        appendCounter(output, "chatapp_handler_pool_active", "Active client handler executor tasks.", server.handlerPoolActiveCount());
-        appendCounter(output, "chatapp_handler_pool_size", "Current client handler executor pool size.", server.handlerPoolSize());
-        appendCounter(output, "chatapp_handler_pool_queue_depth", "Queued client handler tasks.", server.handlerPoolQueueDepth());
+        appendGauge(output, "chatapp_handler_pool_active", "Active client handler executor tasks.", server.handlerPoolActiveCount());
+        appendGauge(output, "chatapp_handler_pool_size", "Current client handler executor pool size.", server.handlerPoolSize());
+        appendGauge(output, "chatapp_handler_pool_queue_depth", "Queued client handler tasks.", server.handlerPoolQueueDepth());
         appendCounter(output, "chatapp_handler_pool_completed_total", "Completed client handler tasks.", server.completedHandlerCount());
         appendGauge(output, "chatapp_jvm_memory_used_bytes", "JVM heap memory currently used.", runtime.totalMemory() - runtime.freeMemory());
         appendGauge(output, "chatapp_jvm_memory_committed_bytes", "JVM heap memory currently committed.", runtime.totalMemory());
@@ -75,7 +76,7 @@ public final class MetricsHttpServer {
 
     private static void appendCounter(StringBuilder output, String name, String help, long value) {
         output.append("# HELP ").append(name).append(' ').append(help).append('\n');
-        output.append("# TYPE ").append(name).append(" gauge\n");
+        output.append("# TYPE ").append(name).append(" counter\n");
         output.append(name).append(' ').append(value).append('\n');
     }
 
