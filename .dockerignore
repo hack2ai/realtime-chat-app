@@ -33,3 +33,6 @@ secrets.*
 *.zip
 *.7z
 *.rar
+*.jar
+*.war
+*.class
