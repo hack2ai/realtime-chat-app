@@ -50,7 +50,7 @@ class ValidationUtilTest {
     void validatesMessageAndGroupNameBoundaries() {
         assertDoesNotThrow(() -> ValidationUtil.validateMessageContent("a".repeat(4000)));
         assertThrows(ValidationException.class, () -> ValidationUtil.validateMessageContent("a".repeat(4001)));
-        assertDoesNotThrow(() -> ValidationUtil.validateGroupName("g".repeat(80)));
-        assertThrows(ValidationException.class, () -> ValidationUtil.validateGroupName("g".repeat(81)));
+        assertDoesNotThrow(() -> ValidationUtil.validateGroupName("g".repeat(50)));
+        assertThrows(ValidationException.class, () -> ValidationUtil.validateGroupName("g".repeat(51)));
     }
 }
