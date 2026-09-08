@@ -67,6 +67,27 @@ class AppConfigTest {
     }
 
     @Test
+    void databaseNameAcceptsSafeIdentifier() {
+        System.setProperty("chatapp.db.name", "chatapp_db_2026");
+
+        assertEquals("chatapp_db_2026", AppConfig.getDbName());
+    }
+
+    @Test
+    void databaseNameRejectsJdbcQuerySuffix() {
+        System.setProperty("chatapp.db.name", "chatapp_db?useSSL=false");
+
+        assertThrows(IllegalStateException.class, AppConfig::getDbName);
+    }
+
+    @Test
+    void databaseNameRejectsPathDelimiters() {
+        System.setProperty("chatapp.db.name", "chatapp_db/other");
+
+        assertThrows(IllegalStateException.class, AppConfig::getDbName);
+    }
+
+    @Test
     void databaseTlsIsEnabledByDefault() {
         System.clearProperty("chatapp.db.useSsl");
 
