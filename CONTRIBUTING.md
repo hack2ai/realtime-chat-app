@@ -17,6 +17,18 @@ Thanks for contributing to Real-Time Chat Application.
 - Keep protocol and database changes backward-compatible where practical; document breaking changes.
 - Prefer small, reviewable commits and clear commit messages.
 
+## Main branch protection
+
+The `main` branch should be governed by a GitHub branch protection rule or repository ruleset. The required policy is:
+
+- Changes land through pull requests; direct pushes to `main` are disabled.
+- Required status checks include the CI build, CodeQL analysis, and Dependency Review where the event applies.
+- Force pushes and branch deletion are disabled.
+- Required pull-request conversation resolution is enabled.
+- At least one approving review is required for changes from other contributors.
+
+The repository automation verifies the code, dependency, container, packaging, and security invariants in CI, but those GitHub repository settings must still be enforced at the repository level.
+
 ## Code quality
 
 Use Java 21 features where they improve clarity, but avoid unnecessary framework or dependency additions. Keep networking, business logic, persistence, and configuration concerns separated.
