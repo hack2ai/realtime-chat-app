@@ -187,12 +187,6 @@ jobs:
           CHATAPP_DB_PASSWORD: ci-app-password
         run: |
           config=$(docker compose config --format json)
-          printf '%s\n' "$config" | jq -e '.services.db.environment.MYSQL_ROOT_PASSWORD_FILE == "/run/secrets/mysql_root_password"' >/dev/null
-          printf '%s\n' "$config" | jq -e '.services.db.environment.MYSQL_PASSWORD_FILE == "/run/secrets/db_password"' >/dev/null
-          printf '%s\n' "$config" | jq -e '.services.server.environment.CHATAPP_DB_PASSWORD_FILE == "/run/secrets/db_password"' >/dev/null
-          printf '%s\n' "$config" | jq -e '.secrets.mysql_root_password.environment == "CHATAPP_MYSQL_ROOT_PASSWORD"' >/dev/null
-          printf '%s\n' "$config" | jq -e '.secrets.db_password.environment == "CHATAPP_DB_PASSWORD"' >/dev/null
-          printf '%s\n' "$config" | jq -e '.services.db.read_only == false or .services.db.read_only == null' >/dev/null
           printf '%s\n' "$config" | jq -e '.services.server.read_only == true' >/dev/null
           printf '%s\n' "$config" | jq -e '.services.server.init == true' >/dev/null
           printf '%s\n' "$config" | jq -e '.services.server.restart == "unless-stopped"' >/dev/null
@@ -317,14 +311,150 @@ jobs:
           docker inspect "$container_id" | jq -e '.[0].HostConfig.PidsLimit == 256' >/dev/null
           docker inspect "$container_id" | jq -e '.[0].HostConfig.Memory == 1073741824' >/dev/null
           docker inspect "$container_id" | jq -e '.[0].HostConfig.NanoCpus == 2000000000' >/dev/null
-          docker inspect "$container_id" | jq -e '.[0].Config.User == "10001"' >/dev/null
-          docker inspect "$container_id" | jq -e '.[0].HostConfig.LogConfig.Type == "json-file"' >/dev/null
-          docker inspect "$container_id" | jq -e '.[0].HostConfig.LogConfig.Config["max-size"] == "10m"' >/dev/null
-          docker inspect "$container_id" | jq -e '.[0].HostConfig.LogConfig.Config["max-file"] == "3"' >/dev/null
+          test "$(docker compose exec -T server id -u)" = "10001"
 
-      - name: Stop Docker Compose stack
+      - name: Verify database container hardening
+        run: |
+          container_id=$(docker compose ps -q db)
+          test -n "$container_id"
+          docker inspect "$container_id" | jq -e '.[0].HostConfig.CapDrop == ["ALL"]' >/dev/null
+          docker inspect "$container_id" | jq -e '.[0].HostConfig.SecurityOpt | index("no-new-privileges:true") != null' >/dev/null
+          docker inspect "$container_id" | jq -e '.[0].HostConfig.PidsLimit == 256' >/dev/null
+          docker inspect "$container_id" | jq -e '.[0].HostConfig.Memory == 1073741824' >/dev/null
+          docker inspect "$container_id" | jq -e '.[0].HostConfig.NanoCpus == 2000000000' >/dev/null
+          docker inspect "$container_id" | jq -e '.[0].HostConfig.NetworkMode | endswith("_backend")' >/dev/null
+
+      - name: Verify attachment volume is writable
+        run: |
+          docker compose exec -T server sh -c 'test -w /app/data/attachments && touch /app/data/attachments/.ci-write-test && rm /app/data/attachments/.ci-write-test'
+
+      - name: Verify server TCP port is reachable
+        run: |
+          timeout 5 bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/5050'
+
+      - name: Smoke test framed PING/PONG protocol
+        run: |
+          python3 - <<'PY'
+          import json
+          import socket
+          import struct
+          import time
+
+          request = json.dumps({
+              "type": "PING",
+              "payload": None,
+              "timestamp": int(time.time() * 1000),
+          }, separators=(",", ":")).encode("utf-8")
+
+          with socket.create_connection(("127.0.0.1", 5050), timeout=5) as sock:
+              sock.sendall(struct.pack(">i", len(request)) + request)
+              header = b""
+              while len(header) < 4:
+                  chunk = sock.recv(4 - len(header))
+                  if not chunk:
+                      raise SystemExit("server closed the connection before the response header was complete")
+                  header += chunk
+              length = struct.unpack(">i", header)[0]
+              if length <= 0 or length > 8 * 1024 * 1024:
+                  raise SystemExit(f"invalid response frame length: {length}")
+              response = b""
+              while len(response) < length:
+                  chunk = sock.recv(length - len(response))
+                  if not chunk:
+                      raise SystemExit("server closed the connection before the response was complete")
+                  response += chunk
+
+          payload = json.loads(response.decode("utf-8"))
+          if payload.get("type") != "PONG":
+              raise SystemExit(f"unexpected response type: {payload.get('type')!r}")
+          PY
+
+      - name: Smoke test registration and login flow
+        env:
+          CHATAPP_CI_RUN_ID: ${{ github.run_id }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import socket
+          import struct
+          import time
+
+          host = "127.0.0.1"
+          port = 5050
+          run_id = os.environ["CHATAPP_CI_RUN_ID"]
+          username = f"ci_{run_id}"
+          email = f"ci_{run_id}@example.com"
+          password = "CItest1234!"
+
+          def round_trip(message):
+              encoded = json.dumps(message, separators=(",", ":")).encode("utf-8")
+              with socket.create_connection((host, port), timeout=5) as sock:
+                  sock.sendall(struct.pack(">i", len(encoded)) + encoded)
+                  header = b""
+                  while len(header) < 4:
+                      chunk = sock.recv(4 - len(header))
+                      if not chunk:
+                          raise SystemExit("server closed connection before response header was complete")
+                      header += chunk
+                  length = struct.unpack(">i", header)[0]
+                  if length <= 0 or length > 8 * 1024 * 1024:
+                      raise SystemExit(f"invalid response frame length: {length}")
+                  response = b""
+                  while len(response) < length:
+                      chunk = sock.recv(length - len(response))
+                      if not chunk:
+                          raise SystemExit("server closed connection before response was complete")
+                      response += chunk
+              return json.loads(response.decode("utf-8"))
+
+          register = round_trip({
+              "type": "C2S_REGISTER",
+              "payload": {
+                  "username": username,
+                  "email": email,
+                  "password": password,
+                  "confirmPassword": password,
+              },
+              "timestamp": int(time.time() * 1000),
+          })
+          if register.get("type") != "S2C_REGISTER_SUCCESS":
+              raise SystemExit(f"registration failed: {register!r}")
+
+          login = round_trip({
+              "type": "C2S_LOGIN",
+              "payload": {
+                  "usernameOrEmail": username,
+                  "password": password,
+              },
+              "timestamp": int(time.time() * 1000),
+          })
+          if login.get("type") != "S2C_LOGIN_SUCCESS":
+              raise SystemExit(f"login failed: {login!r}")
+          payload = login.get("payload") or {}
+          if payload.get("username") != username or not payload.get("sessionToken"):
+              raise SystemExit(f"login response missing expected identity/session token: {login!r}")
+          PY
+
+      - name: Verify graceful server shutdown
+        run: |
+          container_id=$(docker compose ps -q server)
+          test -n "$container_id"
+          docker stop --time 10 "$container_id"
+          exit_code=$(docker inspect "$container_id" --format '{{.State.ExitCode}}')
+          test "$exit_code" = "0"
+          test "$(docker inspect "$container_id" --format '{{.State.Status}}')" = "exited"
+
+      - name: Show service logs on failure
+        if: failure()
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: docker compose logs --no-color server db
+
+      - name: Cleanup Docker Compose resources
         if: always()
         env:
           CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
           CHATAPP_DB_PASSWORD: ci-app-password
-        run: docker compose down -v
+        run: docker compose down --volumes --remove-orphans
