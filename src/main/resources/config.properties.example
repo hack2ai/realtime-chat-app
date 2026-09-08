@@ -28,6 +28,13 @@ server.maxClients=200
 # Authentication handshake timeout in milliseconds. Authenticated chat connections clear this timeout.
 server.socketReadTimeoutMs=30000
 
+# ---------------- Runtime Metrics ----------------
+# Optional read-only Prometheus-style HTTP endpoint. Disabled by default.
+metrics.enabled=false
+# Change to 0.0.0.0 only when a trusted metrics scraper must reach the endpoint remotely.
+metrics.bindAddress=127.0.0.1
+metrics.port=9100
+
 # ---------------- Transport TLS ----------------
 # Enable for encrypted TCP transport. Keep false for local plain-TCP development only.
 tls.enabled=false
