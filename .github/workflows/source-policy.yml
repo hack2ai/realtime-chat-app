@@ -60,6 +60,21 @@ jobs:
             exit 1
           fi
 
+      - name: Require explicit workflow permissions
+        run: |
+          set -eu
+          failures=0
+          for path in .github/workflows/*.y*ml; do
+            if ! grep -q '^permissions:' "$path"; then
+              echo "$path: missing explicit workflow-level permissions"
+              failures=1
+            fi
+          done
+          if [ "$failures" -ne 0 ]; then
+            exit 1
+          fi
+          echo 'All workflows declare explicit workflow-level permissions.'
+
       - name: Require timeouts on runner-based workflow jobs
         run: |
           set -eu
