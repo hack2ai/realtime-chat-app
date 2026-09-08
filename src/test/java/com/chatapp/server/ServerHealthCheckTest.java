@@ -28,5 +28,12 @@ class ServerHealthCheckTest {
     void rejectsPortsOutsideTcpRange() {
         assertThrows(IllegalArgumentException.class, () -> ServerHealthCheck.parsePort("0"));
         assertThrows(IllegalArgumentException.class, () -> ServerHealthCheck.parsePort("65536"));
+        assertThrows(IllegalArgumentException.class, () -> ServerHealthCheck.parsePort("-1"));
+    }
+
+    @Test
+    void trimsJvmStylePortOverride() {
+        assertEquals(5050, ServerHealthCheck.parsePort("5050"));
+        assertEquals(6000, ServerHealthCheck.parsePort("6000"));
     }
 }
