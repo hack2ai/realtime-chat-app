@@ -18,6 +18,7 @@ public final class AppConfig {
     private static final String ENV_PREFIX = "CHATAPP_";
     private static final int MAX_SECRET_FILE_BYTES = 16 * 1024;
     private static final Pattern DATABASE_NAME_PATTERN = Pattern.compile("[A-Za-z0-9_]+");
+    private static final Pattern DATABASE_HOST_PATTERN = Pattern.compile("(?:[A-Za-z0-9][A-Za-z0-9.-]*|\\[[0-9A-Fa-f:]+\\])");
     private static final Properties PROPERTIES = new Properties();
 
     static {
@@ -57,7 +58,7 @@ public final class AppConfig {
             if (e instanceof IllegalStateException state) {
                 throw state;
             }
-            throw new IllegalStateException("Failed to read secret file for config key '" + key + "'.", e);
+            throw new IllegalStateException("Failed to read secret file for config key '" + key + ".", e);
         }
     }
 
@@ -124,6 +125,14 @@ public final class AppConfig {
         return Boolean.parseBoolean(value);
     }
 
+    private static String requireDatabaseHost() {
+        String host = require("db.host");
+        if (!DATABASE_HOST_PATTERN.matcher(host).matches()) {
+            throw new IllegalStateException("Config key 'db.host' must be a hostname, IPv4 address, or bracketed IPv6 address without URL syntax characters.");
+        }
+        return host;
+    }
+
     private static String requireDatabaseName() {
         String databaseName = require("db.name");
         if (!DATABASE_NAME_PATTERN.matcher(databaseName).matches()) {
@@ -132,7 +141,7 @@ public final class AppConfig {
         return databaseName;
     }
 
-    public static String getDbHost() { return require("db.host"); }
+    public static String getDbHost() { return requireDatabaseHost(); }
     public static int getDbPort() { return requirePort("db.port"); }
     public static String getDbName() { return requireDatabaseName(); }
     public static String getDbUser() { return require("db.user"); }
