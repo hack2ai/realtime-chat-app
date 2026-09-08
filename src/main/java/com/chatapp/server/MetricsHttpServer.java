@@ -5,6 +5,7 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
 import java.io.IOException;
+import java.lang.management.ManagementFactory;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
@@ -71,7 +72,9 @@ public final class MetricsHttpServer {
     private String renderMetrics() {
         ServerMetrics.Snapshot snapshot = metrics.snapshot();
         Runtime runtime = Runtime.getRuntime();
-        StringBuilder output = new StringBuilder(2048);
+        long uptimeMillis = ManagementFactory.getRuntimeMXBean().getUptime();
+        long liveThreads = ManagementFactory.getThreadMXBean().getThreadCount();
+        StringBuilder output = new StringBuilder(2560);
         appendGauge(output, "chatapp_connected_users", "Currently connected authenticated users.", server.connectedUserCount());
         appendGauge(output, "chatapp_active_handlers", "Currently active client handlers.", server.activeHandlerCount());
         appendCounter(output, "chatapp_accepted_connections_total", "Accepted client connections.", snapshot.acceptedConnections());
@@ -85,6 +88,8 @@ public final class MetricsHttpServer {
         appendGauge(output, "chatapp_jvm_memory_used_bytes", "JVM heap memory currently used.", runtime.totalMemory() - runtime.freeMemory());
         appendGauge(output, "chatapp_jvm_memory_committed_bytes", "JVM heap memory currently committed.", runtime.totalMemory());
         appendGauge(output, "chatapp_jvm_memory_max_bytes", "Maximum JVM heap memory available.", runtime.maxMemory());
+        appendGauge(output, "chatapp_jvm_uptime_seconds", "JVM uptime in seconds.", uptimeMillis / 1000);
+        appendGauge(output, "chatapp_jvm_threads_live", "Currently live JVM threads.", liveThreads);
         return output.toString();
     }
 
