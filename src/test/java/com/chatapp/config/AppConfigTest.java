@@ -194,5 +194,7 @@ class AppConfigTest {
         System.setProperty("chatapp.db.name", "chatapp_db");
         System.setProperty("chatapp.db.user", "chatapp_user");
         System.setProperty("chatapp.db.password", "test-password");
+        System.setProperty("chatapp.db.connectTimeoutMs", "10000");
+        System.setProperty("chatapp.db.socketTimeoutMs", "120000");
     }
 }
