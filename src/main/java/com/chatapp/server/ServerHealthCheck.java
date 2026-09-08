@@ -23,10 +23,17 @@ public final class ServerHealthCheck {
             return;
         }
 
+        if (!isPortReachable(port)) {
+            System.exit(1);
+        }
+    }
+
+    static boolean isPortReachable(int port) {
         try (Socket socket = new Socket()) {
             socket.connect(new InetSocketAddress("127.0.0.1", port), CONNECT_TIMEOUT_MILLIS);
+            return true;
         } catch (IOException e) {
-            System.exit(1);
+            return false;
         }
     }
 
