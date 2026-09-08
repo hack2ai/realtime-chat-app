@@ -32,8 +32,17 @@ class ServerHealthCheckTest {
     }
 
     @Test
-    void trimsJvmStylePortOverride() {
-        assertEquals(5050, ServerHealthCheck.parsePort("5050"));
-        assertEquals(6000, ServerHealthCheck.parsePort("6000"));
+    void systemPropertyTakesPrecedenceOverEnvironment() {
+        assertEquals(6000, ServerHealthCheck.resolvePort(" 6000 ", "7000"));
+    }
+
+    @Test
+    void environmentValueIsUsedWhenPropertyIsBlank() {
+        assertEquals(7000, ServerHealthCheck.resolvePort("   ", "7000"));
+    }
+
+    @Test
+    void defaultIsUsedWhenBothOverridesAreBlank() {
+        assertEquals(5050, ServerHealthCheck.resolvePort(null, ""));
     }
 }
