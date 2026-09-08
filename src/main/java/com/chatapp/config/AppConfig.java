@@ -167,6 +167,7 @@ public final class AppConfig {
     }
     public static int getServerPort() { return requirePort("server.port"); }
     public static String getServerBindAddress() { return require("server.bindAddress"); }
+    public static boolean isPlaintextRemoteAllowed() { return optionalBoolean("server.allowPlaintextRemote", false); }
     public static int getServerMaxClients() { return requireRange("server.maxClients", 1, 10000); }
     public static int getSocketReadTimeoutMs() { return requireRange("server.socketReadTimeoutMs", 0, 300000); }
     public static boolean isTlsEnabled() { return optionalBoolean("tls.enabled", false); }
