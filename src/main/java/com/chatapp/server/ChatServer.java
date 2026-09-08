@@ -51,6 +51,7 @@ public class ChatServer {
     private final ThreadPoolExecutor clientThreadPool;
     private final ScheduledExecutorService metricsScheduler = Executors.newSingleThreadScheduledExecutor(
             Thread.ofVirtual().name("chat-server-metrics-").factory());
+    private final MetricsHttpServer metricsHttpServer;
     private final Thread shutdownHook = new Thread(this::stop, "chat-server-shutdown");
     private volatile ScheduledFuture<?> metricsTask;
     private volatile boolean shutdownHookRegistered;
@@ -68,6 +69,7 @@ public class ChatServer {
                 Thread.ofVirtual().factory(),
                 new ThreadPoolExecutor.AbortPolicy());
         this.clientThreadPool.allowCoreThreadTimeOut(true);
+        this.metricsHttpServer = new MetricsHttpServer(metrics, this);
     }
 
     public static void main(String[] args) {
@@ -89,15 +91,17 @@ public class ChatServer {
         serverSocket = createServerSocket(address, port);
         try {
             running = true;
+            scheduleRuntimeMetrics();
+            metricsHttpServer.start();
             READINESS_MARKER.markReady();
             registerShutdownHook();
-            scheduleRuntimeMetrics();
             logger.info("Chat server listening on {}:{} (TLS: {})", bindAddress, port, AppConfig.isTlsEnabled());
             acceptLoop();
         } catch (IOException | RuntimeException e) {
             running = false;
             READINESS_MARKER.clear();
             cancelRuntimeMetrics();
+            metricsHttpServer.stop();
             closeQuietly(serverSocket);
             serverSocket = null;
             throw e;
@@ -253,6 +257,13 @@ public class ChatServer {
     public void recordRequest() { metrics.recordRequest(); }
     public void recordProtocolError() { metrics.recordProtocolError(); }
 
+    public long connectedUserCount() { return connectedClients.size(); }
+    public int activeHandlerCount() { return activeHandlers.size(); }
+    public int handlerPoolActiveCount() { return clientThreadPool.getActiveCount(); }
+    public int handlerPoolSize() { return clientThreadPool.getPoolSize(); }
+    public int handlerPoolQueueDepth() { return clientThreadPool.getQueue().size(); }
+    public long completedHandlerCount() { return clientThreadPool.getCompletedTaskCount(); }
+
     private void broadcastPresence(int userId, ClientHandler source, boolean online) {
         UserPresenceEvent event = new UserPresenceEvent(userId, source.getUsername(), online ? "ONLINE" : "OFFLINE");
         MessageType type = online ? MessageType.S2C_USER_ONLINE : MessageType.S2C_USER_OFFLINE;
@@ -273,6 +284,7 @@ public class ChatServer {
         READINESS_MARKER.clear();
         cancelRuntimeMetrics();
         unregisterShutdownHook();
+        metricsHttpServer.stop();
         closeQuietly(serverSocket);
         serverSocket = null;
         for (ClientHandler handler : activeHandlers.toArray(ClientHandler[]::new)) handler.closeConnection();
