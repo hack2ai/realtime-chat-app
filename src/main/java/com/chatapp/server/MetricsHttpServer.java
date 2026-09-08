@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /** Optional read-only HTTP endpoint for Prometheus-style operational metrics. */
@@ -15,6 +16,7 @@ public final class MetricsHttpServer {
     private final ServerMetrics metrics;
     private final ChatServer server;
     private HttpServer httpServer;
+    private ExecutorService executor;
 
     public MetricsHttpServer(ServerMetrics metrics, ChatServer server) {
         this.metrics = metrics;
@@ -26,16 +28,28 @@ public final class MetricsHttpServer {
         if (!AppConfig.isMetricsEnabled()) return;
 
         InetAddress address = InetAddress.getByName(AppConfig.getMetricsBindAddress());
-        httpServer = HttpServer.create(new InetSocketAddress(address, AppConfig.getMetricsPort()), 0);
-        httpServer.createContext("/metrics", this::handleMetrics);
-        httpServer.setExecutor(Executors.newVirtualThreadPerTaskExecutor());
-        httpServer.start();
+        HttpServer candidate = HttpServer.create(new InetSocketAddress(address, AppConfig.getMetricsPort()), 0);
+        ExecutorService candidateExecutor = Executors.newVirtualThreadPerTaskExecutor();
+        candidate.createContext("/metrics", this::handleMetrics);
+        candidate.setExecutor(candidateExecutor);
+        try {
+            candidate.start();
+        } catch (RuntimeException | Error e) {
+            candidateExecutor.shutdownNow();
+            throw e;
+        }
+        httpServer = candidate;
+        executor = candidateExecutor;
     }
 
     public synchronized void stop() {
         if (httpServer == null) return;
         httpServer.stop(0);
         httpServer = null;
+        if (executor != null) {
+            executor.shutdownNow();
+            executor = null;
+        }
     }
 
     private void handleMetrics(HttpExchange exchange) throws IOException {
