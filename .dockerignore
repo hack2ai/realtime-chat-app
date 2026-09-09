@@ -20,6 +20,7 @@ config.properties
 *.truststore
 *.key
 *.pem
+*.pub
 *.sqlite
 *.sqlite3
 *.db
@@ -27,6 +28,12 @@ config.properties
 *.secret
 credentials.*
 secrets.*
+.netrc
+.npmrc
+.pypirc
+kubeconfig*
+id_rsa*
+id_ed25519*
 *.tar
 *.tar.gz
 *.tgz
