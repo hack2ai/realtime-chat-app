@@ -8,6 +8,8 @@ public final class ServerMetrics {
     private final AtomicLong rejectedConnections = new AtomicLong();
     private final AtomicLong requests = new AtomicLong();
     private final AtomicLong protocolErrors = new AtomicLong();
+    private final AtomicLong authenticationFailures = new AtomicLong();
+    private final AtomicLong rateLimitedRequests = new AtomicLong();
 
     public void recordAcceptedConnection() {
         acceptedConnections.incrementAndGet();
@@ -25,18 +27,30 @@ public final class ServerMetrics {
         protocolErrors.incrementAndGet();
     }
 
+    public void recordAuthenticationFailure() {
+        authenticationFailures.incrementAndGet();
+    }
+
+    public void recordRateLimitedRequest() {
+        rateLimitedRequests.incrementAndGet();
+    }
+
     public Snapshot snapshot() {
         return new Snapshot(
                 acceptedConnections.get(),
                 rejectedConnections.get(),
                 requests.get(),
-                protocolErrors.get());
+                protocolErrors.get(),
+                authenticationFailures.get(),
+                rateLimitedRequests.get());
     }
 
     public record Snapshot(
             long acceptedConnections,
             long rejectedConnections,
             long requests,
-            long protocolErrors) {
+            long protocolErrors,
+            long authenticationFailures,
+            long rateLimitedRequests) {
     }
 }
