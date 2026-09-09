@@ -74,6 +74,11 @@ class ServerHealthCheckTest {
     }
 
     @Test
+    void defaultIsUsedWhenBothOverridesAreMissing() {
+        assertEquals(5050, ServerHealthCheck.resolvePort(null, null));
+    }
+
+    @Test
     void respondsToProtocolPing() throws Exception {
         MessageCodec codec = new MessageCodec();
         try (ServerSocket serverSocket = new ServerSocket(0)) {
