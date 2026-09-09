@@ -32,6 +32,11 @@ class ServerHealthCheckTest {
     }
 
     @Test
+    void trimsWhitespaceAroundPort() {
+        assertEquals(5050, ServerHealthCheck.parsePort(" 5050 "));
+    }
+
+    @Test
     void rejectsNonNumericPort() {
         assertThrows(IllegalArgumentException.class, () -> ServerHealthCheck.parsePort("not-a-port"));
     }
@@ -56,6 +61,11 @@ class ServerHealthCheckTest {
     @Test
     void environmentValueIsUsedWhenPropertyIsBlank() {
         assertEquals(7000, ServerHealthCheck.resolvePort("   ", "7000"));
+    }
+
+    @Test
+    void environmentValueWithWhitespaceIsAccepted() {
+        assertEquals(7000, ServerHealthCheck.resolvePort("   ", " 7000 "));
     }
 
     @Test
