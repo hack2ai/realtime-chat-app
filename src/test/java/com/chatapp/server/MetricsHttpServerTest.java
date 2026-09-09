@@ -14,6 +14,7 @@ class MetricsHttpServerTest {
         metrics.recordProtocolError();
         metrics.recordAuthenticationFailure();
         metrics.recordRateLimitedRequest();
+        metrics.recordInternalError();
 
         ChatServer server = new ChatServer(new com.chatapp.service.AuthenticationService());
         try {
@@ -35,6 +36,9 @@ class MetricsHttpServerTest {
             assertTrue(output.contains("chatapp_authentication_failures_total 1"));
             assertTrue(output.contains("# TYPE chatapp_rate_limited_requests_total counter"));
             assertTrue(output.contains("chatapp_rate_limited_requests_total 1"));
+            assertTrue(output.contains("# TYPE chatapp_internal_errors_total counter"));
+            assertTrue(output.contains("# HELP chatapp_internal_errors_total Internal request-handler errors observed."));
+            assertTrue(output.contains("chatapp_internal_errors_total 1"));
             assertTrue(output.contains("# TYPE chatapp_connected_users gauge"));
             assertTrue(output.contains("# TYPE chatapp_active_handlers gauge"));
             assertTrue(output.contains("# TYPE chatapp_handler_pool_active gauge"));
