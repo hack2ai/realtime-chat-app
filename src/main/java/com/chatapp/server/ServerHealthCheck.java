@@ -86,7 +86,7 @@ public final class ServerHealthCheck {
         }
         final int port;
         try {
-            port = Integer.parseInt(configuredPort);
+            port = Integer.parseInt(configuredPort.trim());
         } catch (NumberFormatException e) {
             throw new IllegalArgumentException("Configured server port must be a valid TCP port.", e);
         }
