@@ -1,0 +1,56 @@
+name: Attest CI Artifacts
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  contents: read
+  attestations: write
+  id-token: write
+
+concurrency:
+  group: attest-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+jobs:
+  attest:
+    name: Attest successful main artifacts
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download server artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: chatapp-server-${{ github.event.workflow_run.head_sha }}
+          path: artifacts/server
+          github-token: ${{ github.token }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Download SBOM artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: chatapp-sbom-${{ github.event.workflow_run.head_sha }}
+          path: artifacts/sbom
+          github-token: ${{ github.token }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Verify downloaded artifacts
+        run: |
+          test -s artifacts/server/target/chatapp-server.jar || test -s artifacts/server/chatapp-server.jar
+          test -s artifacts/sbom/target/bom.json || test -s artifacts/sbom/bom.json
+
+      - name: Attest server build artifact
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: artifacts/server/**/chatapp-server.jar
+
+      - name: Attest generated SBOM
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: artifacts/sbom/**/bom.json
