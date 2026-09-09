@@ -19,12 +19,14 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.Enumeration;
+import java.util.List;
 
 /** Builds TLS contexts from deployment-provided keystores and truststores. */
 public final class TlsContextFactory {
     private static final Logger logger = LoggerFactory.getLogger(TlsContextFactory.class);
     private static final String KEYSTORE_TYPE = "PKCS12";
     private static final String TLS_PROTOCOL = "TLS";
+    private static final String SERVER_AUTH_EKU_OID = "1.3.6.1.5.5.7.3.1";
     private static final Duration CERTIFICATE_RENEWAL_WARNING = Duration.ofDays(30);
 
     private TlsContextFactory() {}
@@ -116,6 +118,12 @@ public final class TlsContextFactory {
             } catch (java.security.cert.CertificateNotYetValidException e) {
                 throw new GeneralSecurityException("TLS server certificate is not yet valid for alias " + alias + ".", e);
             }
+
+            List<String> extendedKeyUsage = x509Certificate.getExtendedKeyUsage();
+            if (extendedKeyUsage != null && !extendedKeyUsage.contains(SERVER_AUTH_EKU_OID)) {
+                throw new GeneralSecurityException("TLS server certificate is not authorized for server authentication for alias " + alias + ".");
+            }
+
             Instant notAfter = x509Certificate.getNotAfter().toInstant();
             if (!notAfter.isAfter(renewalDeadline)) {
                 long daysRemaining = Math.max(0L, Duration.between(now, notAfter).toDays());
