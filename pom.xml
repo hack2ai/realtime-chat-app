@@ -126,6 +126,9 @@
                                 <requireMavenVersion>
                                     <version>[3.9,4)</version>
                                 </requireMavenVersion>
+                                <requirePluginVersions>
+                                    <message>All build plugins must declare explicit versions.</message>
+                                </requirePluginVersions>
                                 <requireReleaseDeps>
                                     <message>Release builds must not depend on SNAPSHOT artifacts.</message>
                                 </requireReleaseDeps>
