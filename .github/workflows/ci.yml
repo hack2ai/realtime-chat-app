@@ -70,6 +70,7 @@ jobs:
           grep -Fqx 'db.useSsl=true' src/main/resources/config.properties.example
           grep -Fqx 'db.allowPublicKeyRetrieval=false' src/main/resources/config.properties.example
           grep -Fqx 'server.bindAddress=127.0.0.1' src/main/resources/config.properties.example
+          grep -Fqx 'server.allowPlaintextRemote=false' src/main/resources/config.properties.example
           grep -Fqx 'metrics.enabled=false' src/main/resources/config.properties.example
           grep -Fqx 'metrics.bindAddress=127.0.0.1' src/main/resources/config.properties.example
           grep -Fqx 'metrics.port=9100' src/main/resources/config.properties.example
