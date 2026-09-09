@@ -135,7 +135,7 @@ public class ChatServer {
         if (!running) return;
         int expiredSessions = authService.cleanupExpiredSessions();
         ServerMetrics.Snapshot snapshot = metrics.snapshot();
-        logger.info("Server metrics: connectedUsers={}, activeHandlers={}, acceptedConnections={}, rejectedConnections={}, requests={}, protocolErrors={}, authenticationFailures={}, rateLimitedRequests={}, poolActive={}, poolSize={}, queueDepth={}, completedHandlers={}, expiredSessions={}",
+        logger.info("Server metrics: connectedUsers={}, activeHandlers={}, acceptedConnections={}, rejectedConnections={}, requests={}, protocolErrors={}, authenticationFailures={}, rateLimitedRequests={}, internalErrors={}, poolActive={}, poolSize={}, queueDepth={}, completedHandlers={}, expiredSessions={}",
                 connectedClients.size(),
                 activeHandlers.size(),
                 snapshot.acceptedConnections(),
@@ -144,6 +144,7 @@ public class ChatServer {
                 snapshot.protocolErrors(),
                 snapshot.authenticationFailures(),
                 snapshot.rateLimitedRequests(),
+                snapshot.internalErrors(),
                 clientThreadPool.getActiveCount(),
                 clientThreadPool.getPoolSize(),
                 clientThreadPool.getQueue().size(),
@@ -271,6 +272,7 @@ public class ChatServer {
     public void recordProtocolError() { metrics.recordProtocolError(); }
     public void recordAuthenticationFailure() { metrics.recordAuthenticationFailure(); }
     public void recordRateLimitedRequest() { metrics.recordRateLimitedRequest(); }
+    public void recordInternalError() { metrics.recordInternalError(); }
 
     public long connectedUserCount() { return connectedClients.size(); }
     public int activeHandlerCount() { return activeHandlers.size(); }
