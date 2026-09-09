@@ -91,13 +91,15 @@ public final class MetricsHttpServer {
         Runtime runtime = Runtime.getRuntime();
         long uptimeMillis = ManagementFactory.getRuntimeMXBean().getUptime();
         long liveThreads = ManagementFactory.getThreadMXBean().getThreadCount();
-        StringBuilder output = new StringBuilder(2560);
+        StringBuilder output = new StringBuilder(3200);
         appendGauge(output, "chatapp_connected_users", "Currently connected authenticated users.", server.connectedUserCount());
         appendGauge(output, "chatapp_active_handlers", "Currently active client handlers.", server.activeHandlerCount());
         appendCounter(output, "chatapp_accepted_connections_total", "Accepted client connections.", snapshot.acceptedConnections());
         appendCounter(output, "chatapp_rejected_connections_total", "Rejected client connections.", snapshot.rejectedConnections());
         appendCounter(output, "chatapp_requests_total", "Processed client requests.", snapshot.requests());
         appendCounter(output, "chatapp_protocol_errors_total", "Protocol errors observed.", snapshot.protocolErrors());
+        appendCounter(output, "chatapp_authentication_failures_total", "Authentication failures observed.", snapshot.authenticationFailures());
+        appendCounter(output, "chatapp_rate_limited_requests_total", "Requests rejected by application rate limits.", snapshot.rateLimitedRequests());
         appendGauge(output, "chatapp_handler_pool_active", "Active client handler executor tasks.", server.handlerPoolActiveCount());
         appendGauge(output, "chatapp_handler_pool_size", "Current client handler executor pool size.", server.handlerPoolSize());
         appendGauge(output, "chatapp_handler_pool_queue_depth", "Queued client handler tasks.", server.handlerPoolQueueDepth());
