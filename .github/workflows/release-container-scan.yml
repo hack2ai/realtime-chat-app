@@ -8,6 +8,7 @@ on:
 permissions:
   contents: read
   packages: read
+  security-events: write
 
 concurrency:
   group: release-container-scan-${{ github.event.workflow_run.id }}
@@ -48,8 +49,16 @@ jobs:
           RELEASE_VERSION: ${{ github.event.workflow_run.head_branch }}
         with:
           image-ref: ghcr.io/${{ github.repository }}:${{ env.RELEASE_VERSION }}
-          format: table
+          format: sarif
+          output: trivy-results.sarif
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           scanners: vuln,misconfig,secret
           exit-code: '1'
+
+      - name: Upload Trivy results
+        if: ${{ always() && hashFiles('trivy-results.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
+        with:
+          sarif_file: trivy-results.sarif
+          category: release-container-trivy
