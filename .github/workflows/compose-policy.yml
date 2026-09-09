@@ -37,7 +37,7 @@ jobs:
           CHATAPP_DB_PASSWORD: ci-app-password
         run: |
           config=$(docker compose config --format json)
-          printf '%s\n' "$config" | jq -e '.services.server.user == "10001"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.user == 10001' >/dev/null
           printf '%s\n' "$config" | jq -e '.services.server.read_only == true' >/dev/null
           printf '%s\n' "$config" | jq -e '.services.server.init == true' >/dev/null
           printf '%s\n' "$config" | jq -e '.services.server.cap_drop == ["ALL"]' >/dev/null
