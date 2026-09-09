@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  security-events: write
 
 concurrency:
   group: container-security-${{ github.workflow }}-${{ github.ref }}
@@ -44,8 +45,16 @@ jobs:
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: realtime-chat-app:${{ github.sha }}
-          format: table
+          format: sarif
+          output: trivy-results.sarif
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           scanners: vuln,misconfig,secret
           exit-code: '1'
+
+      - name: Upload Trivy results
+        if: ${{ always() && hashFiles('trivy-results.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
+        with:
+          sarif_file: trivy-results.sarif
+          category: container-trivy
