@@ -132,4 +132,22 @@ class ServerHealthCheckTest {
             assertFalse(serverThread.isAlive());
         }
     }
+
+    @Test
+    void unresponsiveServerIsUnhealthy() throws Exception {
+        try (ServerSocket serverSocket = new ServerSocket(0)) {
+            Thread serverThread = Thread.startVirtualThread(() -> {
+                try (Socket socket = serverSocket.accept()) {
+                    Thread.sleep(3_000);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                } catch (IOException ignored) {
+                }
+            });
+
+            assertFalse(ServerHealthCheck.isProtocolResponsive(serverSocket.getLocalPort()));
+            serverThread.join(3_500);
+            assertFalse(serverThread.isAlive());
+        }
+    }
 }
