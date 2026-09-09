@@ -222,3 +222,16 @@ jobs:
           test "$(docker image inspect "$image" --format '{{.Config.User}}')" = "chatapp"
           test "$(docker run --rm --entrypoint id "$image" -u)" = "10001"
           test "$(docker image inspect "$image" --format '{{json .Config.Entrypoint}}')" = '["java","-jar","/app/chatapp-server.jar"]'
+
+      - name: Verify runtime image healthcheck and shutdown policy
+        run: |
+          image=realtime-chat-app:container-policy
+          test "$(docker image inspect "$image" --format '{{json .Config.Healthcheck.Test}}')" = '["CMD-SHELL","java -cp /app/chatapp-server.jar com.chatapp.server.ServerHealthCheck"]'
+          test "$(docker image inspect "$image" --format '{{.Config.StopSignal}}')" = "SIGTERM"
+          test "$(docker image inspect "$image" --format '{{json .Config.ExposedPorts}}')" = '{"5050/tcp":{}}'
+
+      - name: Verify runtime image filesystem protection
+        run: |
+          image=realtime-chat-app:container-policy
+          test "$(docker image inspect "$image" --format '{{json .Config.Volumes}}')" = '{"/app/data/attachments":{}}'
+          test "$(docker run --rm --entrypoint stat "$image" -c '%u:%g:%a' /app/chatapp-server.jar)" = "0:0:444"
