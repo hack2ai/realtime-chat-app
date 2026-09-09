@@ -96,23 +96,36 @@ jobs:
           CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
           CHATAPP_DB_PASSWORD: ci-app-password
         run: |
+          set -euo pipefail
           config=$(docker compose config --format json)
-          printf '%s\n' "$config" | jq -e '.services.server.read_only == true' >/dev/null
-          printf '%s\n' "$config" | jq -e '.services.server.init == true' >/dev/null
-          printf '%s\n' "$config" | jq -e '.services.server.restart == "unless-stopped"' >/dev/null
-          printf '%s\n' "$config" | jq -e '.services.server.pids_limit == 256' >/dev/null
-          printf '%s\n' "$config" | jq -e '.services.server.mem_limit == 1073741824' >/dev/null
-          printf '%s\n' "$config" | jq -e '.services.server.cpus == 2' >/dev/null
-          printf '%s\n' "$config" | jq -e '.services.server.cap_drop == ["ALL"]' >/dev/null
-          printf '%s\n' "$config" | jq -e '.services.server.security_opt == ["no-new-privileges:true"]' >/dev/null
-          printf '%s\n' "$config" | jq -e '(.services.server.tmpfs // []) | index("/tmp:rw,noexec,nosuid,size=64m") != null' >/dev/null
-          printf '%s\n' "$config" | jq -e '.services.db.restart == "unless-stopped"' >/dev/null
-          printf '%s\n' "$config" | jq -e '.services.db.pids_limit == 256' >/dev/null
-          printf '%s\n' "$config" | jq -e '.services.db.mem_limit == 1073741824' >/dev/null
-          printf '%s\n' "$config" | jq -e '.services.db.cpus == 2' >/dev/null
-          printf '%s\n' "$config" | jq -e '.services.db.cap_drop == ["ALL"]' >/dev/null
-          printf '%s\n' "$config" | jq -e '.services.db.security_opt == ["no-new-privileges:true"]' >/dev/null
-          printf '%s\n' "$config" | jq -e '.services.db.stop_grace_period == "30s"' >/dev/null
+
+          assert_jq() {
+            local description="$1"
+            local expression="$2"
+            if ! printf '%s\n' "$config" | jq -e "$expression" >/dev/null; then
+              echo "Compose policy assertion failed: $description"
+              exit 1
+            fi
+          }
+
+          assert_jq 'server read_only is true' '.services.server.read_only == true'
+          assert_jq 'server init is true' '.services.server.init == true'
+          assert_jq 'server restart policy is unless-stopped' '.services.server.restart == "unless-stopped"'
+          assert_jq 'server pids_limit is 256' '.services.server.pids_limit == 256'
+          assert_jq 'server mem_limit is 1 GiB' '.services.server.mem_limit == 1073741824'
+          assert_jq 'server memswap_limit is 1 GiB' '.services.server.memswap_limit == 1073741824'
+          assert_jq 'server CPU limit is 2' '(.services.server.cpus | tonumber) == 2'
+          assert_jq 'server drops all capabilities' '.services.server.cap_drop == ["ALL"]'
+          assert_jq 'server enables no-new-privileges' '.services.server.security_opt == ["no-new-privileges:true"]'
+          assert_jq 'server uses hardened /tmp tmpfs' '(.services.server.tmpfs // []) | index("/tmp:rw,noexec,nosuid,size=64m") != null'
+          assert_jq 'database restart policy is unless-stopped' '.services.db.restart == "unless-stopped"'
+          assert_jq 'database pids_limit is 256' '.services.db.pids_limit == 256'
+          assert_jq 'database mem_limit is 1 GiB' '.services.db.mem_limit == 1073741824'
+          assert_jq 'database memswap_limit is 1 GiB' '.services.db.memswap_limit == 1073741824'
+          assert_jq 'database CPU limit is 2' '(.services.db.cpus | tonumber) == 2'
+          assert_jq 'database drops all capabilities' '.services.db.cap_drop == ["ALL"]'
+          assert_jq 'database enables no-new-privileges' '.services.db.security_opt == ["no-new-privileges:true"]'
+          assert_jq 'database stop grace period is 30s' '.services.db.stop_grace_period == "30s"'
 
       - name: Require Compose database privilege protection
         run: |
