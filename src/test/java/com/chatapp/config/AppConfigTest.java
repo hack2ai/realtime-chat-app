@@ -171,6 +171,24 @@ class AppConfigTest {
     }
 
     @Test
+    void databasePasswordRejectsBlankSecretFile(@TempDir Path tempDir) throws Exception {
+        Path secretFile = tempDir.resolve("db-password");
+        Files.writeString(secretFile, "   \n");
+        System.setProperty("chatapp.db.password.file", secretFile.toString());
+
+        assertThrows(IllegalStateException.class, AppConfig::getDbPassword);
+    }
+
+    @Test
+    void databasePasswordRejectsOversizedSecretFile(@TempDir Path tempDir) throws Exception {
+        Path secretFile = tempDir.resolve("db-password");
+        Files.writeString(secretFile, "x".repeat(16 * 1024 + 1));
+        System.setProperty("chatapp.db.password.file", secretFile.toString());
+
+        assertThrows(IllegalStateException.class, AppConfig::getDbPassword);
+    }
+
+    @Test
     void databasePasswordRejectsSymlinkedSecretFile(@TempDir Path tempDir) throws Exception {
         Path secretFile = tempDir.resolve("real-secret");
         Path symlink = tempDir.resolve("db-password");
