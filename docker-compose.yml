@@ -81,8 +81,8 @@ services:
       CHATAPP_DB_ALLOWPUBLICKEYRETRIEVAL: "false"
       CHATAPP_SERVER_PORT: 5050
       CHATAPP_SERVER_BINDADDRESS: 0.0.0.0
-      # This demo stack intentionally exposes plain TCP on the host; production should enable TLS instead.
-      CHATAPP_SERVER_ALLOWPLAINTEXTREMOTE: "true"
+      # This demo stack publishes only to localhost; plaintext remote clients remain disabled.
+      CHATAPP_SERVER_ALLOWPLAINTEXTREMOTE: "false"
       CHATAPP_SERVER_MAXCLIENTS: 200
       CHATAPP_SERVER_SOCKETREADTIMEOUTMS: 30000
       CHATAPP_AUTH_BCRYPT_STRENGTH: 12
