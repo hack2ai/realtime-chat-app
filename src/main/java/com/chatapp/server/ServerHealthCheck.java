@@ -1,9 +1,13 @@
 package com.chatapp.server;
 
+import com.chatapp.config.AppConfig;
+import com.chatapp.security.TlsContextFactory;
 import com.chatapp.socket.protocol.Envelope;
 import com.chatapp.socket.protocol.MessageCodec;
 import com.chatapp.socket.protocol.MessageType;
 
+import javax.net.ssl.SSLParameters;
+import javax.net.ssl.SSLSocket;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
@@ -35,9 +39,17 @@ public final class ServerHealthCheck {
     }
 
     static boolean isProtocolResponsive(int port) {
-        try (Socket socket = new Socket()) {
+        try (Socket socket = createSocket()) {
             socket.connect(new InetSocketAddress("127.0.0.1", port), CONNECT_TIMEOUT_MILLIS);
             socket.setSoTimeout(CONNECT_TIMEOUT_MILLIS);
+
+            if (socket instanceof SSLSocket sslSocket) {
+                sslSocket.setEnabledProtocols(new String[]{"TLSv1.3", "TLSv1.2"});
+                SSLParameters parameters = sslSocket.getSSLParameters();
+                parameters.setEndpointIdentificationAlgorithm(null);
+                sslSocket.setSSLParameters(parameters);
+                sslSocket.startHandshake();
+            }
 
             MessageCodec codec = new MessageCodec();
             DataInputStream input = new DataInputStream(socket.getInputStream());
@@ -47,6 +59,17 @@ public final class ServerHealthCheck {
             return response.getType() == MessageType.PONG;
         } catch (IOException | RuntimeException e) {
             return false;
+        }
+    }
+
+    private static Socket createSocket() {
+        if (!AppConfig.isTlsEnabled()) {
+            return new Socket();
+        }
+        try {
+            return TlsContextFactory.createHealthCheckClientContext().getSocketFactory().createSocket();
+        } catch (IOException | RuntimeException e) {
+            throw new IllegalStateException("Unable to initialize TLS health-check socket.", e);
         }
     }
 
