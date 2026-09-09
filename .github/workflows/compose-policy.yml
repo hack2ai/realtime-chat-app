@@ -55,6 +55,7 @@ jobs:
           printf '%s\n' "$config" | jq -e '.services.db.stop_grace_period == "30s"' >/dev/null
           printf '%s\n' "$config" | jq -e '.networks.backend.internal == true' >/dev/null
           printf '%s\n' "$config" | jq -e '(.services.db.ports // []) == []' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.environment.CHATAPP_SERVER_ALLOWPLAINTEXTREMOTE == "false"' >/dev/null
           printf '%s\n' "$config" | jq -e '.services.server.logging.driver == "json-file"' >/dev/null
           printf '%s\n' "$config" | jq -e '.services.server.logging.options["max-size"] == "10m"' >/dev/null
           printf '%s\n' "$config" | jq -e '.services.server.logging.options["max-file"] == "3"' >/dev/null
