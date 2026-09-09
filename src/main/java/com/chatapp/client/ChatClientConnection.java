@@ -128,6 +128,7 @@ public final class ChatClientConnection implements AutoCloseable {
         Object response = codec.unwrap(envelope, responseType);
         if (response == null) { future.completeExceptionally(new IOException("Invalid authentication response.")); return; }
         complete(future, response);
+        if (envelope.getType() == MessageType.S2C_LOGIN_SUCCESS) startHeartbeat();
     }
     @SuppressWarnings("unchecked") private static <T> void complete(CompletableFuture<?> future, Object value) { ((CompletableFuture<T>) future).complete((T) value); }
     private void readLoop() {
