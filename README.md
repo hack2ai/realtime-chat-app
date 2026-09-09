@@ -31,7 +31,7 @@ The application provides secure authentication, real-time private messaging, pre
 - Private attachment upload/download with participant authorization, 5 MB limit, safe filenames, and SHA-256 integrity verification
 - Private message search with bounded result sets
 - Java 21 virtual threads for asynchronous message pushes
-- Periodic runtime metrics for connections, requests, protocol errors, and handler-pool usage
+- Periodic runtime metrics for connections, requests, protocol errors, authentication failures, rate-limited requests, and handler-pool usage
 - Environment-variable, JVM-property, and optional file-based configuration overrides
 - JUnit protocol tests and GitHub Actions CI
 - Docker image and Docker Compose deployment support
@@ -130,7 +130,7 @@ scrape_configs:
       - targets: ['127.0.0.1:9100']
 ```
 
-The endpoint reports connected users, active handlers, accepted/rejected connections, processed requests, protocol errors, handler-pool activity/queue depth, completed handler tasks, JVM memory usage, uptime, and live thread count. For remote scraping, bind it to a trusted interface and protect it at the network layer; the endpoint does not provide application authentication.
+The endpoint reports connected users, active handlers, accepted/rejected connections, processed requests, protocol errors, authentication failures, rate-limited requests, handler-pool activity/queue depth, completed handler tasks, JVM memory usage, uptime, and live thread count. For remote scraping, bind it to a trusted interface and protect it at the network layer; the endpoint does not provide application authentication.
 
 ## Security
 
@@ -156,7 +156,7 @@ Current defensive controls include:
 - bounded container logs in Docker Compose
 - OCI image metadata for traceability
 - CycloneDX SBOM generation and checksum verification
-- periodic runtime metrics for basic capacity and protocol-error visibility
+- periodic runtime metrics for capacity, authentication failures, rate-limit pressure, and protocol-error visibility
 
 **Important:** this is a portfolio/learning project, not a security-audited production service. A production deployment still needs certificate lifecycle management, secret rotation, hardened database permissions, centralized monitoring/alerting, threat modeling, malware/content scanning for uploads, and security testing.
 
