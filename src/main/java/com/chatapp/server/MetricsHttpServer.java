@@ -59,6 +59,7 @@ public final class MetricsHttpServer {
 
     private void handleMetrics(HttpExchange exchange) throws IOException {
         try (exchange) {
+            exchange.getResponseHeaders().set("X-Content-Type-Options", "nosniff");
             if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
                 exchange.getResponseHeaders().set("Allow", "GET");
                 exchange.sendResponseHeaders(405, -1);
