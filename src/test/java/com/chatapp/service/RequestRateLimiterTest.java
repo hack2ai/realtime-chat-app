@@ -58,6 +58,20 @@ class RequestRateLimiterTest {
     }
 
     @Test
+    void preservesKeyBoundWhenAllWindowsStartAtSameTime() {
+        AtomicLong now = new AtomicLong(1_000_000L);
+        RequestRateLimiter limiter = new RequestRateLimiter(1, Duration.ofMinutes(1), 2, now::get);
+
+        assertTrue(limiter.allow("first"));
+        assertTrue(limiter.allow("second"));
+        assertEquals(2, limiter.size());
+
+        assertTrue(limiter.allow("third"));
+        assertEquals(2, limiter.size(), "a full limiter must not grow beyond maxKeys");
+        assertTrue(limiter.allow("first"), "one existing key should have been evicted");
+    }
+
+    @Test
     void evictsOldestKeyWhenCapacityIsFull() {
         AtomicLong now = new AtomicLong(1_000_000L);
         RequestRateLimiter limiter = new RequestRateLimiter(1, Duration.ofMinutes(1), 2, now::get);
