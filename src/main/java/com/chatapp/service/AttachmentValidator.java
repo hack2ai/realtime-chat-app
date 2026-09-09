@@ -100,13 +100,20 @@ public final class AttachmentValidator {
             Files.write(temp, value);
             Set<String> entries = new HashSet<>();
             try (ZipFile zip = new ZipFile(temp.toFile(), StandardCharsets.UTF_8)) {
-                zip.stream().map(entry -> entry.getName()).forEach(entries::add);
+                zip.stream().map(entry -> entry.getName()).forEach(name -> {
+                    if (hasUnsafeZipEntryName(name)) {
+                        throw new UnsafeZipEntryException();
+                    }
+                    entries.add(name);
+                });
             }
             if (!entries.contains("[Content_Types].xml") || !entries.contains(requiredEntry)) {
                 throw new ValidationException("File content does not match its declared " + type + " structure.");
             }
         } catch (ValidationException e) {
             throw e;
+        } catch (UnsafeZipEntryException e) {
+            throw new ValidationException("Invalid " + type + " archive.");
         } catch (IOException | RuntimeException e) {
             throw new ValidationException("Invalid " + type + " archive.");
         } finally {
@@ -118,6 +125,19 @@ public final class AttachmentValidator {
                 }
             }
         }
+    }
+
+    private static boolean hasUnsafeZipEntryName(String name) {
+        if (name == null || name.isBlank() || name.startsWith("/") || name.contains("\\")) return true;
+        String normalized = name.replaceAll("/+", "/");
+        return normalized.equals("..")
+                || normalized.startsWith("../")
+                || normalized.contains("/../")
+                || normalized.endsWith("/..");
+    }
+
+    private static final class UnsafeZipEntryException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
     }
 
     private static void requireJson(byte[] value) throws ValidationException {
