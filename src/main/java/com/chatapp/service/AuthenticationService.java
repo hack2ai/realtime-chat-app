@@ -125,16 +125,17 @@ public class AuthenticationService {
         String tokenDigest = digestToken(token);
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime expiry = now.plusHours(AppConfig.getSessionExpiryHours());
+        long expiryNanos = System.nanoTime() + java.time.Duration.ofHours(AppConfig.getSessionExpiryHours()).toNanos();
 
         String existingDigest = activeTokenByUser.get(user.getId());
         if (existingDigest != null) {
             Session existingSession = activeSessions.get(existingDigest);
-            if (existingSession != null && !now.isBefore(existingSession.expiresAt)) {
+            if (existingSession != null && isExpired(existingSession)) {
                 expireSession(existingDigest, existingSession);
             }
         }
 
-        Session session = new Session(user.getId(), expiry);
+        Session session = new Session(user.getId(), expiry, expiryNanos);
         synchronized (activeTokenByUser) {
             if (activeTokenByUser.putIfAbsent(user.getId(), tokenDigest) != null) {
                 throw new AuthenticationException("This account is already connected.");
@@ -177,7 +178,7 @@ public class AuthenticationService {
         String tokenDigest = digestToken(sessionToken);
         Session session = activeSessions.get(tokenDigest);
         if (session == null) throw invalidSession();
-        if (!LocalDateTime.now().isBefore(session.expiresAt)) {
+        if (isExpired(session)) {
             expireSession(tokenDigest, session);
             throw invalidSession();
         }
@@ -186,11 +187,10 @@ public class AuthenticationService {
 
     /** Removes expired bearer-token sessions that have not been touched since expiry. */
     public int cleanupExpiredSessions() {
-        LocalDateTime now = LocalDateTime.now();
         int expiredCount = 0;
         for (Map.Entry<String, Session> entry : activeSessions.entrySet()) {
             Session session = entry.getValue();
-            if (now.isBefore(session.expiresAt)) continue;
+            if (!isExpired(session)) continue;
             if (activeSessions.remove(entry.getKey(), session)) {
                 activeTokenByUser.remove(session.userId, entry.getKey());
                 markOfflineSafely(session.userId);
@@ -198,6 +198,11 @@ public class AuthenticationService {
             }
         }
         return expiredCount;
+    }
+
+    private boolean isExpired(Session session) {
+        // Session expiry is enforced with monotonic time so wall-clock changes cannot extend a session.
+        return System.nanoTime() - session.expiresAtNanos >= 0;
     }
 
     private void expireSession(String tokenDigest, Session session) {
@@ -250,6 +255,6 @@ public class AuthenticationService {
         }
     }
 
-    private record Session(int userId, LocalDateTime expiresAt) {}
+    private record Session(int userId, LocalDateTime expiresAt, long expiresAtNanos) {}
     public record LoginResult(User user, String sessionToken, LocalDateTime expiresAt) {}
 }
