@@ -64,7 +64,7 @@ public final class RequestRateLimiter {
         removeExpired(now);
         if (windows.size() < maxKeys) return;
         String oldestKey = null;
-        long oldest = now;
+        long oldest = Long.MAX_VALUE;
         for (Map.Entry<String, Window> entry : windows.entrySet()) {
             if (entry.getValue().windowStartNanos() < oldest) {
                 oldest = entry.getValue().windowStartNanos();
