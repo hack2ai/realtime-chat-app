@@ -18,15 +18,17 @@ class ServerMetricsTest {
         metrics.recordRequest();
         metrics.recordRequest();
         metrics.recordProtocolError();
+        metrics.recordAuthenticationFailure();
+        metrics.recordRateLimitedRequest();
 
-        assertEquals(new ServerMetrics.Snapshot(1, 1, 2, 1), metrics.snapshot());
+        assertEquals(new ServerMetrics.Snapshot(1, 1, 2, 1, 1, 1), metrics.snapshot());
     }
 
     @Test
     void freshMetricsStartAtZero() {
         ServerMetrics metrics = new ServerMetrics();
 
-        assertEquals(new ServerMetrics.Snapshot(0, 0, 0, 0), metrics.snapshot());
+        assertEquals(new ServerMetrics.Snapshot(0, 0, 0, 0, 0, 0), metrics.snapshot());
     }
 
     @Test
@@ -45,6 +47,8 @@ class ServerMetricsTest {
                         metrics.recordRejectedConnection();
                         metrics.recordRequest();
                         metrics.recordProtocolError();
+                        metrics.recordAuthenticationFailure();
+                        metrics.recordRateLimitedRequest();
                     }
                     return null;
                 });
@@ -53,6 +57,6 @@ class ServerMetricsTest {
         }
 
         long expected = (long) workers * iterations;
-        assertEquals(new ServerMetrics.Snapshot(expected, expected, expected, expected), metrics.snapshot());
+        assertEquals(new ServerMetrics.Snapshot(expected, expected, expected, expected, expected, expected), metrics.snapshot());
     }
 }
