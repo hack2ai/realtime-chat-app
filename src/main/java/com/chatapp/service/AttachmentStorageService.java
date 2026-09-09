@@ -10,10 +10,11 @@ import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
-import java.nio.file.attribute.BasicFileAttributes;
+import java.time.Instant;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.UUID;
@@ -73,13 +74,12 @@ public final class AttachmentStorageService {
     }
 
     static void cleanupOrphanedTempFiles(Path storageRoot) throws IOException {
-        long cutoffNanos=System.nanoTime()-TEMP_FILE_RETENTION.toNanos();
+        Instant cutoff=Instant.now().minus(TEMP_FILE_RETENTION);
         try(Stream<Path> files=Files.list(storageRoot)){
             for(Path file:files.filter(AttachmentStorageService::isTempFile).toList()){
                 try{
                     BasicFileAttributes attributes=Files.readAttributes(file,BasicFileAttributes.class,LinkOption.NOFOLLOW_LINKS);
-                    long ageNanos=System.nanoTime()-attributes.lastModifiedTime().toInstant().toEpochMilli()*1_000_000L;
-                    if(ageNanos>=cutoffNanos)Files.deleteIfExists(file);
+                    if(attributes.lastModifiedTime().toInstant().isBefore(cutoff))Files.deleteIfExists(file);
                 }catch(IOException ignored){}
             }
         }
