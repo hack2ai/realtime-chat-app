@@ -65,9 +65,12 @@ jobs:
                 unless timeout.is_a?(Integer) && timeout.positive?
                   abort "Job #{job_name} in #{path} must declare a positive timeout-minutes value."
                 end
+                if timeout > 30
+                  abort "Job #{job_name} in #{path} exceeds the 30-minute timeout ceiling."
+                end
               end
             end
-            puts "All workflows declare concurrency and positive job timeouts."
+            puts "All workflows declare concurrency and job timeouts between 1 and 30 minutes."
           '
 
       - name: Verify safe checkout configuration
@@ -110,7 +113,7 @@ jobs:
                 abort "Broad write-all permissions are forbidden in #{path}."
               end
               if top_permissions.is_a?(Hash) && top_permissions["contents"] == "write" && path != ".github/workflows/release.yml"
-                abort "contents: write is reserved for the release workflow: #{path}."
+                abort "contents: write is reserved for the release workflow: #{path}"
               end
               (workflow["jobs"] || {}).each do |job_name, job|
                 next unless job.is_a?(Hash)
