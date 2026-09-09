@@ -135,13 +135,15 @@ public class ChatServer {
         if (!running) return;
         int expiredSessions = authService.cleanupExpiredSessions();
         ServerMetrics.Snapshot snapshot = metrics.snapshot();
-        logger.info("Server metrics: connectedUsers={}, activeHandlers={}, acceptedConnections={}, rejectedConnections={}, requests={}, protocolErrors={}, poolActive={}, poolSize={}, queueDepth={}, completedHandlers={}, expiredSessions={}",
+        logger.info("Server metrics: connectedUsers={}, activeHandlers={}, acceptedConnections={}, rejectedConnections={}, requests={}, protocolErrors={}, authenticationFailures={}, rateLimitedRequests={}, poolActive={}, poolSize={}, queueDepth={}, completedHandlers={}, expiredSessions={}",
                 connectedClients.size(),
                 activeHandlers.size(),
                 snapshot.acceptedConnections(),
                 snapshot.rejectedConnections(),
                 snapshot.requests(),
                 snapshot.protocolErrors(),
+                snapshot.authenticationFailures(),
+                snapshot.rateLimitedRequests(),
                 clientThreadPool.getActiveCount(),
                 clientThreadPool.getPoolSize(),
                 clientThreadPool.getQueue().size(),
@@ -200,6 +202,7 @@ public class ChatServer {
                 configureSocket(clientSocket);
                 if (!allowConnection(clientSocket)) {
                     metrics.recordRejectedConnection();
+                    metrics.recordRateLimitedRequest();
                     logger.warn("Rejecting connection from {} because connection rate limit was exceeded", clientSocket.getRemoteSocketAddress());
                     closeQuietly(clientSocket);
                     clientSocket = null;
@@ -266,6 +269,8 @@ public class ChatServer {
 
     public void recordRequest() { metrics.recordRequest(); }
     public void recordProtocolError() { metrics.recordProtocolError(); }
+    public void recordAuthenticationFailure() { metrics.recordAuthenticationFailure(); }
+    public void recordRateLimitedRequest() { metrics.recordRateLimitedRequest(); }
 
     public long connectedUserCount() { return connectedClients.size(); }
     public int activeHandlerCount() { return activeHandlers.size(); }
