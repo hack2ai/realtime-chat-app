@@ -10,13 +10,20 @@ import java.lang.management.ManagementFactory;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 /** Optional read-only HTTP endpoint for Prometheus-style operational metrics. */
 public final class MetricsHttpServer {
     private static final RequestRateLimiter METRICS_RATE_LIMITER =
             new RequestRateLimiter(60, java.time.Duration.ofMinutes(1), 10_000);
+    private static final int METRICS_CORE_THREADS = 2;
+    private static final int METRICS_MAX_THREADS = 16;
+    private static final int METRICS_QUEUE_CAPACITY = 64;
 
     private final ServerMetrics metrics;
     private final ChatServer server;
@@ -34,7 +41,15 @@ public final class MetricsHttpServer {
 
         InetAddress address = InetAddress.getByName(AppConfig.getMetricsBindAddress());
         HttpServer candidate = HttpServer.create(new InetSocketAddress(address, AppConfig.getMetricsPort()), 0);
-        ExecutorService candidateExecutor = Executors.newVirtualThreadPerTaskExecutor();
+        ThreadPoolExecutor candidateExecutor = new ThreadPoolExecutor(
+                METRICS_CORE_THREADS,
+                METRICS_MAX_THREADS,
+                30L,
+                TimeUnit.SECONDS,
+                new ArrayBlockingQueue<>(METRICS_QUEUE_CAPACITY),
+                Thread.ofVirtual().name("chat-metrics-").factory(),
+                new ThreadPoolExecutor.AbortPolicy());
+        candidateExecutor.allowCoreThreadTimeOut(true);
         candidate.createContext("/metrics", this::handleMetrics);
         candidate.setExecutor(candidateExecutor);
         try {
