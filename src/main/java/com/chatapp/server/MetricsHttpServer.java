@@ -100,6 +100,7 @@ public final class MetricsHttpServer {
         appendCounter(output, "chatapp_protocol_errors_total", "Protocol errors observed.", snapshot.protocolErrors());
         appendCounter(output, "chatapp_authentication_failures_total", "Authentication failures observed.", snapshot.authenticationFailures());
         appendCounter(output, "chatapp_rate_limited_requests_total", "Requests rejected by application rate limits.", snapshot.rateLimitedRequests());
+        appendCounter(output, "chatapp_internal_errors_total", "Internal request-handler errors observed.", snapshot.internalErrors());
         appendGauge(output, "chatapp_handler_pool_active", "Active client handler executor tasks.", server.handlerPoolActiveCount());
         appendGauge(output, "chatapp_handler_pool_size", "Current client handler executor pool size.", server.handlerPoolSize());
         appendGauge(output, "chatapp_handler_pool_queue_depth", "Queued client handler tasks.", server.handlerPoolQueueDepth());
