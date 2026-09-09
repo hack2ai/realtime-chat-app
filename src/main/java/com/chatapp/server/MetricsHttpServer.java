@@ -37,27 +37,34 @@ public final class MetricsHttpServer {
         if (httpServer != null) return;
         if (!AppConfig.isMetricsEnabled()) return;
 
-        InetAddress address = InetAddress.getByName(AppConfig.getMetricsBindAddress());
-        HttpServer candidate = HttpServer.create(new InetSocketAddress(address, AppConfig.getMetricsPort()), 0);
-        ThreadPoolExecutor candidateExecutor = new ThreadPoolExecutor(
-                METRICS_CORE_THREADS,
-                METRICS_MAX_THREADS,
-                30L,
-                TimeUnit.SECONDS,
-                new ArrayBlockingQueue<>(METRICS_QUEUE_CAPACITY),
-                Thread.ofVirtual().name("chat-metrics-").factory(),
-                new ThreadPoolExecutor.AbortPolicy());
-        candidateExecutor.allowCoreThreadTimeOut(true);
-        candidate.createContext("/metrics", this::handleMetrics);
-        candidate.setExecutor(candidateExecutor);
+        HttpServer candidate = null;
+        ThreadPoolExecutor candidateExecutor = null;
         try {
+            InetAddress address = InetAddress.getByName(AppConfig.getMetricsBindAddress());
+            candidate = HttpServer.create(new InetSocketAddress(address, AppConfig.getMetricsPort()), 0);
+            candidateExecutor = new ThreadPoolExecutor(
+                    METRICS_CORE_THREADS,
+                    METRICS_MAX_THREADS,
+                    30L,
+                    TimeUnit.SECONDS,
+                    new ArrayBlockingQueue<>(METRICS_QUEUE_CAPACITY),
+                    Thread.ofVirtual().name("chat-metrics-").factory(),
+                    new ThreadPoolExecutor.AbortPolicy());
+            candidateExecutor.allowCoreThreadTimeOut(true);
+            candidate.createContext("/metrics", this::handleMetrics);
+            candidate.setExecutor(candidateExecutor);
             candidate.start();
-        } catch (RuntimeException | Error e) {
-            candidateExecutor.shutdownNow();
+            httpServer = candidate;
+            executor = candidateExecutor;
+        } catch (IOException | RuntimeException | Error e) {
+            if (candidate != null) {
+                candidate.stop(0);
+            }
+            if (candidateExecutor != null) {
+                candidateExecutor.shutdownNow();
+            }
             throw e;
         }
-        httpServer = candidate;
-        executor = candidateExecutor;
     }
 
     public synchronized void stop() {
