@@ -45,6 +45,15 @@ jobs:
           test "$(docker run --rm --entrypoint sh "$image" -c 'stat -c %a /app/chatapp-server.jar')" = "444"
           test "$(docker run --rm --entrypoint sh "$image" -c 'stat -c %u:%g /app/chatapp-server.jar')" = "0:0"
 
+      - name: Verify read-only root runtime
+        run: |
+          image=realtime-chat-app:${{ github.sha }}
+          docker run --rm \
+            --read-only \
+            --tmpfs /tmp:rw,noexec,nosuid,size=8m \
+            --entrypoint sh "$image" \
+            -c 'touch /tmp/write-probe && ! touch /app/write-probe'
+
       - name: Verify startup configuration
         run: |
           image=realtime-chat-app:${{ github.sha }}
