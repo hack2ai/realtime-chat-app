@@ -83,6 +83,14 @@ class AttachmentValidatorTest {
     }
 
     @Test
+    void rejectsUnsafeDocxZipEntryNames() throws Exception {
+        byte[] zip = zipWithEntries("[Content_Types].xml", "word/document.xml", "../outside.txt");
+        assertThrows(ValidationException.class,
+                () -> AttachmentValidator.validateContent(
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document", zip));
+    }
+
+    @Test
     void acceptsMinimalDocxStructure() throws Exception {
         byte[] docx = zipWithEntries("[Content_Types].xml", "word/document.xml");
         AttachmentValidator.validateContent(
