@@ -1,10 +1,16 @@
 package com.chatapp.server;
 
+import com.chatapp.socket.protocol.Envelope;
+import com.chatapp.socket.protocol.MessageCodec;
+import com.chatapp.socket.protocol.MessageType;
+
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 
-/** Minimal TCP readiness probe used by the container health check. */
+/** Minimal protocol health probe used by the container health check. */
 public final class ServerHealthCheck {
     private static final int DEFAULT_PORT = 5050;
     private static final int CONNECT_TIMEOUT_MILLIS = 2_000;
@@ -23,16 +29,23 @@ public final class ServerHealthCheck {
             return;
         }
 
-        if (!isPortReachable(port)) {
+        if (!isProtocolResponsive(port)) {
             System.exit(1);
         }
     }
 
-    static boolean isPortReachable(int port) {
+    static boolean isProtocolResponsive(int port) {
         try (Socket socket = new Socket()) {
             socket.connect(new InetSocketAddress("127.0.0.1", port), CONNECT_TIMEOUT_MILLIS);
-            return true;
-        } catch (IOException e) {
+            socket.setSoTimeout(CONNECT_TIMEOUT_MILLIS);
+
+            MessageCodec codec = new MessageCodec();
+            DataInputStream input = new DataInputStream(socket.getInputStream());
+            DataOutputStream output = new DataOutputStream(socket.getOutputStream());
+            codec.write(output, codec.wrap(MessageType.PING, null));
+            Envelope response = codec.read(input);
+            return response.getType() == MessageType.PONG;
+        } catch (IOException | RuntimeException e) {
             return false;
         }
     }
