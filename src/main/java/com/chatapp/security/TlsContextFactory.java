@@ -34,10 +34,7 @@ public final class TlsContextFactory {
             Path path = Path.of(AppConfig.getTlsKeyStorePath());
             char[] password = AppConfig.getTlsKeyStorePassword().toCharArray();
             try {
-                KeyStore keyStore = KeyStore.getInstance(KEYSTORE_TYPE);
-                try (InputStream in = Files.newInputStream(path)) {
-                    keyStore.load(in, password);
-                }
+                KeyStore keyStore = loadKeyStore(path, password);
                 validateServerCertificates(keyStore);
                 KeyManagerFactory keyManagers = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
                 keyManagers.init(keyStore, password);
@@ -50,6 +47,55 @@ public final class TlsContextFactory {
         } catch (IOException | GeneralSecurityException | RuntimeException e) {
             throw new IllegalStateException("Unable to initialize TLS server context.", e);
         }
+    }
+
+    /**
+     * Creates a TLS client context for the local container health probe.
+     * Trust is limited to the X.509 certificates presented by the configured server keystore.
+     */
+    public static SSLContext createHealthCheckClientContext() {
+        try {
+            Path path = Path.of(AppConfig.getTlsKeyStorePath());
+            char[] password = AppConfig.getTlsKeyStorePassword().toCharArray();
+            try {
+                KeyStore serverKeyStore = loadKeyStore(path, password);
+                validateServerCertificates(serverKeyStore);
+
+                KeyStore trustStore = KeyStore.getInstance(KEYSTORE_TYPE);
+                trustStore.load(null, null);
+                Enumeration<String> aliases = serverKeyStore.aliases();
+                int certificateIndex = 0;
+                while (aliases.hasMoreElements()) {
+                    String alias = aliases.nextElement();
+                    if (!serverKeyStore.isKeyEntry(alias)) continue;
+                    Certificate certificate = serverKeyStore.getCertificate(alias);
+                    if (certificate instanceof X509Certificate) {
+                        trustStore.setCertificateEntry("health-check-" + certificateIndex++, certificate);
+                    }
+                }
+                if (certificateIndex == 0) {
+                    throw new GeneralSecurityException("TLS server keystore does not contain a trusted health-check certificate.");
+                }
+
+                TrustManagerFactory trustManagers = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+                trustManagers.init(trustStore);
+                SSLContext context = SSLContext.getInstance(TLS_PROTOCOL);
+                context.init(null, trustManagers.getTrustManagers(), null);
+                return context;
+            } finally {
+                Arrays.fill(password, '\0');
+            }
+        } catch (IOException | GeneralSecurityException | RuntimeException e) {
+            throw new IllegalStateException("Unable to initialize TLS health-check client context.", e);
+        }
+    }
+
+    private static KeyStore loadKeyStore(Path path, char[] password) throws IOException, GeneralSecurityException {
+        KeyStore keyStore = KeyStore.getInstance(KEYSTORE_TYPE);
+        try (InputStream in = Files.newInputStream(path)) {
+            keyStore.load(in, password);
+        }
+        return keyStore;
     }
 
     private static void validateServerCertificates(KeyStore keyStore) throws GeneralSecurityException {
