@@ -8,6 +8,7 @@ import java.sql.SQLException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -36,6 +37,24 @@ class ConnectionPoolTest {
 
         pool.returnConnection(borrowed);
         pool.returnConnection(secondBorrowed);
+        pool.shutdown();
+    }
+
+    @Test
+    void borrowingPastPoolLimitTimesOutWithoutCreatingExtraConnections() throws SQLException {
+        AtomicInteger created = new AtomicInteger();
+        ConnectionPool pool = new ConnectionPool(0, 1, 25, () -> {
+            created.incrementAndGet();
+            return connection(new AtomicBoolean());
+        });
+
+        Connection borrowed = pool.borrowConnection();
+        SQLException failure = assertThrows(SQLException.class, pool::borrowConnection);
+
+        assertEquals(1, created.get(), "Pool created more connections than its configured maximum");
+        assertTrue(failure.getMessage().contains("Timed out after 25ms"));
+
+        pool.returnConnection(borrowed);
         pool.shutdown();
     }
 
