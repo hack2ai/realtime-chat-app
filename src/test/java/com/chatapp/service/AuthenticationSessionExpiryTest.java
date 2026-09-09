@@ -33,9 +33,13 @@ class AuthenticationSessionExpiryTest {
         String digest = sessions.keySet().iterator().next();
 
         Class<?> sessionClass = Class.forName("com.chatapp.service.AuthenticationService$Session");
-        Constructor<?> constructor = sessionClass.getDeclaredConstructor(int.class, LocalDateTime.class);
+        Constructor<?> constructor = sessionClass.getDeclaredConstructor(
+                int.class, LocalDateTime.class, long.class);
         constructor.setAccessible(true);
-        sessions.put(digest, constructor.newInstance(user.getId(), LocalDateTime.now().minusMinutes(1)));
+        sessions.put(digest, constructor.newInstance(
+                user.getId(),
+                LocalDateTime.now().minusMinutes(1),
+                System.nanoTime() - 1));
 
         AuthenticationService.LoginResult second = service.login("alice", password);
 
@@ -62,9 +66,13 @@ class AuthenticationSessionExpiryTest {
         String digest = sessions.keySet().iterator().next();
 
         Class<?> sessionClass = Class.forName("com.chatapp.service.AuthenticationService$Session");
-        Constructor<?> constructor = sessionClass.getDeclaredConstructor(int.class, LocalDateTime.class);
+        Constructor<?> constructor = sessionClass.getDeclaredConstructor(
+                int.class, LocalDateTime.class, long.class);
         constructor.setAccessible(true);
-        sessions.put(digest, constructor.newInstance(user.getId(), LocalDateTime.now().minusMinutes(1)));
+        sessions.put(digest, constructor.newInstance(
+                user.getId(),
+                LocalDateTime.now().minusMinutes(1),
+                System.nanoTime() - 1));
 
         assertEquals(1, service.cleanupExpiredSessions());
         assertEquals(User.Status.OFFLINE, user.getStatus());
