@@ -84,6 +84,10 @@ jobs:
           docker inspect "$container_id" | jq -e '.[0].HostConfig.CapDrop == ["ALL"]' >/dev/null
           docker inspect "$container_id" | jq -e '.[0].HostConfig.SecurityOpt | index("no-new-privileges:true") != null' >/dev/null
 
+      - name: Verify attachment volume is writable by server user
+        run: |
+          docker compose exec -T server sh -c 'test -w /app/data/attachments && touch /app/data/attachments/.smoke-write-test && rm /app/data/attachments/.smoke-write-test'
+
       - name: Verify server TCP port
         run: timeout 5 bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/5050'
 
