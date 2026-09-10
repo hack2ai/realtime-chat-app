@@ -133,23 +133,28 @@ public class ChatServer {
 
     private void logRuntimeMetrics() {
         if (!running) return;
-        int expiredSessions = authService.cleanupExpiredSessions();
-        ServerMetrics.Snapshot snapshot = metrics.snapshot();
-        logger.info("Server metrics: connectedUsers={}, activeHandlers={}, acceptedConnections={}, rejectedConnections={}, requests={}, protocolErrors={}, authenticationFailures={}, rateLimitedRequests={}, internalErrors={}, poolActive={}, poolSize={}, queueDepth={}, completedHandlers={}, expiredSessions={}",
-                connectedClients.size(),
-                activeHandlers.size(),
-                snapshot.acceptedConnections(),
-                snapshot.rejectedConnections(),
-                snapshot.requests(),
-                snapshot.protocolErrors(),
-                snapshot.authenticationFailures(),
-                snapshot.rateLimitedRequests(),
-                snapshot.internalErrors(),
-                clientThreadPool.getActiveCount(),
-                clientThreadPool.getPoolSize(),
-                clientThreadPool.getQueue().size(),
-                clientThreadPool.getCompletedTaskCount(),
-                expiredSessions);
+        try {
+            int expiredSessions = authService.cleanupExpiredSessions();
+            ServerMetrics.Snapshot snapshot = metrics.snapshot();
+            logger.info("Server metrics: connectedUsers={}, activeHandlers={}, acceptedConnections={}, rejectedConnections={}, requests={}, protocolErrors={}, authenticationFailures={}, rateLimitedRequests={}, internalErrors={}, poolActive={}, poolSize={}, queueDepth={}, completedHandlers={}, expiredSessions={}",
+                    connectedClients.size(),
+                    activeHandlers.size(),
+                    snapshot.acceptedConnections(),
+                    snapshot.rejectedConnections(),
+                    snapshot.requests(),
+                    snapshot.protocolErrors(),
+                    snapshot.authenticationFailures(),
+                    snapshot.rateLimitedRequests(),
+                    snapshot.internalErrors(),
+                    clientThreadPool.getActiveCount(),
+                    clientThreadPool.getPoolSize(),
+                    clientThreadPool.getQueue().size(),
+                    clientThreadPool.getCompletedTaskCount(),
+                    expiredSessions);
+        } catch (RuntimeException e) {
+            metrics.recordInternalError();
+            logger.error("Runtime metrics collection failed; scheduled collection will continue.", e);
+        }
     }
 
     private void verifyDatabaseReady() throws IOException {
