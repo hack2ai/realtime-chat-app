@@ -91,6 +91,20 @@ class AttachmentValidatorTest {
     }
 
     @Test
+    void rejectsDocxWithTooManyEntries() throws Exception {
+        String[] names = new String[513];
+        names[0] = "[Content_Types].xml";
+        names[1] = "word/document.xml";
+        for (int i = 2; i < names.length; i++) {
+            names[i] = "word/part" + i + ".xml";
+        }
+        byte[] zip = zipWithEntries(names);
+        assertThrows(ValidationException.class,
+                () -> AttachmentValidator.validateContent(
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document", zip));
+    }
+
+    @Test
     void acceptsMinimalDocxStructure() throws Exception {
         byte[] docx = zipWithEntries("[Content_Types].xml", "word/document.xml");
         AttachmentValidator.validateContent(
