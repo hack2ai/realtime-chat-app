@@ -62,6 +62,18 @@ docker compose logs -f --no-color db
 
 Compose rotates both service logs at 10 MiB per file with three files retained. For production, forward logs to an external logging platform rather than relying on local container storage alone.
 
+## Metrics and observability
+
+Metrics are disabled by default. When enabled, the HTTP endpoint is available at the configured metrics bind address and port, using the `/metrics` path.
+
+Loopback-only metrics may be used without a token. Any non-loopback metrics bind requires both the explicit remote-exposure setting and a non-empty bearer token. Requests with a configured token must send:
+
+```text
+Authorization: Bearer <metrics-token>
+```
+
+The endpoint is read-only, rate-limited, and does not expose chat message contents. Keep it on a trusted monitoring network and do not publish it directly to the public internet. Rotate the metrics token through the same secret-management process used for other operational credentials.
+
 ## Basic incident checks
 
 ### Server is unhealthy
