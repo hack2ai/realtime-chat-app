@@ -56,3 +56,10 @@ jobs:
             echo 'Dockerfiles must not fetch remote content directly or pipe downloads into a shell.'
             exit 1
           fi
+
+      - name: Reject floating Docker image tags
+        run: |
+          if grep -nE '^\s*FROM\s+[^[:space:]#]+:latest([[:space:]]|$)' Dockerfile; then
+            echo 'Docker base images must not use the mutable :latest tag.'
+            exit 1
+          fi
