@@ -7,5 +7,4 @@ services:
       CHATAPP_METRICS_BINDADDRESS: 0.0.0.0
       CHATAPP_METRICS_ALLOWREMOTE: "true"
     ports:
-      - "${CHATAPP_PUBLISH_ADDRESS:-127.0.0.1}:5050:5050"
       - "127.0.0.1:9100:9100"
