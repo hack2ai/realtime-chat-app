@@ -37,6 +37,28 @@ class GroupServiceTest {
     }
 
     @Test
+    void joinRejectsUnknownUser() {
+        GroupService service = new GroupService(new StubGroupDAO(), new StubUserDAO());
+
+        ValidationException exception = assertThrows(
+                ValidationException.class,
+                () -> service.join(999, 42));
+
+        assertTrue(exception.getMessage().contains("User does not exist"));
+    }
+
+    @Test
+    void joinRejectsUnknownGroup() {
+        GroupService service = new GroupService(new StubGroupDAO(), new StubUserDAO());
+
+        ValidationException exception = assertThrows(
+                ValidationException.class,
+                () -> service.join(7, 999));
+
+        assertTrue(exception.getMessage().contains("Group does not exist"));
+    }
+
+    @Test
     void joinReportsCapacityWhenInsertFailsAndMembershipDidNotChange() {
         StubGroupDAO groupDAO = new StubGroupDAO();
         groupDAO.addMemberResult = false;
