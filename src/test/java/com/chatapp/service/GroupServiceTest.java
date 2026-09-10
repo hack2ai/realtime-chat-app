@@ -64,6 +64,26 @@ class GroupServiceTest {
         assertTrue(groupDAO.addMemberCalled);
     }
 
+    @Test
+    void isMemberReturnsTrueForCurrentMembership() {
+        StubGroupDAO groupDAO = new StubGroupDAO();
+        groupDAO.member = true;
+
+        GroupService service = new GroupService(groupDAO, new StubUserDAO());
+
+        assertTrue(service.isMember(42, 7));
+    }
+
+    @Test
+    void isMemberReturnsFalseWhenMembershipIsAbsent() {
+        StubGroupDAO groupDAO = new StubGroupDAO();
+        groupDAO.member = false;
+
+        GroupService service = new GroupService(groupDAO, new StubUserDAO());
+
+        assertFalse(service.isMember(42, 7));
+    }
+
     private static final class StubUserDAO extends UserDAO {
         @Override
         public Optional<User> findById(int id) {
