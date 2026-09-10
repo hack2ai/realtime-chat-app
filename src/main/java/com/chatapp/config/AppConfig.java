@@ -8,8 +8,12 @@ import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.attribute.PosixFileAttributeView;
+import java.nio.file.attribute.PosixFilePermission;
+import java.util.EnumSet;
 import java.util.Locale;
 import java.util.Properties;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /** Centralized runtime configuration with file, environment, and JVM overrides. */
@@ -35,6 +39,30 @@ public final class AppConfig {
         return ENV_PREFIX + key.replace('.', '_').toUpperCase(Locale.ROOT);
     }
 
+    private static void validateSecretFilePermissions(String key, Path path) {
+        PosixFileAttributeView posixView = Files.getFileAttributeView(path, PosixFileAttributeView.class, LinkOption.NOFOLLOW_LINKS);
+        if (posixView == null) {
+            return;
+        }
+        try {
+            Set<PosixFilePermission> permissions = posixView.readAttributes().permissions();
+            Set<PosixFilePermission> forbidden = EnumSet.of(
+                    PosixFilePermission.GROUP_READ,
+                    PosixFilePermission.GROUP_WRITE,
+                    PosixFilePermission.GROUP_EXECUTE,
+                    PosixFilePermission.OTHERS_READ,
+                    PosixFilePermission.OTHERS_WRITE,
+                    PosixFilePermission.OTHERS_EXECUTE
+            );
+            forbidden.retainAll(permissions);
+            if (!forbidden.isEmpty()) {
+                throw new IllegalStateException("Secret file for config key '" + key + "' must not be readable, writable, or executable by group or other users.");
+            }
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to inspect permissions for secret file for config key '" + key + "'.", e);
+        }
+    }
+
     private static String readSecretFile(String key, String filePath) {
         try {
             Path path = Path.of(filePath);
@@ -42,6 +70,7 @@ public final class AppConfig {
             if (!attributes.isRegularFile()) {
                 throw new IllegalStateException("Secret file for config key '" + key + "' is missing, not a regular file, or is a symlink.");
             }
+            validateSecretFilePermissions(key, path);
 
             try (InputStream in = Files.newInputStream(path, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)) {
                 byte[] bytes = in.readNBytes(MAX_SECRET_FILE_BYTES + 1);
