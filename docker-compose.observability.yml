@@ -2,9 +2,11 @@ services:
   server:
     environment:
       CHATAPP_METRICS_ENABLED: "true"
-      # The endpoint listens on the container interface, but the host mapping below
-      # binds it only to localhost. Remote metrics access remains disabled at the host.
+      # The endpoint listens on the container interface so the host mapping below
+      # can expose it only on localhost. Remote metrics access requires the
+      # explicitly supplied bearer token below.
       CHATAPP_METRICS_BINDADDRESS: 0.0.0.0
       CHATAPP_METRICS_ALLOWREMOTE: "true"
+      CHATAPP_METRICS_AUTHTOKEN: ${CHATAPP_METRICS_AUTH_TOKEN:?set CHATAPP_METRICS_AUTH_TOKEN}
     ports:
       - "127.0.0.1:9100:9100"
