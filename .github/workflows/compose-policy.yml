@@ -47,6 +47,7 @@ jobs:
           printf '%s\n' "$config" | jq -e '.services.server.cpus == 2' >/dev/null
           printf '%s\n' "$config" | jq -e '.services.server.stop_grace_period == "10s"' >/dev/null
           printf '%s\n' "$config" | jq -e '(.services.server.tmpfs // []) | index("/tmp:rw,noexec,nosuid,size=64m") != null' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.healthcheck.test == ["CMD", "java", "-cp", "/app/chatapp-server.jar", "com.chatapp.server.ServerHealthCheck"]' >/dev/null
           printf '%s\n' "$config" | jq -e '.services.db.cap_drop == ["ALL"]' >/dev/null
           printf '%s\n' "$config" | jq -e '.services.db.security_opt == ["no-new-privileges:true"]' >/dev/null
           printf '%s\n' "$config" | jq -e '.services.db.pids_limit == 256' >/dev/null
