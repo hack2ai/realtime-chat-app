@@ -175,6 +175,18 @@ public final class ConnectionPool {
         }
     }
 
+    public int getTotalConnections() {
+        return totalCreated.get();
+    }
+
+    public int getIdleConnections() {
+        return availableConnections.size();
+    }
+
+    public int getMaxSize() {
+        return maxSize;
+    }
+
     private boolean isValid(Connection conn) {
         try { return conn != null && !conn.isClosed() && conn.isValid(2); }
         catch (SQLException e) { return false; }
