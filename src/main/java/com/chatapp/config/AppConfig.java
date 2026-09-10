@@ -211,5 +211,6 @@ public final class AppConfig {
     public static boolean isMetricsEnabled() { return optionalBoolean("metrics.enabled", false); }
     public static String getMetricsBindAddress() { return optional("metrics.bindAddress", "127.0.0.1"); }
     public static boolean isMetricsRemoteAllowed() { return optionalBoolean("metrics.allowRemote", false); }
+    public static String getMetricsAuthToken() { return optional("metrics.authToken", ""); }
     public static int getMetricsPort() { return requirePort("metrics.port"); }
 }
