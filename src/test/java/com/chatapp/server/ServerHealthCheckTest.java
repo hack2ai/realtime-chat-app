@@ -134,6 +134,26 @@ class ServerHealthCheckTest {
     }
 
     @Test
+    void malformedFrameResponseIsUnhealthy() throws Exception {
+        try (ServerSocket serverSocket = new ServerSocket(0)) {
+            Thread serverThread = Thread.startVirtualThread(() -> {
+                try (Socket socket = serverSocket.accept()) {
+                    DataInputStream input = new DataInputStream(socket.getInputStream());
+                    input.readInt();
+                    DataOutputStream output = new DataOutputStream(socket.getOutputStream());
+                    output.writeInt(-1);
+                    output.flush();
+                } catch (IOException ignored) {
+                }
+            });
+
+            assertFalse(ServerHealthCheck.isProtocolResponsive(serverSocket.getLocalPort()));
+            serverThread.join(3_000);
+            assertFalse(serverThread.isAlive());
+        }
+    }
+
+    @Test
     void unresponsiveServerIsUnhealthy() throws Exception {
         try (ServerSocket serverSocket = new ServerSocket(0)) {
             Thread serverThread = Thread.startVirtualThread(() -> {
