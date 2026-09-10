@@ -9,8 +9,7 @@ on:
     - cron: '30 3 * * 1'
   workflow_dispatch:
 
-permissions:
-  contents: read
+permissions: {}
 
 concurrency:
   group: scorecard-${{ github.workflow }}-${{ github.ref }}
