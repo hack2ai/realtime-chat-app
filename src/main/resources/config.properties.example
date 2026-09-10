@@ -33,8 +33,9 @@ server.socketReadTimeoutMs=30000
 # ---------------- Runtime Metrics ----------------
 # Optional read-only Prometheus-style HTTP endpoint. Disabled by default.
 metrics.enabled=false
-# Change to 0.0.0.0 only when a trusted metrics scraper must reach the endpoint remotely.
+# Keep loopback by default. Remote exposure is blocked unless explicitly enabled below.
 metrics.bindAddress=127.0.0.1
+metrics.allowRemote=false
 metrics.port=9100
 
 # ---------------- Transport TLS ----------------
