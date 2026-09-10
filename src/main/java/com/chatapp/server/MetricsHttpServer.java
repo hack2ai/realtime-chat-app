@@ -41,6 +41,9 @@ public final class MetricsHttpServer {
         ThreadPoolExecutor candidateExecutor = null;
         try {
             InetAddress address = InetAddress.getByName(AppConfig.getMetricsBindAddress());
+            if (!AppConfig.isMetricsRemoteAllowed() && !address.isLoopbackAddress()) {
+                throw new IOException("Remote metrics exposure is disabled. Enable metrics.allowRemote=true when intentionally exposing the metrics endpoint.");
+            }
             candidate = HttpServer.create(new InetSocketAddress(address, AppConfig.getMetricsPort()), 0);
             candidateExecutor = new ThreadPoolExecutor(
                     METRICS_CORE_THREADS,
