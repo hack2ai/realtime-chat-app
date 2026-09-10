@@ -5,10 +5,7 @@ on:
     workflows: [CI]
     types: [completed]
 
-permissions:
-  actions: read
-  attestations: write
-  id-token: write
+permissions: {}
 
 concurrency:
   group: attest-${{ github.event.workflow_run.id }}
@@ -23,6 +20,10 @@ jobs:
       github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      actions: read
+      attestations: write
+      id-token: write
     steps:
       - name: Download server artifact
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
