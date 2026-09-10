@@ -320,12 +320,6 @@ public class ChatServer {
         if (wasRunning) logger.info("Chat server stopped.");
     }
 
-    void sendAsync(MessageType type, Object payload) {
-        for (ClientHandler handler : connectedClients.values()) {
-            handler.sendAsync(type, payload);
-        }
-    }
-
     private static void closeQuietly(AutoCloseable closeable) {
         if (closeable == null) return;
         try { closeable.close(); } catch (Exception ignored) {}
