@@ -49,6 +49,24 @@ class MessageCodecTest {
     }
 
     @Test
+    void readHandlesMultipleFramesFromOneTcpStream() throws Exception {
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        DataOutputStream out = new DataOutputStream(bytes);
+
+        codec.write(out, codec.wrap(MessageType.C2S_LOGIN, new Payload("alice", "first")));
+        codec.write(out, codec.wrap(MessageType.C2S_REGISTER, new Payload("bob", "second")));
+
+        DataInputStream in = new DataInputStream(new ByteArrayInputStream(bytes.toByteArray()));
+        Envelope first = codec.read(in);
+        Envelope second = codec.read(in);
+
+        assertEquals(MessageType.C2S_LOGIN, first.getType());
+        assertEquals("first", codec.unwrap(first, Payload.class).password());
+        assertEquals(MessageType.C2S_REGISTER, second.getType());
+        assertEquals("second", codec.unwrap(second, Payload.class).password());
+    }
+
+    @Test
     void readRejectsNegativeFrameLength() {
         byte[] invalidFrame = {0, 0, 0, -1};
 
