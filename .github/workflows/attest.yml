@@ -42,8 +42,24 @@ jobs:
 
       - name: Verify downloaded artifacts
         run: |
-          test -s artifacts/server/target/chatapp-server.jar || test -s artifacts/server/chatapp-server.jar
-          test -s artifacts/sbom/target/bom.json || test -s artifacts/sbom/bom.json
+          server_jar=$(find artifacts/server -type f -name 'chatapp-server.jar' -print -quit)
+          server_checksum=$(find artifacts/server -type f -name 'chatapp-server.jar.sha256' -print -quit)
+          sbom=$(find artifacts/sbom -type f -name 'bom.json' -print -quit)
+          sbom_checksum=$(find artifacts/sbom -type f -name 'bom.json.sha256' -print -quit)
+
+          test -n "$server_jar" && test -s "$server_jar"
+          test -n "$server_checksum" && test -s "$server_checksum"
+          test -n "$sbom" && test -s "$sbom"
+          test -n "$sbom_checksum" && test -s "$sbom_checksum"
+
+          (
+            cd "$(dirname "$server_checksum")"
+            sha256sum --check "$(basename "$server_checksum")"
+          )
+          (
+            cd "$(dirname "$sbom_checksum")"
+            sha256sum --check "$(basename "$sbom_checksum")"
+          )
 
       - name: Attest server build artifact
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
