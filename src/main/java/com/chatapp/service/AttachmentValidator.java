@@ -18,6 +18,8 @@ import java.util.zip.ZipFile;
 public final class AttachmentValidator {
     private static final int MAX_NAME_LENGTH = 180;
     private static final int MAX_CONTENT_TYPE_LENGTH = 120;
+    private static final int MAX_ZIP_ENTRIES = 512;
+    private static final long MAX_ZIP_UNCOMPRESSED_BYTES = 50L * 1024 * 1024;
     private static final Set<String> ALLOWED_TYPES = Set.of(
             "application/pdf", "text/plain", "text/csv", "application/octet-stream",
             "image/jpeg", "image/png", "image/gif", "image/webp",
@@ -99,13 +101,22 @@ public final class AttachmentValidator {
             temp = Files.createTempFile("chatapp-ooxml-", ".zip");
             Files.write(temp, value);
             Set<String> entries = new HashSet<>();
+            long totalUncompressedBytes = 0;
             try (ZipFile zip = new ZipFile(temp.toFile(), StandardCharsets.UTF_8)) {
-                zip.stream().map(entry -> entry.getName()).forEach(name -> {
-                    if (hasUnsafeZipEntryName(name)) {
+                var iterator = zip.entries();
+                int entryCount = 0;
+                while (iterator.hasMoreElements()) {
+                    var entry = iterator.nextElement();
+                    entryCount++;
+                    if (entryCount > MAX_ZIP_ENTRIES) throw new UnsafeZipEntryException();
+                    if (hasUnsafeZipEntryName(entry.getName())) throw new UnsafeZipEntryException();
+                    long size = entry.getSize();
+                    if (size < 0 || size > MAX_ZIP_UNCOMPRESSED_BYTES - totalUncompressedBytes) {
                         throw new UnsafeZipEntryException();
                     }
-                    entries.add(name);
-                });
+                    totalUncompressedBytes += size;
+                    entries.add(entry.getName());
+                }
             }
             if (!entries.contains("[Content_Types].xml") || !entries.contains(requiredEntry)) {
                 throw new ValidationException("File content does not match its declared " + type + " structure.");
