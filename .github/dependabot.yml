@@ -6,8 +6,6 @@ updates:
       interval: weekly
     open-pull-requests-limit: 5
     rebase-strategy: auto
-    labels:
-      - dependencies
     commit-message:
       prefix: deps
       include: scope
@@ -23,8 +21,6 @@ updates:
       interval: daily
     open-pull-requests-limit: 5
     rebase-strategy: auto
-    labels:
-      - dependencies
     commit-message:
       prefix: ci(deps)
       include: scope
@@ -40,8 +36,6 @@ updates:
       interval: daily
     open-pull-requests-limit: 5
     rebase-strategy: auto
-    labels:
-      - dependencies
     commit-message:
       prefix: docker(deps)
       include: scope
