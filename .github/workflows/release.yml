@@ -68,6 +68,11 @@ jobs:
         run: |
           unzip -p target/chatapp-server.jar META-INF/MANIFEST.MF | grep -Eq '^Build-Revision: ${{ github.sha }}[[:space:]]*$'
 
+      - name: Verify release JAR contains no local secret material
+        run: |
+          leaked=$(unzip -Z1 target/chatapp-server.jar | grep -Ei '(^|/)(\.env|config\.properties|[^/]+\.(p12|pfx|jks|key|pem))$' || true)
+          test -z "$leaked"
+
       - name: Verify generated SBOM
         run: |
           test -s target/bom.json
