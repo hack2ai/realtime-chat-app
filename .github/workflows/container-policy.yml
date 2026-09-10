@@ -91,6 +91,13 @@ jobs:
             exit 1
           fi
 
+      - name: Require JVM safety options
+        run: |
+          if ! grep -nF 'ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError"' Dockerfile; then
+            echo 'Dockerfile must configure bounded JVM memory usage and exit cleanly on out-of-memory errors.'
+            exit 1
+          fi
+
       - name: Require Compose runtime resource policy
         env:
           CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
