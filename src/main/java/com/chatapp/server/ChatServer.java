@@ -110,7 +110,11 @@ public class ChatServer {
     }
 
     private void validateTransportSecurity(InetAddress address) throws IOException {
-        if (AppConfig.isTlsEnabled() || AppConfig.isPlaintextRemoteAllowed()) return;
+        validateTransportSecurity(address, AppConfig.isTlsEnabled(), AppConfig.isPlaintextRemoteAllowed());
+    }
+
+    static void validateTransportSecurity(InetAddress address, boolean tlsEnabled, boolean plaintextRemoteAllowed) throws IOException {
+        if (tlsEnabled || plaintextRemoteAllowed) return;
         if (address.isAnyLocalAddress() || !address.isLoopbackAddress()) {
             throw new IOException("Remote plaintext server binding is disabled. Enable TLS or explicitly set server.allowPlaintextRemote=true.");
         }
