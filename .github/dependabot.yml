@@ -9,6 +9,9 @@ updates:
     commit-message:
       prefix: deps
       include: scope
+    labels:
+      - dependencies
+      - maven
     groups:
       maven-minor-patch:
         update-types:
@@ -24,6 +27,9 @@ updates:
     commit-message:
       prefix: ci(deps)
       include: scope
+    labels:
+      - dependencies
+      - github-actions
     groups:
       github-actions-minor-patch:
         update-types:
@@ -39,6 +45,9 @@ updates:
     commit-message:
       prefix: docker(deps)
       include: scope
+    labels:
+      - dependencies
+      - docker
     groups:
       docker-minor-patch:
         update-types:
