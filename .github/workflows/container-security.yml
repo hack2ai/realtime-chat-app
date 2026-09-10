@@ -1,9 +1,13 @@
 name: Container Security
 
 on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
   schedule:
     - cron: '15 3 * * 1'
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -32,9 +36,13 @@ jobs:
           fi
 
       - name: Build server container image
-        run: docker build --pull --tag realtime-chat-app:security .
+        run: |
+          docker build --pull \
+            --build-arg VCS_REF="${{ github.sha }}" \
+            --build-arg VERSION="${{ github.sha }}" \
+            --tag "realtime-chat-app:security" .
 
-      - name: Scan server image for high and critical vulnerabilities
+      - name: Scan server image for HIGH and CRITICAL vulnerabilities, misconfigurations, and secrets
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: image
@@ -44,6 +52,7 @@ jobs:
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: '1'
+          scanners: vuln,misconfig,secret
           vuln-type: os,library
 
       - name: Upload Trivy results to code scanning
