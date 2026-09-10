@@ -42,6 +42,7 @@ public class GroupService {
 
     public List<GroupSummary> list(int userId) { return groupDAO.findForUser(userId); }
     public List<Integer> members(int groupId) throws ValidationException { requireGroup(groupId); return groupDAO.memberIds(groupId); }
+    public boolean isMember(int groupId, int userId) { return groupDAO.isMember(groupId, userId); }
 
     public GroupMessageEvent sendMessage(int userId, String username, int groupId, String message) throws ValidationException {
         requireMembership(groupId, userId);
