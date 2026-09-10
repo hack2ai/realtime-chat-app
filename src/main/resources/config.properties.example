@@ -36,6 +36,8 @@ metrics.enabled=false
 # Keep loopback by default. Remote exposure is blocked unless explicitly enabled below.
 metrics.bindAddress=127.0.0.1
 metrics.allowRemote=false
+# Required when metrics.allowRemote=true. Use a dedicated secret; do not reuse a user/database password.
+metrics.authToken=
 metrics.port=9100
 
 # ---------------- Transport TLS ----------------
