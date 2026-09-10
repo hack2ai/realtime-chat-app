@@ -1,0 +1,60 @@
+name: Observability Compose
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: observability-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate observability stack
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Verify required configuration
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+          CHATAPP_METRICS_AUTH_TOKEN: ci-metrics-token
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.observability.yml config --quiet
+
+      - name: Verify metrics exposure policy
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+          CHATAPP_METRICS_AUTH_TOKEN: ci-metrics-token
+        run: |
+          config=$(docker compose -f docker-compose.yml -f docker-compose.observability.yml config --format json)
+          printf '%s\n' "$config" | jq -e '.services.server.environment.CHATAPP_METRICS_ENABLED == "true"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.environment.CHATAPP_METRICS_BINDADDRESS == "0.0.0.0"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.environment.CHATAPP_METRICS_ALLOWREMOTE == "true"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.environment.CHATAPP_METRICS_AUTHTOKEN == "ci-metrics-token"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.ports | index("127.0.0.1:9100:9100") != null' >/dev/null
+
+      - name: Verify base container security is preserved
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+          CHATAPP_METRICS_AUTH_TOKEN: ci-metrics-token
+        run: |
+          config=$(docker compose -f docker-compose.yml -f docker-compose.observability.yml config --format json)
+          printf '%s\n' "$config" | jq -e '.services.server.user == "10001"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.read_only == true' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.cap_drop == ["ALL"]' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.security_opt == ["no-new-privileges:true"]' >/dev/null
+          printf '%s\n' "$config" | jq -e '.networks.backend.internal == true' >/dev/null
