@@ -32,6 +32,13 @@ jobs:
             exit 1
           fi
 
+      - name: Verify Docker images do not use floating latest tags
+        run: |
+          if grep -RInE '(^|[[:space:]])image:[[:space:]]*[^[:space:]]+:latest([[:space:]]|$)|(^|[[:space:]])FROM[[:space:]]+[^[:space:]]+:latest([[:space:]]|$)' Dockerfile docker-compose*.yml; then
+            echo 'Docker images must use explicit version tags or immutable digests, never :latest.'
+            exit 1
+          fi
+
       - name: Verify secure development defaults
         run: |
           config=src/main/resources/config.properties.example
