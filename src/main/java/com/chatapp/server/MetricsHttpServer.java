@@ -83,6 +83,10 @@ public final class MetricsHttpServer {
             exchange.getResponseHeaders().set("Content-Security-Policy", "default-src 'none'");
             exchange.getResponseHeaders().set("X-Frame-Options", "DENY");
             exchange.getResponseHeaders().set("Referrer-Policy", "no-referrer");
+            if (!"/metrics".equals(exchange.getRequestURI().getPath())) {
+                exchange.sendResponseHeaders(404, -1);
+                return;
+            }
             if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
                 exchange.getResponseHeaders().set("Allow", "GET");
                 exchange.sendResponseHeaders(405, -1);
