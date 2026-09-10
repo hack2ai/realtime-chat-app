@@ -236,6 +236,7 @@
                 <version>3.6.0</version>
                 <configuration>
                     <failIfNoTests>true</failIfNoTests>
+                    <forkedProcessTimeoutInSeconds>180</forkedProcessTimeoutInSeconds>
                 </configuration>
             </plugin>
         </plugins>
