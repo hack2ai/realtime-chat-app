@@ -1,6 +1,7 @@
 package com.chatapp.server;
 
 import com.chatapp.config.AppConfig;
+import com.chatapp.database.ConnectionPool;
 import com.chatapp.service.RequestRateLimiter;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
@@ -118,7 +119,8 @@ public final class MetricsHttpServer {
         Runtime runtime = Runtime.getRuntime();
         long uptimeMillis = ManagementFactory.getRuntimeMXBean().getUptime();
         long liveThreads = ManagementFactory.getThreadMXBean().getThreadCount();
-        StringBuilder output = new StringBuilder(3200);
+        ConnectionPool connectionPool = ConnectionPool.getInstance();
+        StringBuilder output = new StringBuilder(3600);
         appendGauge(output, "chatapp_connected_users", "Currently connected authenticated users.", server.connectedUserCount());
         appendGauge(output, "chatapp_active_handlers", "Currently active client handlers.", server.activeHandlerCount());
         appendCounter(output, "chatapp_accepted_connections_total", "Accepted client connections.", snapshot.acceptedConnections());
@@ -132,6 +134,9 @@ public final class MetricsHttpServer {
         appendGauge(output, "chatapp_handler_pool_size", "Current client handler executor pool size.", server.handlerPoolSize());
         appendGauge(output, "chatapp_handler_pool_queue_depth", "Queued client handler tasks.", server.handlerPoolQueueDepth());
         appendCounter(output, "chatapp_handler_pool_completed_total", "Completed client handler tasks.", server.completedHandlerCount());
+        appendGauge(output, "chatapp_db_pool_connections", "Database connections currently created.", connectionPool.getTotalConnections());
+        appendGauge(output, "chatapp_db_pool_idle_connections", "Database connections currently available for borrowing.", connectionPool.getIdleConnections());
+        appendGauge(output, "chatapp_db_pool_max_connections", "Configured maximum database connections.", connectionPool.getMaxSize());
         appendGauge(output, "chatapp_jvm_memory_used_bytes", "JVM heap memory currently used.", runtime.totalMemory() - runtime.freeMemory());
         appendGauge(output, "chatapp_jvm_memory_committed_bytes", "JVM heap memory currently committed.", runtime.totalMemory());
         appendGauge(output, "chatapp_jvm_memory_max_bytes", "Maximum JVM heap memory available.", runtime.maxMemory());
