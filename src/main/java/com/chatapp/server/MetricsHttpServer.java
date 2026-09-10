@@ -11,6 +11,7 @@ import java.lang.management.ManagementFactory;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -23,6 +24,8 @@ public final class MetricsHttpServer {
     private static final int METRICS_CORE_THREADS = 2;
     private static final int METRICS_MAX_THREADS = 16;
     private static final int METRICS_QUEUE_CAPACITY = 64;
+    private static final String AUTHORIZATION_HEADER = "Authorization";
+    private static final String BEARER_PREFIX = "Bearer ";
 
     private final ServerMetrics metrics;
     private final ChatServer server;
@@ -38,13 +41,19 @@ public final class MetricsHttpServer {
         if (httpServer != null) return;
         if (!AppConfig.isMetricsEnabled()) return;
 
+        InetAddress address = InetAddress.getByName(AppConfig.getMetricsBindAddress());
+        boolean remoteExposure = !address.isLoopbackAddress();
+        if (remoteExposure && !AppConfig.isMetricsRemoteAllowed()) {
+            throw new IOException("Remote metrics exposure is disabled. Enable metrics.allowRemote=true when intentionally exposing the metrics endpoint.");
+        }
+        String authToken = AppConfig.getMetricsAuthToken();
+        if (remoteExposure && authToken.isBlank()) {
+            throw new IOException("Remote metrics exposure requires metrics.authToken to be configured.");
+        }
+
         HttpServer candidate = null;
         ThreadPoolExecutor candidateExecutor = null;
         try {
-            InetAddress address = InetAddress.getByName(AppConfig.getMetricsBindAddress());
-            if (!AppConfig.isMetricsRemoteAllowed() && !address.isLoopbackAddress()) {
-                throw new IOException("Remote metrics exposure is disabled. Enable metrics.allowRemote=true when intentionally exposing the metrics endpoint.");
-            }
             candidate = HttpServer.create(new InetSocketAddress(address, AppConfig.getMetricsPort()), 0);
             candidateExecutor = new ThreadPoolExecutor(
                     METRICS_CORE_THREADS,
@@ -106,12 +115,29 @@ public final class MetricsHttpServer {
                 return;
             }
 
+            String configuredToken = AppConfig.getMetricsAuthToken();
+            if (!configuredToken.isBlank() && !isAuthorized(exchange.getRequestHeaders().getFirst(AUTHORIZATION_HEADER), configuredToken)) {
+                exchange.getResponseHeaders().set("WWW-Authenticate", "Bearer");
+                exchange.sendResponseHeaders(401, -1);
+                return;
+            }
+
             byte[] payload = renderMetrics().getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().set("Content-Type", "text/plain; version=0.0.4; charset=utf-8");
             exchange.getResponseHeaders().set("Cache-Control", "no-store");
             exchange.sendResponseHeaders(200, payload.length);
             exchange.getResponseBody().write(payload);
         }
+    }
+
+    static boolean isAuthorized(String authorizationHeader, String expectedToken) {
+        if (authorizationHeader == null || expectedToken == null || expectedToken.isBlank()) return false;
+        if (!authorizationHeader.startsWith(BEARER_PREFIX)) return false;
+        String suppliedToken = authorizationHeader.substring(BEARER_PREFIX.length()).trim();
+        if (suppliedToken.isEmpty()) return false;
+        return MessageDigest.isEqual(
+                suppliedToken.getBytes(StandardCharsets.UTF_8),
+                expectedToken.getBytes(StandardCharsets.UTF_8));
     }
 
     private String renderMetrics() {
