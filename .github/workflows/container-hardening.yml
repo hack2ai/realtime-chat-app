@@ -61,7 +61,7 @@ jobs:
           test "$(docker image inspect "$image" --format '{{.Config.StopSignal}}')" = "SIGTERM"
           test "$(docker image inspect "$image" --format '{{json .Config.ExposedPorts}}')" = '{"5050/tcp":{}}'
           test "$(docker image inspect "$image" --format '{{json .Config.Volumes}}')" = '{"/app/data/attachments":{}}'
-          test "$(docker image inspect "$image" --format '{{json .Config.Healthcheck.Test}}')" = '["CMD-SHELL","test -f /tmp/chatapp.ready"]'
+          test "$(docker image inspect "$image" --format '{{json .Config.Healthcheck.Test}}')" = '["CMD","java","-cp","/app/chatapp-server.jar","com.chatapp.server.ServerHealthCheck"]'
 
       - name: Verify healthcheck policy
         run: |
