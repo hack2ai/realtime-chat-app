@@ -48,6 +48,17 @@ jobs:
           IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
           docker pull "${IMAGE_NAME}:${RELEASE_VERSION}"
 
+      - name: Verify release image provenance
+        env:
+          RELEASE_VERSION: ${{ github.event.workflow_run.head_branch }}
+          RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+        run: |
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          image="${IMAGE_NAME}:${RELEASE_VERSION}"
+          revision=$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')
+          test "$revision" = "$RELEASE_SHA"
+
       - name: Scan published release image
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         env:
