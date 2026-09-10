@@ -1,5 +1,6 @@
 package com.chatapp.server;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Method;
@@ -53,5 +54,25 @@ class MetricsHttpServerTest {
         } finally {
             server.stop();
         }
+    }
+
+    @Test
+    void acceptsExactBearerToken() {
+        assertTrue(MetricsHttpServer.isAuthorized("Bearer metrics-secret", "metrics-secret"));
+    }
+
+    @Test
+    void rejectsMissingMalformedOrIncorrectBearerToken() {
+        assertFalse(MetricsHttpServer.isAuthorized(null, "metrics-secret"));
+        assertFalse(MetricsHttpServer.isAuthorized("metrics-secret", "metrics-secret"));
+        assertFalse(MetricsHttpServer.isAuthorized("Basic metrics-secret", "metrics-secret"));
+        assertFalse(MetricsHttpServer.isAuthorized("Bearer wrong", "metrics-secret"));
+        assertFalse(MetricsHttpServer.isAuthorized("Bearer ", "metrics-secret"));
+    }
+
+    @Test
+    void tokenComparisonRequiresExactUtf8Value() {
+        assertTrue(MetricsHttpServer.isAuthorized("Bearer café", "café"));
+        assertFalse(MetricsHttpServer.isAuthorized("Bearer cafe", "café"));
     }
 }
