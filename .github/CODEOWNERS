@@ -11,5 +11,6 @@
 /.github/dependabot.yml @hack2ai
 /Dockerfile @hack2ai
 /docker-compose.yml @hack2ai
+/monitoring/ @hack2ai
 /pom.xml @hack2ai
 /SECURITY.md @hack2ai
