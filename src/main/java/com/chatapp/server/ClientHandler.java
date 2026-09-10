@@ -1,5 +1,6 @@
 package com.chatapp.server;
 
+import com.chatapp.config.AppConfig;
 import com.chatapp.exception.AuthenticationException;
 import com.chatapp.exception.ValidationException;
 import com.chatapp.model.User;
@@ -106,7 +107,7 @@ public class ClientHandler implements Runnable {
     private void handleGroupHistory(Envelope envelope)throws IOException,ValidationException{GroupHistoryRequest req=codec.unwrap(envelope,GroupHistoryRequest.class);if(req==null){sendError("Invalid group history request.");return;}send(MessageType.S2C_GROUP_HISTORY,new GroupHistoryResponse(req.getGroupId(),groupService.history(authenticatedUserId,req.getGroupId(),req.getLimit(),req.getBeforeMessageId())));}
     private void handleLogout() { if(authenticatedUserId!=-1) authService.logout(sessionToken); closeConnection(); }
     private void send(MessageType type,Object payload)throws IOException{if(closed.get())throw new IOException("Connection is closed.");codec.write(out,codec.wrap(type,payload));}
-    private void sendAsync(MessageType type,Object payload){if(closed.get())return;if(!outbound.offer(new OutboundMessage(type,payload))){server.recordInternalError();logger.warn("Outbound queue full for {}; closing connection",socket.getRemoteSocketAddress());closeConnection();}}
+    void sendAsync(MessageType type,Object payload){if(closed.get())return;if(!outbound.offer(new OutboundMessage(type,payload))){server.recordInternalError();logger.warn("Outbound queue full for {}; closing connection",socket.getRemoteSocketAddress());closeConnection();}}
     private void writeNow(MessageType type,Object payload)throws IOException{if(closed.get())return; synchronized(this){if(out==null)throw new IOException("Output stream is unavailable.");codec.write(out,codec.wrap(type,payload));}}
     private void sendError(String message){try{if(protocolErrors.incrementAndGet()>MAX_PROTOCOL_ERRORS){server.recordProtocolError();closeConnection();return;}send(MessageType.S2C_ERROR,new AuthFailedResponse(message));}catch(IOException e){if(!closed.get())logger.warn("Failed to send protocol error to {} ({})",socket.getRemoteSocketAddress(),e.getClass().getSimpleName());closeConnection();}}
     void closeConnection(){if(!closed.compareAndSet(false,true))return;try{socket.close();}catch(IOException ignored){}if(writerThread!=null)writerThread.interrupt();if(sessionExpiryThread!=null)sessionExpiryThread.interrupt();cleanup();}
