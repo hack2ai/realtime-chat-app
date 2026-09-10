@@ -7,6 +7,8 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermission;
+import java.util.EnumSet;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -202,6 +204,27 @@ class AppConfigTest {
         }
 
         System.setProperty("chatapp.db.password.file", symlink.toString());
+
+        assertThrows(IllegalStateException.class, AppConfig::getDbPassword);
+    }
+
+    @Test
+    void databasePasswordRejectsGroupReadableSecretFile(@TempDir Path tempDir) throws Exception {
+        Path secretFile = tempDir.resolve("db-password");
+        Files.writeString(secretFile, "file-based-secret\n");
+        try {
+            Files.setPosixFilePermissions(secretFile, EnumSet.of(
+                    PosixFilePermission.OWNER_READ,
+                    PosixFilePermission.OWNER_WRITE,
+                    PosixFilePermission.GROUP_READ
+            ));
+        } catch (UnsupportedOperationException | SecurityException e) {
+            assumeTrue(false, "POSIX permissions are unavailable in this test environment");
+        } catch (IOException e) {
+            assumeTrue(false, "POSIX permissions are unavailable in this test environment: " + e.getMessage());
+        }
+
+        System.setProperty("chatapp.db.password.file", secretFile.toString());
 
         assertThrows(IllegalStateException.class, AppConfig::getDbPassword);
     }
