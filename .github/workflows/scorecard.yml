@@ -3,6 +3,8 @@ name: Scorecard
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   schedule:
     - cron: '30 3 * * 1'
   workflow_dispatch:
@@ -29,6 +31,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+          fetch-depth: 0
 
       - name: Verify immutable workflow actions
         run: |
