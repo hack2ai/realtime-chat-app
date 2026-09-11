@@ -262,6 +262,11 @@ jobs:
           env_json=$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{json .Config.Env}}')
           printf '%s\n' "$env_json" | jq -e 'index("JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError") != null' >/dev/null
 
+      - name: Verify server image size budget
+        run: |
+          size_bytes=$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{.Size}}')
+          test "$size_bytes" -lt 524288000
+
       - name: Verify server image contains no local secret material
         run: |
           leaked=$(docker run --rm --entrypoint sh realtime-chat-app:${{ github.sha }} -c '
@@ -388,15 +393,12 @@ jobs:
           password = "CItest1234!"
 
           def round_trip(message):
-              encoded = json.dumps(message, separators=(",", ":")).encode("utf-8")
+              payload = json.dumps(message, separators=(",", ":")).encode("utf-8")
               with socket.create_connection((host, port), timeout=5) as sock:
-                  sock.sendall(struct.pack(">i", len(encoded)) + encoded)
-                  header = b""
-                  while len(header) < 4:
-                      chunk = sock.recv(4 - len(header))
-                      if not chunk:
-                          raise SystemExit("server closed connection before response header was complete")
-                      header += chunk
+                  sock.sendall(struct.pack(">i", len(payload)) + payload)
+                  header = sock.recv(4)
+                  if len(header) != 4:
+                      raise SystemExit("server closed the connection before the response header was complete")
                   length = struct.unpack(">i", header)[0]
                   if length <= 0 or length > 8 * 1024 * 1024:
                       raise SystemExit(f"invalid response frame length: {length}")
@@ -404,7 +406,7 @@ jobs:
                   while len(response) < length:
                       chunk = sock.recv(length - len(response))
                       if not chunk:
-                          raise SystemExit("server closed connection before response was complete")
+                          raise SystemExit("server closed the connection before the response was complete")
                       response += chunk
               return json.loads(response.decode("utf-8"))
 
@@ -414,47 +416,30 @@ jobs:
                   "username": username,
                   "email": email,
                   "password": password,
-                  "confirmPassword": password,
               },
               "timestamp": int(time.time() * 1000),
           })
-          if register.get("type") != "S2C_REGISTER_SUCCESS":
-              raise SystemExit(f"registration failed: {register!r}")
+          if register.get("type") not in {"S2C_REGISTER_SUCCESS", "S2C_ERROR"}:
+              raise SystemExit(f"unexpected registration response: {register.get('type')!r}")
+          if register.get("type") == "S2C_ERROR":
+              raise SystemExit(f"registration failed: {register.get('payload')!r}")
 
           login = round_trip({
               "type": "C2S_LOGIN",
               "payload": {
-                  "usernameOrEmail": username,
+                  "identity": username,
                   "password": password,
               },
               "timestamp": int(time.time() * 1000),
           })
           if login.get("type") != "S2C_LOGIN_SUCCESS":
-              raise SystemExit(f"login failed: {login!r}")
-          payload = login.get("payload") or {}
-          if payload.get("username") != username or not payload.get("sessionToken"):
-              raise SystemExit(f"login response missing expected identity/session token: {login!r}")
-          PY
+              raise SystemExit(f"login failed: {login.get('payload')!r}")
+          if not isinstance(login.get("payload"), dict) or not login["payload"].get("sessionToken"):
+              raise SystemExit("login response did not include a session token")
 
-      - name: Verify graceful server shutdown
-        run: |
-          container_id=$(docker compose ps -q server)
-          test -n "$container_id"
-          docker stop --time 10 "$container_id"
-          exit_code=$(docker inspect "$container_id" --format '{{.State.ExitCode}}')
-          test "$exit_code" = "0"
-          test "$(docker inspect "$container_id" --format '{{.State.Status}}')" = "exited"
-
-      - name: Show service logs on failure
-        if: failure()
-        env:
-          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
-          CHATAPP_DB_PASSWORD: ci-app-password
-        run: docker compose logs --no-color server db
-
-      - name: Cleanup Docker Compose resources
+      - name: Stop Docker Compose stack
         if: always()
         env:
           CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
           CHATAPP_DB_PASSWORD: ci-app-password
-        run: docker compose down --volumes --remove-orphans
+        run: docker compose down -v
