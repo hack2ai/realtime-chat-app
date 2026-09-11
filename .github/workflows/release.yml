@@ -233,7 +233,7 @@ jobs:
           IMAGE_NAME: ghcr.io/${{ github.repository }}
           RELEASE_VERSION: ${{ github.ref_name }}
         run: |
-          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' 'lower:]')
           test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{json .Config.Healthcheck.Test}}')" = '["CMD-SHELL","java -cp /app/chatapp-server.jar com.chatapp.server.ServerHealthCheck"]'
 
       - name: Verify release image stop signal
@@ -259,7 +259,7 @@ jobs:
           IMAGE_NAME: ghcr.io/${{ github.repository }}
           RELEASE_VERSION: ${{ github.ref_name }}
         run: |
-          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' 'lower:]')
           image="${IMAGE_NAME}:${RELEASE_VERSION}"
           leaked=$(docker run --rm --entrypoint sh "$image" -c '
             find /app -type f \( \
@@ -279,10 +279,20 @@ jobs:
           IMAGE_NAME: ghcr.io/${{ github.repository }}
           RELEASE_VERSION: ${{ github.ref_name }}
         run: |
-          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' 'lower:]')
           image="${IMAGE_NAME}:${RELEASE_VERSION}"
           env_json=$(docker image inspect "$image" --format '{{json .Config.Env}}')
           printf '%s\n' "$env_json" | jq -e 'index("JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError") != null' >/dev/null
+
+      - name: Verify release image size budget
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          image="${IMAGE_NAME}:${RELEASE_VERSION}"
+          size_bytes=$(docker image inspect "$image" --format '{{.Size}}')
+          test "$size_bytes" -lt 524288000
 
       - name: Push release container
         env:
