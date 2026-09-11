@@ -26,10 +26,10 @@ jobs:
           persist-credentials: false
 
       - name: Verify Docker build image
-        run: grep -Fqx 'FROM maven:3.9.11-eclipse-temurin-21 AS build' Dockerfile
+        run: grep -Fqx 'FROM maven:3.9.16-eclipse-temurin-21 AS build' Dockerfile
 
       - name: Verify Docker runtime image
-        run: grep -Fqx 'FROM eclipse-temurin:21-jre' <(grep '^FROM ' Dockerfile | tail -n 1)
+        run: grep -Fqx 'FROM eclipse-temurin:21.0.12_8-jre' <(grep '^FROM ' Dockerfile | tail -n 1)
 
       - name: Verify non-root runtime user
         run: grep -Fqx 'USER chatapp' Dockerfile
