@@ -75,4 +75,13 @@ class MetricsHttpServerTest {
         assertTrue(MetricsHttpServer.isAuthorized("Bearer café", "café"));
         assertFalse(MetricsHttpServer.isAuthorized("Bearer cafe", "café"));
     }
+
+    @Test
+    void remoteMetricsRequireExplicitOptInAndAuthentication() {
+        assertTrue(MetricsHttpServer.isRemoteExposureAllowed(false, false, ""));
+        assertTrue(MetricsHttpServer.isRemoteExposureAllowed(false, true, ""));
+        assertFalse(MetricsHttpServer.isRemoteExposureAllowed(true, false, "metrics-secret"));
+        assertFalse(MetricsHttpServer.isRemoteExposureAllowed(true, true, ""));
+        assertTrue(MetricsHttpServer.isRemoteExposureAllowed(true, true, "metrics-secret"));
+    }
 }
