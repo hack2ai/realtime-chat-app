@@ -38,6 +38,12 @@ Please allow reasonable time for investigation and remediation before public dis
 - Verify release JAR and SBOM checksums before consuming published release assets.
 - Preserve build provenance and SBOM artifacts when promoting a release into another environment.
 
+## Automated security controls
+
+Repository changes are continuously checked by GitHub Actions for dependency and code security issues, container policy violations, secret material, and supply-chain integrity. GitHub Actions references are pinned to immutable commit SHAs, Dependency Review rejects high-severity dependency changes, CodeQL runs the security-extended Java query set, container scans cover HIGH/CRITICAL vulnerabilities, misconfigurations, and secrets, and release artifacts receive build-provenance attestations. Container and Compose policy workflows also enforce non-root execution, dropped capabilities, bounded resources, read-only server filesystems, protected secrets, bounded logs, and local-only development port publishing.
+
+These controls reduce common regression and supply-chain risks but do not replace independent security review or runtime monitoring.
+
 ## Release asset verification
 
 For a downloaded release, verify both the server JAR and the SBOM against their published SHA-256 files before promotion or execution:
