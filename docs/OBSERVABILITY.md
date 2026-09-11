@@ -1,6 +1,18 @@
 # Observability
 
-The chat server exposes an optional read-only Prometheus-style metrics endpoint over HTTP.
+The chat server exposes an optional read-only Prometheus-style metrics endpoint over HTTP, plus readiness and protocol-level health checks for container orchestration.
+
+## Readiness and health checks
+
+The server writes a readiness marker after the listening socket is bound and the database connection has been validated. Container orchestration should treat the service as ready only after that marker is present.
+
+The server image also includes a protocol-level health check:
+
+```text
+java -cp /app/chatapp-server.jar com.chatapp.server.ServerHealthCheck
+```
+
+The probe connects to `127.0.0.1` on the configured chat port, performs the configured TLS handshake when TLS is enabled, sends a `PING`, and requires a `PONG` response. The port can be supplied through the `chatapp.server.port` JVM property or `CHATAPP_SERVER_PORT`; the default is `5050`.
 
 ## Metrics endpoint
 
@@ -33,7 +45,13 @@ The endpoint is intentionally separate from the chat TCP/TLS protocol. It is int
 
 Keep `metrics.enabled=false` unless monitoring is required. The example configuration binds the endpoint to `127.0.0.1`; do not expose it publicly without an explicit network security decision.
 
-When exposing metrics beyond loopback, set `metrics.allowRemote=true` deliberately and place the listener behind a private monitoring network, firewall, or authenticated reverse proxy. The metrics endpoint does not provide application authentication.
+When exposing metrics beyond loopback, set `metrics.allowRemote=true` deliberately and configure a non-empty metrics bearer token. Place the listener behind a private monitoring network, firewall, or authenticated reverse proxy as an additional boundary.
+
+Remote clients must send the configured token as:
+
+```http
+Authorization: Bearer CHANGE_ME
+```
 
 The endpoint accepts only `GET`, sends restrictive response headers, disables caching, and applies a per-source rate limit. Clients that exceed the rate limit receive HTTP `429` with a `Retry-After` header. Metrics contain operational counters and JVM information only; they do not expose message bodies, passwords, session tokens, or attachment contents.
 
