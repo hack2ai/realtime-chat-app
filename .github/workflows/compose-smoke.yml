@@ -29,7 +29,7 @@ jobs:
           persist-credentials: false
 
       - name: Start Compose stack
-        run: docker compose up --build -d
+        run: docker compose up --build --pull always -d
 
       - name: Wait for healthy services
         run: |
