@@ -10,7 +10,6 @@ updates:
       prefix: deps
       include: scope
     labels:
-      - dependencies
       - maven
     groups:
       maven-minor-patch:
@@ -28,7 +27,6 @@ updates:
       prefix: ci(deps)
       include: scope
     labels:
-      - dependencies
       - github-actions
     groups:
       github-actions-minor-patch:
@@ -46,7 +44,6 @@ updates:
       prefix: docker(deps)
       include: scope
     labels:
-      - dependencies
       - docker
     groups:
       docker-minor-patch:
