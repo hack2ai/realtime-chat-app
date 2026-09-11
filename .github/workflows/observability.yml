@@ -40,6 +40,16 @@ jobs:
         run: |
           docker compose -f docker-compose.yml -f docker-compose.observability.yml config --quiet
 
+      - name: Verify metrics secret is mandatory
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: |
+          if env -u CHATAPP_METRICS_AUTH_TOKEN docker compose -f docker-compose.yml -f docker-compose.observability.yml config --quiet; then
+            echo 'Observability configuration must require CHATAPP_METRICS_AUTH_TOKEN.'
+            exit 1
+          fi
+
       - name: Verify metrics exposure policy
         env:
           CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
@@ -52,6 +62,7 @@ jobs:
           printf '%s\n' "$config" | jq -e '.services.server.environment.CHATAPP_METRICS_ALLOWREMOTE == "true"' >/dev/null
           printf '%s\n' "$config" | jq -e '.services.server.environment.CHATAPP_METRICS_AUTHTOKEN == "ci-metrics-token"' >/dev/null
           printf '%s\n' "$config" | jq -e '.services.server.ports | index("127.0.0.1:9100:9100") != null' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.ports | all(. != "0.0.0.0:9100:9100" and . != "9100:9100")' >/dev/null
 
       - name: Verify base container security is preserved
         env:
