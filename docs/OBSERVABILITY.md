@@ -41,6 +41,37 @@ chatapp_connected_users 2
 
 The endpoint is intentionally separate from the chat TCP/TLS protocol. It is intended for a local Prometheus agent, node-level collector, or an explicitly trusted metrics scraper.
 
+## Docker Compose observability overlay
+
+The repository includes `docker-compose.observability.yml` for a local monitoring setup. It enables metrics, permits the metrics listener inside the container to bind to its interface, and publishes the endpoint only on the Docker host's loopback interface.
+
+Set the required application secrets and a dedicated metrics token:
+
+```bash
+export CHATAPP_MYSQL_ROOT_PASSWORD='change-this-root-secret'
+export CHATAPP_DB_PASSWORD='change-this-app-secret'
+export CHATAPP_METRICS_AUTH_TOKEN='change-this-metrics-token'
+```
+
+Start the stack with the overlay:
+
+```bash
+docker compose \
+  -f docker-compose.yml \
+  -f docker-compose.observability.yml \
+  up --build -d
+```
+
+Verify the protected endpoint from the host:
+
+```bash
+curl \
+  -H "Authorization: Bearer ${CHATAPP_METRICS_AUTH_TOKEN}" \
+  http://127.0.0.1:9100/metrics
+```
+
+Do not publish port `9100` directly to the public internet. Use a private monitoring network or authenticated observability gateway for remote scraping.
+
 ## Security defaults
 
 Keep `metrics.enabled=false` unless monitoring is required. The example configuration binds the endpoint to `127.0.0.1`; do not expose it publicly without an explicit network security decision.
@@ -67,9 +98,12 @@ scrape_configs:
     metrics_path: /metrics
     static_configs:
       - targets: ["chat-server.internal:9100"]
+    authorization:
+      type: Bearer
+      credentials: CHANGE_ME
 ```
 
-Prefer a private monitoring path rather than publishing port `9100` to the public internet.
+Prefer a private monitoring path rather than publishing port `9100` to the public internet. Store the bearer token in your monitoring system's secret-management mechanism rather than committing it to configuration control.
 
 ## Exported metrics
 
