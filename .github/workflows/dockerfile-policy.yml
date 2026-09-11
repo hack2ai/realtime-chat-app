@@ -31,6 +31,19 @@ jobs:
       - name: Verify Docker runtime image
         run: grep -Fqx 'FROM eclipse-temurin:21-jre' <(grep '^FROM ' Dockerfile | tail -n 1)
 
+      - name: Verify non-root runtime user
+        run: grep -Fqx 'USER chatapp' Dockerfile
+
+      - name: Verify explicit server entrypoint
+        run: grep -Fqx 'ENTRYPOINT ["java", "-jar", "/app/chatapp-server.jar"]' Dockerfile
+
+      - name: Reject unsafe remote script execution
+        run: |
+          if grep -nE '^\s*(ADD|RUN).*\b(curl|wget).*(\||;).*\b(sh|bash)\b' Dockerfile; then
+            echo 'Dockerfile must not execute remotely fetched shell scripts.'
+            exit 1
+          fi
+
       - name: Reject floating Docker image tags
         run: |
           if grep -nE '^FROM[[:space:]]+[^[:space:]]+:latest([[:space:]]|$)' Dockerfile; then
