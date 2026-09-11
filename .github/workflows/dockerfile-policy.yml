@@ -44,6 +44,13 @@ jobs:
             exit 1
           fi
 
+      - name: Reject Docker ADD instructions
+        run: |
+          if grep -nE '^\s*ADD\s' Dockerfile; then
+            echo 'Dockerfile must use COPY instead of ADD.'
+            exit 1
+          fi
+
       - name: Reject floating Docker image tags
         run: |
           if grep -nE '^FROM[[:space:]]+[^[:space:]]+:latest([[:space:]]|$)' Dockerfile; then
