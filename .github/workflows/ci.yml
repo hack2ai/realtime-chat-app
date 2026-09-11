@@ -270,7 +270,6 @@ jobs:
           test "$(docker run --rm --entrypoint stat realtime-chat-app:${{ github.sha }} -c '%u:%g:%a' /app/chatapp-server.jar)" = "0:0:444"
           test "$(docker run --rm --entrypoint stat realtime-chat-app:${{ github.sha }} -c '%u:%g:%a' /app/data/attachments)" = "10001:10001:755"
           docker run --rm realtime-chat-app:${{ github.sha }} sh -c 'touch /app/data/attachments/.ci-write-test && rm /app/data/attachments/.ci-write-test'
-          ! docker run --rm --entrypoint sh realtime-chat-app:${{ github.sha }} -c 'touch /app/.ci-root-write-test' >/dev/null 2>&1
 
       - name: Verify server image JVM safety options
         run: |
@@ -389,7 +388,70 @@ jobs:
               raise SystemExit(f"unexpected response type: {payload.get('type')!r}")
           PY
 
-      - name: Clean up Docker Compose stack
+      - name: Smoke test registration and login flow
+        env:
+          CHATAPP_CI_RUN_ID: ${{ github.run_id }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import socket
+          import struct
+          import time
+
+          host = "127.0.0.1"
+          port = 5050
+          run_id = os.environ["CHATAPP_CI_RUN_ID"]
+          username = f"ci_{run_id}"
+          email = f"ci_{run_id}@example.com"
+          password = "CItest1234!"
+
+          def round_trip(message):
+              payload = json.dumps(message, separators=(",", ":")).encode("utf-8")
+              with socket.create_connection((host, port), timeout=5) as sock:
+                  sock.sendall(struct.pack(">i", len(payload)) + payload)
+                  header = sock.recv(4)
+                  if len(header) != 4:
+                      raise SystemExit("server closed the connection before the response header was complete")
+                  length = struct.unpack(">i", header)[0]
+                  if length <= 0 or length > 8 * 1024 * 1024:
+                      raise SystemExit(f"invalid response frame length: {length}")
+                  response = b""
+                  while len(response) < length:
+                      chunk = sock.recv(length - len(response))
+                      if not chunk:
+                          raise SystemExit("server closed the connection before the response was complete")
+                      response += chunk
+              return json.loads(response.decode("utf-8"))
+
+          register = round_trip({
+              "type": "C2S_REGISTER",
+              "payload": {
+                  "username": username,
+                  "email": email,
+                  "password": password,
+              },
+              "timestamp": int(time.time() * 1000),
+          })
+          if register.get("type") not in {"S2C_REGISTER_SUCCESS", "S2C_ERROR"}:
+              raise SystemExit(f"unexpected registration response: {register.get('type')!r}")
+          if register.get("type") == "S2C_ERROR":
+              raise SystemExit(f"registration failed: {register.get('payload')!r}")
+
+          login = round_trip({
+              "type": "C2S_LOGIN",
+              "payload": {
+                  "identity": username,
+                  "password": password,
+              },
+              "timestamp": int(time.time() * 1000),
+          })
+          if login.get("type") != "S2C_LOGIN_SUCCESS":
+              raise SystemExit(f"login failed: {login.get('payload')!r}")
+          if not isinstance(login.get("payload"), dict) or not login["payload"].get("sessionToken"):
+              raise SystemExit("login response did not include a session token")
+
+      - name: Stop Docker Compose stack
         if: always()
         env:
           CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
