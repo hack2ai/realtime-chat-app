@@ -259,6 +259,13 @@ jobs:
         run: |
           test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{json .Config.Healthcheck.Test}}')" = '["CMD","java","-cp","/app/chatapp-server.jar","com.chatapp.server.ServerHealthCheck"]'
 
+      - name: Verify server healthcheck executes successfully
+        run: |
+          docker run --rm --network host \
+            -e CHATAPP_SERVER_PORT=5050 \
+            --entrypoint java realtime-chat-app:${{ github.sha }} \
+            -cp /app/chatapp-server.jar com.chatapp.server.ServerHealthCheck
+
       - name: Verify server image stop signal
         run: |
           test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{.Config.StopSignal}}')" = "SIGTERM"
