@@ -5,7 +5,7 @@ RUN mvn --batch-mode --no-transfer-progress --strict-checksums dependency:go-off
 COPY src ./src
 RUN mvn --batch-mode --no-transfer-progress --strict-checksums verify
 
-FROM eclipse-temurin:21.0.12_8-jre
+FROM eclipse-temurin:24.0.2_12-jre
 ARG VCS_REF=unknown
 ARG VERSION=dev
 LABEL org.opencontainers.image.title="Real-Time Chat Application" \
