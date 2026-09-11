@@ -1,11 +1,11 @@
-FROM maven:3.9.11-eclipse-temurin-21 AS build
+FROM maven:3.9.16-eclipse-temurin-21 AS build
 WORKDIR /workspace
 COPY pom.xml .
 RUN mvn --batch-mode --no-transfer-progress --strict-checksums dependency:go-offline
 COPY src ./src
 RUN mvn --batch-mode --no-transfer-progress --strict-checksums verify
 
-FROM eclipse-temurin:21-jre
+FROM eclipse-temurin:21.0.12_8-jre
 ARG VCS_REF=unknown
 ARG VERSION=dev
 LABEL org.opencontainers.image.title="Real-Time Chat Application" \
