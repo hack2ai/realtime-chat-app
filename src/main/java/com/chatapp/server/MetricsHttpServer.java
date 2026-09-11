@@ -43,11 +43,11 @@ public final class MetricsHttpServer {
 
         InetAddress address = InetAddress.getByName(AppConfig.getMetricsBindAddress());
         boolean remoteExposure = !address.isLoopbackAddress();
-        if (remoteExposure && !AppConfig.isMetricsRemoteAllowed()) {
-            throw new IOException("Remote metrics exposure is disabled. Enable metrics.allowRemote=true when intentionally exposing the metrics endpoint.");
-        }
         String authToken = AppConfig.getMetricsAuthToken();
-        if (remoteExposure && authToken.isBlank()) {
+        if (!isRemoteExposureAllowed(remoteExposure, AppConfig.isMetricsRemoteAllowed(), authToken)) {
+            if (remoteExposure && !AppConfig.isMetricsRemoteAllowed()) {
+                throw new IOException("Remote metrics exposure is disabled. Enable metrics.allowRemote=true when intentionally exposing the metrics endpoint.");
+            }
             throw new IOException("Remote metrics exposure requires metrics.authToken to be configured.");
         }
 
@@ -128,6 +128,10 @@ public final class MetricsHttpServer {
             exchange.sendResponseHeaders(200, payload.length);
             exchange.getResponseBody().write(payload);
         }
+    }
+
+    static boolean isRemoteExposureAllowed(boolean remoteExposure, boolean remoteAllowed, String authToken) {
+        return !remoteExposure || (remoteAllowed && authToken != null && !authToken.isBlank());
     }
 
     static boolean isAuthorized(String authorizationHeader, String expectedToken) {
