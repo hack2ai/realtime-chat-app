@@ -30,12 +30,21 @@ jobs:
         run: |
           set -euo pipefail
 
-          for workflow in .github/workflows/*.yml; do
+          workflows=(.github/workflows/*.{yml,yaml})
+          found=false
+          for workflow in "${workflows[@]}"; do
+            [ -f "$workflow" ] || continue
+            found=true
             if ! grep -Eq '^permissions:([[:space:]]|$)' "$workflow"; then
               echo "Workflow is missing an explicit permissions policy: $workflow"
               exit 1
             fi
           done
+
+          if [ "$found" != true ]; then
+            echo 'No GitHub Actions workflow files found.'
+            exit 1
+          fi
 
       - name: Enforce release workflow least-privilege boundary
         shell: bash
