@@ -40,14 +40,22 @@ jobs:
         run: docker compose -f docker-compose.yml -f docker-compose.observability.yml config --quiet
 
       - name: Validate Prometheus configuration and alert rules
+        env:
+          CHATAPP_METRICS_AUTH_TOKEN: ci-metrics-token
         run: |
+          printf '%s\n' "$CHATAPP_METRICS_AUTH_TOKEN" > metrics_auth_token
+          chmod 0444 metrics_auth_token
+          trap 'rm -f metrics_auth_token' EXIT
+
           docker run --rm \
             -v "$PWD/observability:/etc/prometheus:ro" \
+            -v "$PWD/metrics_auth_token:/run/secrets/metrics_auth_token:ro" \
             --entrypoint promtool \
             prom/prometheus:v3.5.0 \
             check config /etc/prometheus/prometheus.yml
           docker run --rm \
             -v "$PWD/observability:/etc/prometheus:ro" \
+            -v "$PWD/metrics_auth_token:/run/secrets/metrics_auth_token:ro" \
             --entrypoint promtool \
             prom/prometheus:v3.5.0 \
             check rules /etc/prometheus/alerts.yml
