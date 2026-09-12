@@ -1,0 +1,53 @@
+name: Source Policy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: source-policy-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-policy:
+    name: Source safety policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Reject unsafe debug and deserialization APIs
+        run: |
+          if git grep -nE 'printStackTrace|System\.(out|err)|ObjectInputStream|Runtime\.getRuntime\(\)\.exec\(|new[[:space:]]+ProcessBuilder([[:space:](]|\.)' -- src/main/java; then
+            echo 'Unsafe debug, console, object-deserialization, or process-execution APIs must not be introduced into production source.'
+            exit 1
+          fi
+
+      - name: Reject private key material
+        run: |
+          if git grep -nE -- '-----BEGIN ([A-Z0-9]+ )?PRIVATE KEY-----' -- ':!src/test/resources'; then
+            echo 'Private key material must not be committed.'
+            exit 1
+          fi
+
+      - name: Require prepared JDBC statements
+        run: |
+          if git grep -nE '(^|[^A-Za-z])createStatement[[:space:]]*\(|(^|[^A-Za-z])Statement[[:space:]]+[A-Za-z_]' -- src/main/java; then
+            echo 'Production database access must use PreparedStatement rather than raw JDBC Statement APIs.'
+            exit 1
+          fi
+
+      - name: Reject weak cryptographic hashes
+        run: |
+          if git grep -nEi 'MessageDigest\.getInstance\(["'"'](MD5|SHA-1)["'"']\)|\b(MD5|SHA-1)\b' -- src/main/java; then
+            echo 'Do not introduce MD5 or SHA-1 into production cryptographic code.'
+            exit 1
+          fi

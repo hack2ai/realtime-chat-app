@@ -8,6 +8,8 @@ import com.chatapp.model.dto.AuthDTOs.RegisterSuccessResponse;
 import com.chatapp.socket.protocol.Envelope;
 import com.chatapp.socket.protocol.MessageCodec;
 import com.chatapp.socket.protocol.MessageType;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
@@ -31,6 +33,7 @@ import java.net.Socket;
  * </pre>
  */
 public class TestClient {
+    private static final Logger logger = LoggerFactory.getLogger(TestClient.class);
 
     public static void main(String[] args) throws IOException {
         if (args.length < 1) {
@@ -60,7 +63,7 @@ public class TestClient {
                 case "ping" -> {
                     codec.write(out, codec.wrap(MessageType.PING, null));
                     Envelope response = codec.read(in);
-                    System.out.println("Received: " + response.getType());
+                    logger.info("Received: {}", response.getType());
                 }
                 default -> printUsageAndExit();
             }
@@ -73,33 +76,33 @@ public class TestClient {
         switch (response.getType()) {
             case S2C_REGISTER_SUCCESS -> {
                 RegisterSuccessResponse r = codec.unwrap(response, RegisterSuccessResponse.class);
-                System.out.println("✓ Registered successfully: userId=" + r.getUserId() + ", username=" + r.getUsername());
+                logger.info("Registered successfully: userId={}, username={}", r.getUserId(), r.getUsername());
             }
             case S2C_LOGIN_SUCCESS -> {
                 LoginSuccessResponse r = codec.unwrap(response, LoginSuccessResponse.class);
-                System.out.println("✓ Login successful:");
-                System.out.println("    userId:  " + r.getUserId());
-                System.out.println("    username: " + r.getUsername());
-                System.out.println("    role:     " + r.getRole());
-                System.out.println("    token:    " + r.getSessionToken());
+                logger.info("Login successful:");
+                logger.info("  userId: {}", r.getUserId());
+                logger.info("  username: {}", r.getUsername());
+                logger.info("  role: {}", r.getRole());
+                logger.info("  token: {}", r.getSessionToken());
             }
             case S2C_REGISTER_FAILED, S2C_LOGIN_FAILED, S2C_ERROR -> {
                 AuthFailedResponse r = codec.unwrap(response, AuthFailedResponse.class);
-                System.out.println("✗ Failed: " + r.getReason());
+                logger.warn("Authentication failed: {}", r.getReason());
             }
-            default -> System.out.println("Unexpected response type: " + response.getType());
+            default -> logger.warn("Unexpected response type: {}", response.getType());
         }
     }
 
     private static void requireArgs(String[] args, int minLength, String usage) {
         if (args.length < minLength) {
-            System.err.println("Usage: " + usage);
+            logger.error("Usage: {}", usage);
             System.exit(1);
         }
     }
 
     private static void printUsageAndExit() {
-        System.err.println("""
+        logger.error("""
                 Usage:
                   register <username> <email> <password> <confirmPassword>
                   login <usernameOrEmail> <password>

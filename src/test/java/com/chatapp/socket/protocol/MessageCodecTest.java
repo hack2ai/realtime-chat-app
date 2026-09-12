@@ -65,6 +65,16 @@ class MessageCodecTest {
     }
 
     @Test
+    void readRejectsFrameOneByteOverMaximum() throws Exception {
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream(Integer.BYTES);
+        DataOutputStream out = new DataOutputStream(bytes);
+        out.writeInt(MAX_FRAME_BYTES + 1);
+
+        assertThrows(IOException.class, () ->
+                codec.read(new DataInputStream(new ByteArrayInputStream(bytes.toByteArray()))));
+    }
+
+    @Test
     void readRejectsTruncatedFrame() throws Exception {
         byte[] payload = "{\"type\":\"C2S_LOGIN\"}".getBytes(StandardCharsets.UTF_8);
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
@@ -79,6 +89,24 @@ class MessageCodecTest {
     @Test
     void readRejectsMalformedJson() throws Exception {
         byte[] payload = "{not-json".getBytes(StandardCharsets.UTF_8);
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        DataOutputStream out = new DataOutputStream(bytes);
+        out.writeInt(payload.length);
+        out.write(payload);
+
+        assertThrows(IOException.class, () ->
+                codec.read(new DataInputStream(new ByteArrayInputStream(bytes.toByteArray()))));
+    }
+
+    @Test
+    void readRejectsMalformedUtf8() throws Exception {
+        byte[] payload = {
+                '{', '"', 't', 'y', 'p', 'e', '"', ':', '"',
+                'C', '2', 'S', '_', 'L', 'O', 'G', 'I', 'N', '"', ',',
+                '"', 'p', 'a', 'y', 'l', 'o', 'a', 'd', '"', ':', '{',
+                '"', 'u', 's', 'e', 'r', 'n', 'a', 'm', 'e', '"', ':', '"',
+                'a', 'l', (byte) 0xFF, 'i', 'c', 'e', '"', '}', '}'
+        };
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         DataOutputStream out = new DataOutputStream(bytes);
         out.writeInt(payload.length);
@@ -129,11 +157,46 @@ class MessageCodecTest {
     }
 
     @Test
+    void readAcceptsExactMaximumFrameSize() throws Exception {
+        Envelope template = codec.wrap(MessageType.C2S_PRIVATE_MESSAGE, new Payload("alice", ""));
+        int fixedJsonBytes = codec.getGson().toJson(template).getBytes(StandardCharsets.UTF_8).length;
+        int payloadChars = MAX_FRAME_BYTES - fixedJsonBytes;
+        assertTrue(payloadChars > 0);
+
+        Envelope envelope = codec.wrap(MessageType.C2S_PRIVATE_MESSAGE,
+                new Payload("alice", "x".repeat(payloadChars)));
+        byte[] jsonBytes = codec.getGson().toJson(envelope).getBytes(StandardCharsets.UTF_8);
+        assertEquals(MAX_FRAME_BYTES, jsonBytes.length);
+
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream(MAX_FRAME_BYTES + Integer.BYTES);
+        DataOutputStream out = new DataOutputStream(bytes);
+        out.writeInt(MAX_FRAME_BYTES);
+        out.write(jsonBytes);
+
+        Envelope decoded = codec.read(new DataInputStream(new ByteArrayInputStream(bytes.toByteArray())));
+        assertEquals(MessageType.C2S_PRIVATE_MESSAGE, decoded.getType());
+        Payload payload = codec.unwrap(decoded, Payload.class);
+        assertNotNull(payload);
+        assertEquals(payloadChars, payload.password().length());
+    }
+
+    @Test
     void writeRejectsOversizedFrame() {
         String oversizedPayload = "x".repeat(8 * 1024 * 1024);
         Envelope envelope = codec.wrap(MessageType.C2S_PRIVATE_MESSAGE,
                 new Payload("alice", oversizedPayload));
 
+        assertThrows(IOException.class, () ->
+                codec.write(new DataOutputStream(new ByteArrayOutputStream()), envelope));
+    }
+
+    @Test
+    void writeRejectsFrameThatExceedsByteLimitWithMultibyteUtf8() {
+        String oversizedPayload = "€".repeat(3_000_000);
+        Envelope envelope = codec.wrap(MessageType.C2S_PRIVATE_MESSAGE,
+                new Payload("alice", oversizedPayload));
+
+        assertTrue(codec.getGson().toJson(envelope).getBytes(StandardCharsets.UTF_8).length > MAX_FRAME_BYTES);
         assertThrows(IOException.class, () ->
                 codec.write(new DataOutputStream(new ByteArrayOutputStream()), envelope));
     }

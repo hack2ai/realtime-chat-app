@@ -27,6 +27,7 @@ public class AuthenticationService {
             "$2y$12$vgm76N96ItnRWvltvIMMReV0FQkritT0LtRtzB/U4fHvqV.aYVY.O";
     private static final int MAX_LOGIN_IDENTIFIER_LENGTH = 254;
     private static final int MAX_BCRYPT_PASSWORD_BYTES = 72;
+    private static final int MAX_SESSION_TOKEN_LENGTH = 64;
 
     private final UserDAO userDAO;
     private final BCryptPasswordEncoder passwordEncoder;
@@ -122,7 +123,17 @@ public class AuthenticationService {
 
         String token = generateSessionToken();
         String tokenDigest = digestToken(token);
-        LocalDateTime expiry = LocalDateTime.now().plusHours(AppConfig.getSessionExpiryHours());
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime expiry = now.plusHours(AppConfig.getSessionExpiryHours());
+
+        String existingDigest = activeTokenByUser.get(user.getId());
+        if (existingDigest != null) {
+            Session existingSession = activeSessions.get(existingDigest);
+            if (existingSession != null && !now.isBefore(existingSession.expiresAt)) {
+                expireSession(existingDigest, existingSession);
+            }
+        }
+
         Session session = new Session(user.getId(), expiry);
         if (activeTokenByUser.putIfAbsent(user.getId(), tokenDigest) != null) {
             throw new AuthenticationException("This account is already connected.");
@@ -148,6 +159,7 @@ public class AuthenticationService {
 
     public void logout(String sessionToken) {
         if (sessionToken == null) return;
+        if (sessionToken.length() > MAX_SESSION_TOKEN_LENGTH) return;
         String tokenDigest = digestToken(sessionToken);
         Session session = activeSessions.remove(tokenDigest);
         if (session != null) {
@@ -157,7 +169,9 @@ public class AuthenticationService {
     }
 
     public int validateSession(String sessionToken) throws AuthenticationException {
-        if (sessionToken == null || sessionToken.isBlank()) throw invalidSession();
+        if (sessionToken == null || sessionToken.isBlank() || sessionToken.length() > MAX_SESSION_TOKEN_LENGTH) {
+            throw invalidSession();
+        }
         String tokenDigest = digestToken(sessionToken);
         Session session = activeSessions.get(tokenDigest);
         if (session == null) throw invalidSession();

@@ -1,0 +1,130 @@
+name: Container Policy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: container-policy-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  container-policy:
+    name: Check container base images
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Reject mutable latest base images
+        run: |
+          if grep -nE '^\s*FROM\s+[^[:space:]]+:latest([[:space:]]|$)' Dockerfile; then
+            echo 'Docker base images must not use the mutable :latest tag.'
+            exit 1
+          fi
+
+      - name: Require non-root runtime user
+        run: |
+          if ! grep -nE '^USER\s+chatapp\s*$' Dockerfile; then
+            echo 'The final Docker image must declare USER chatapp.'
+            exit 1
+          fi
+          if grep -nE '^USER\s+root\s*$' Dockerfile; then
+            echo 'Dockerfile must not explicitly switch the runtime back to root.'
+            exit 1
+          fi
+
+      - name: Require stable runtime identity
+        run: |
+          if ! grep -nF 'useradd --system --create-home --uid 10001 chatapp' Dockerfile; then
+            echo 'The chatapp runtime user must use the fixed UID 10001.'
+            exit 1
+          fi
+
+      - name: Require safe runtime directives
+        run: |
+          if ! grep -nE '^STOPSIGNAL\s+SIGTERM\s*$' Dockerfile; then
+            echo 'Dockerfile must declare STOPSIGNAL SIGTERM for graceful server shutdown.'
+            exit 1
+          fi
+          if ! grep -nF 'HEALTHCHECK --interval=10s --timeout=3s --retries=5 --start-period=10s CMD test -f /tmp/chatapp.ready' Dockerfile; then
+            echo 'Dockerfile must declare the expected readiness healthcheck.'
+            exit 1
+          fi
+          if ! grep -nF 'VOLUME ["/app/data/attachments"]' Dockerfile; then
+            echo 'Dockerfile must declare the attachment storage volume at the expected path.'
+            exit 1
+          fi
+          if ! grep -nF 'ENTRYPOINT ["java", "-jar", "/app/chatapp-server.jar"]' Dockerfile; then
+            echo 'Dockerfile must start the packaged server JAR with the expected Java entrypoint.'
+            exit 1
+          fi
+
+      - name: Require immutable server binary
+        run: |
+          if ! grep -nF 'chown root:root /app/chatapp-server.jar' Dockerfile; then
+            echo 'The server JAR must remain owned by root in the runtime image.'
+            exit 1
+          fi
+          if ! grep -nF 'chmod 0444 /app/chatapp-server.jar' Dockerfile; then
+            echo 'The server JAR must be read-only in the runtime image.'
+            exit 1
+          fi
+
+      - name: Require Compose database privilege protection
+        run: |
+          if ! grep -A8 '^  db:' docker-compose.yml | grep -q '^    security_opt:$'; then
+            echo 'The Compose database service must configure no-new-privileges.'
+            exit 1
+          fi
+          if ! grep -A10 '^  db:' docker-compose.yml | grep -q 'no-new-privileges:true'; then
+            echo 'The Compose database service must use no-new-privileges:true.'
+            exit 1
+          fi
+          if ! grep -A12 '^  db:' docker-compose.yml | grep -q '^    cap_drop:$'; then
+            echo 'The Compose database service must configure capability dropping.'
+            exit 1
+          fi
+          if ! grep -A14 '^  db:' docker-compose.yml | grep -q '^      - ALL$'; then
+            echo 'The Compose database service must drop all Linux capabilities.'
+            exit 1
+          fi
+
+      - name: Require bounded container logging
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: |
+          config=$(docker compose config --format json)
+          printf '%s\n' "$config" | jq -e '.services.server.logging.driver == "json-file"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.logging.options["max-size"] == "10m"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.logging.options["max-file"] == "3"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.logging.driver == "json-file"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.logging.options["max-size"] == "10m"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.logging.options["max-file"] == "3"' >/dev/null
+
+      - name: Require localhost-only server publishing
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: |
+          config=$(docker compose config --format json)
+          printf '%s\n' "$config" | jq -e '.networks.backend.internal == true' >/dev/null
+          printf '%s\n' "$config" | jq -e '(.services.db.ports // []) == []' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.ports[0].host_ip == "127.0.0.1"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.ports[0] | ((.target | tostring) == "5050" and (.published | tostring) == "5050" and .protocol == "tcp")' >/dev/null
+
+      - name: Reject remote Dockerfile fetches and piped installers
+        run: |
+          if grep -nE '^\s*ADD\s+https?://|\b(curl|wget)[[:space:]].*\|[[:space:]]*(sh|bash)([[:space:]]|$)' Dockerfile; then
+            echo 'Dockerfile must not fetch remote content or pipe network downloads into a shell.'
+            exit 1
+          fi

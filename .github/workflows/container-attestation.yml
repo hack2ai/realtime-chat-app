@@ -1,0 +1,90 @@
+name: Container Attestation
+
+on:
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+
+permissions:
+  contents: read
+  packages: read
+  attestations: write
+  id-token: write
+
+concurrency:
+  group: container-attestation-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+jobs:
+  attest:
+    name: Attest published release image
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Login to GitHub Container Registry
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+
+      - name: Pull released image
+        env:
+          RELEASE_VERSION: ${{ github.event.workflow_run.head_branch }}
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+        run: |
+          set -eu
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          test -n "$RELEASE_VERSION"
+          docker pull "${IMAGE_NAME}:${RELEASE_VERSION}"
+
+      - name: Verify image matches released commit
+        env:
+          RELEASE_VERSION: ${{ github.event.workflow_run.head_branch }}
+          RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+        run: |
+          set -eu
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          image="${IMAGE_NAME}:${RELEASE_VERSION}"
+          revision=$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')
+          version=$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.version"}}')
+          test "$revision" = "$RELEASE_SHA"
+          test "$version" = "$RELEASE_VERSION"
+
+      - name: Verify published image runtime identity
+        env:
+          RELEASE_VERSION: ${{ github.event.workflow_run.head_branch }}
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+        run: |
+          set -eu
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          image="${IMAGE_NAME}:${RELEASE_VERSION}"
+          test "$(docker image inspect "$image" --format '{{.Config.User}}')" = "chatapp"
+          test "$(docker run --rm --entrypoint id "$image" -u)" = "10001"
+          test "$(docker image inspect "$image" --format '{{json .Config.Entrypoint}}')" = '["java","-jar","/app/chatapp-server.jar"]'
+
+      - name: Resolve image digest
+        id: image
+        env:
+          RELEASE_VERSION: ${{ github.event.workflow_run.head_branch }}
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+        run: |
+          set -eu
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          image="${IMAGE_NAME}:${RELEASE_VERSION}"
+          repo_digest=$(docker image inspect "$image" --format '{{index .RepoDigests 0}}')
+          digest="${repo_digest##*@}"
+          test -n "$digest"
+          case "$digest" in
+            sha256:*) ;;
+            *) echo 'Published image did not resolve to a sha256 digest.'; exit 1 ;;
+          esac
+          echo "subject_name=${IMAGE_NAME}" >> "$GITHUB_OUTPUT"
+          echo "subject_digest=${digest}" >> "$GITHUB_OUTPUT"
+
+      - name: Attest published container image
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ steps.image.outputs.subject_name }}
+          subject-digest: ${{ steps.image.outputs.subject_digest }}
+          push-to-registry: true

@@ -8,6 +8,8 @@ on:
 
 permissions:
   contents: read
+  attestations: write
+  id-token: write
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -20,9 +22,73 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Verify immutable workflow actions
+        run: |
+          if grep -RInP '^\s*uses:\s*[^@#\s]+@(?![0-9a-fA-F]{40}\b)[^#\s]+' .github/workflows; then
+            echo 'All GitHub Actions must be pinned to a 40-character commit SHA.'
+            exit 1
+          fi
+
+      - name: Verify tracked secret material is absent
+        run: |
+          forbidden=$(git ls-files | grep -E '(^|/)(\.env|config\.properties|[^/]+\.(p12|jks|key|pem))$' | grep -v '^src/test/resources/config\.properties$' || true)
+          if [ -n "$forbidden" ]; then
+            echo 'Sensitive configuration or key material must not be tracked:'
+            printf '%s\n' "$forbidden"
+            exit 1
+          fi
+
+      - name: Verify Docker build context excludes sensitive files
+        run: |
+          required_patterns=(
+            '.git'
+            '.env'
+            '.env.*'
+            'config.properties'
+            '*.p12'
+            '*.pfx'
+            '*.jks'
+            '*.key'
+            '*.pem'
+          )
+          for pattern in "${required_patterns[@]}"; do
+            if ! grep -Fqx "$pattern" .dockerignore; then
+              echo "Missing required .dockerignore exclusion: $pattern"
+              exit 1
+            fi
+          done
+
+      - name: Verify secure configuration defaults
+        run: |
+          grep -Fqx 'db.useSsl=true' src/main/resources/config.properties.example
+          grep -Fqx 'db.allowPublicKeyRetrieval=false' src/main/resources/config.properties.example
+          grep -Fqx 'server.bindAddress=127.0.0.1' src/main/resources/config.properties.example
+
+      - name: Verify TLS transport policy
+        run: |
+          grep -F 'setEnabledProtocols(new String[]{"TLSv1.3", "TLSv1.2"})' src/main/java/com/chatapp/server/ChatServer.java
+          grep -F 'setEnabledProtocols(new String[]{"TLSv1.3", "TLSv1.2"})' src/main/java/com/chatapp/client/ChatClientConnection.java
+          grep -F 'parameters.setEndpointIdentificationAlgorithm("HTTPS")' src/main/java/com/chatapp/client/ChatClientConnection.java
+
+      - name: Verify unbounded executor usage remains absent
+        run: |
+          if git grep -nE 'Executors\.newCachedThreadPool' -- 'src/main/java'; then
+            echo 'Use bounded executors or virtual threads instead of unbounded cached thread pools.'
+            exit 1
+          fi
+
+      - name: Verify production code uses structured logging
+        run: |
+          if git grep -nE 'System\.(out|err)\.|printStackTrace\(' -- 'src/main/java'; then
+            echo 'Use the application logging API instead of direct console output or stack-trace printing.'
+            exit 1
+          fi
 
       - name: Set up JDK 21
-        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
         with:
           distribution: temurin
           java-version: '21'
@@ -36,10 +102,33 @@ jobs:
           test -s target/chatapp-server.jar
           unzip -p target/chatapp-server.jar META-INF/MANIFEST.MF | grep -Eq '^Main-Class: com\.chatapp\.server\.ChatServer[[:space:]]*$'
 
+      - name: Verify generated SBOM
+        run: |
+          test -s target/bom.json
+          jq -e '.bomFormat == "CycloneDX" and (.specVersion | type == "string")' target/bom.json >/dev/null
+          jq -e '.metadata.component.group == "com.chatapp" and .metadata.component.name == "realtime-chat-app" and .metadata.component.version == "1.1.0"' target/bom.json >/dev/null
+
       - name: Generate and verify server checksum
         run: |
           sha256sum target/chatapp-server.jar > target/chatapp-server.jar.sha256
           sha256sum --check target/chatapp-server.jar.sha256
+
+      - name: Generate and verify SBOM checksum
+        run: |
+          sha256sum target/bom.json > target/bom.json.sha256
+          sha256sum --check target/bom.json.sha256
+
+      - name: Attest server build artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: target/chatapp-server.jar
+
+      - name: Attest generated SBOM
+        if: github.event_name != 'pull_request'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: target/bom.json
 
       - name: Upload server package
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -51,15 +140,294 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Upload SBOM
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: chatapp-sbom-${{ github.sha }}
+          path: |
+            target/bom.json
+            target/bom.json.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Verify CODEOWNERS coverage
+        run: |
+          test -s .github/CODEOWNERS
+          grep -Fqx '* @hack2ai' .github/CODEOWNERS
+          grep -Fqx '/src/main/java/com/chatapp/server/ @hack2ai' .github/CODEOWNERS
+          grep -Fqx '/src/main/java/com/chatapp/service/ @hack2ai' .github/CODEOWNERS
+          grep -Fqx '/src/main/java/com/chatapp/database/ @hack2ai' .github/CODEOWNERS
+          grep -Fqx '/src/main/java/com/chatapp/socket/ @hack2ai' .github/CODEOWNERS
+          grep -Fqx '/src/main/resources/sql/ @hack2ai' .github/CODEOWNERS
+          grep -Fqx '/.github/workflows/ @hack2ai' .github/CODEOWNERS
+          grep -Fqx '/.github/dependabot.yml @hack2ai' .github/CODEOWNERS
+          grep -Fqx '/Dockerfile @hack2ai' .github/CODEOWNERS
+          grep -Fqx '/docker-compose.yml @hack2ai' .github/CODEOWNERS
+          grep -Fqx '/pom.xml @hack2ai' .github/CODEOWNERS
+          grep -Fqx '/SECURITY.md @hack2ai' .github/CODEOWNERS
+
       - name: Validate Docker Compose configuration
         env:
           CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
           CHATAPP_DB_PASSWORD: ci-app-password
         run: docker compose config --quiet
 
+      - name: Verify Docker Compose security policy
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: |
+          config=$(docker compose config --format json)
+          printf '%s\n' "$config" | jq -e '.services.server.read_only == true' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.init == true' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.restart == "unless-stopped"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.pids_limit == 256' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.mem_limit == "1g"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.cpus == 2' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.cap_drop == ["ALL"]' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.security_opt == ["no-new-privileges:true"]' >/dev/null
+          printf '%s\n' "$config" | jq -e '(.services.server.tmpfs // []) | index("/tmp:rw,noexec,nosuid,size=64m") != null' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.restart == "unless-stopped"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.pids_limit == 256' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.mem_limit == "1g"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.cpus == 2' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.cap_drop == ["ALL"]' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.security_opt == ["no-new-privileges:true"]' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.stop_grace_period == "30s"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.networks.backend.internal == true' >/dev/null
+          printf '%s\n' "$config" | jq -e '(.services.db.ports // []) == []' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.logging.driver == "json-file"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.logging.options["max-size"] == "10m"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.logging.options["max-file"] == "3"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.logging.driver == "json-file"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.logging.options["max-size"] == "10m"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.logging.options["max-file"] == "3"' >/dev/null
+          docker compose config | grep -Fq '127.0.0.1:5050:5050'
+
       - name: Build server container image
-        run: docker build --pull --tag realtime-chat-app:${{ github.sha }} .
+        run: |
+          docker build --pull \
+            --build-arg VCS_REF="${{ github.sha }}" \
+            --build-arg VERSION="${{ github.sha }}" \
+            --tag realtime-chat-app:${{ github.sha }} .
+
+      - name: Verify server image metadata
+        run: |
+          image=realtime-chat-app:${{ github.sha }}
+          test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.title"}}')" = "Real-Time Chat Application"
+          test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.description"}}')" = "Secure Java 21 TCP chat server with MySQL persistence and optional TLS"
+          test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.source"}}')" = "https://github.com/hack2ai/realtime-chat-app"
+          test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.licenses"}}')" = "MIT"
+          test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "${{ github.sha }}"
+          test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.version"}}')" = "${{ github.sha }}"
 
       - name: Verify server image runs as non-root
         run: |
           test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{.Config.User}}')" = "chatapp"
+          test "$(docker run --rm --entrypoint id realtime-chat-app:${{ github.sha }} -u)" = "10001"
+
+      - name: Verify server image entrypoint
+        run: |
+          test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{json .Config.Entrypoint}}')" = '["java","-jar","/app/chatapp-server.jar"]'
+
+      - name: Verify server image port
+        run: |
+          test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{json .Config.ExposedPorts}}')" = '{"5050/tcp":{}}'
+
+      - name: Verify server image healthcheck
+        run: |
+          test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{json .Config.Healthcheck.Test}}')" = '["CMD-SHELL","test -f /tmp/chatapp.ready"]'
+
+      - name: Verify server image stop signal
+        run: |
+          test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{.Config.StopSignal}}')" = "SIGTERM"
+
+      - name: Verify server image filesystem policy
+        run: |
+          test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{.Config.WorkingDir}}')" = "/app"
+          test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{json .Config.Volumes}}')" = '{"/app/data/attachments":{}}'
+
+      - name: Verify server image JVM safety options
+        run: |
+          env_json=$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{json .Config.Env}}')
+          printf '%s\n' "$env_json" | jq -e 'index("JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError") != null' >/dev/null
+
+      - name: Start Docker Compose stack
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: docker compose up -d --build
+
+      - name: Wait for Docker Compose health
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: |
+          for attempt in {1..24}; do
+            statuses=$(docker compose ps --format json)
+            db_status=$(printf '%s\n' "$statuses" | jq -r 'select(.Service == "db") | .Health // "unknown"')
+            server_status=$(printf '%s\n' "$statuses" | jq -r 'select(.Service == "server") | .Health // "unknown"')
+            if [ "$db_status" = "healthy" ] && [ "$server_status" = "healthy" ]; then
+              exit 0
+            fi
+            sleep 5
+          done
+          docker compose ps
+          docker compose logs --no-color server db
+          exit 1
+
+      - name: Verify runtime container hardening
+        run: |
+          container_id=$(docker compose ps -q server)
+          test -n "$container_id"
+          docker inspect "$container_id" | jq -e '.[0].HostConfig.ReadonlyRootfs == true' >/dev/null
+          docker inspect "$container_id" | jq -e '.[0].HostConfig.CapDrop == ["ALL"]' >/dev/null
+          docker inspect "$container_id" | jq -e '.[0].HostConfig.SecurityOpt | index("no-new-privileges:true") != null' >/dev/null
+          docker inspect "$container_id" | jq -e '.[0].HostConfig.PidsLimit == 256' >/dev/null
+          docker inspect "$container_id" | jq -e '.[0].HostConfig.Memory == 1073741824' >/dev/null
+          docker inspect "$container_id" | jq -e '.[0].HostConfig.NanoCpus == 2000000000' >/dev/null
+
+      - name: Verify database container hardening
+        run: |
+          container_id=$(docker compose ps -q db)
+          test -n "$container_id"
+          docker inspect "$container_id" | jq -e '.[0].HostConfig.CapDrop == ["ALL"]' >/dev/null
+          docker inspect "$container_id" | jq -e '.[0].HostConfig.SecurityOpt | index("no-new-privileges:true") != null' >/dev/null
+          docker inspect "$container_id" | jq -e '.[0].HostConfig.PidsLimit == 256' >/dev/null
+          docker inspect "$container_id" | jq -e '.[0].HostConfig.Memory == 1073741824' >/dev/null
+          docker inspect "$container_id" | jq -e '.[0].HostConfig.NanoCpus == 2000000000' >/dev/null
+          docker inspect "$container_id" | jq -e '.[0].HostConfig.NetworkMode | endswith("_backend")' >/dev/null
+
+      - name: Verify attachment volume is writable
+        run: |
+          docker compose exec -T server sh -c 'test -w /app/data/attachments && touch /app/data/attachments/.ci-write-test && rm /app/data/attachments/.ci-write-test'
+
+      - name: Verify server TCP port is reachable
+        run: |
+          timeout 5 bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/5050'
+
+      - name: Smoke test framed PING/PONG protocol
+        run: |
+          python3 - <<'PY'
+          import json
+          import socket
+          import struct
+          import time
+
+          request = json.dumps({
+              "type": "PING",
+              "payload": None,
+              "timestamp": int(time.time() * 1000),
+          }, separators=(",", ":")).encode("utf-8")
+
+          with socket.create_connection(("127.0.0.1", 5050), timeout=5) as sock:
+              sock.sendall(struct.pack(">i", len(request)) + request)
+              header = b""
+              while len(header) < 4:
+                  chunk = sock.recv(4 - len(header))
+                  if not chunk:
+                      raise SystemExit("server closed the connection before the response header was complete")
+                  header += chunk
+              length = struct.unpack(">i", header)[0]
+              if length <= 0 or length > 8 * 1024 * 1024:
+                  raise SystemExit(f"invalid response frame length: {length}")
+              response = b""
+              while len(response) < length:
+                  chunk = sock.recv(length - len(response))
+                  if not chunk:
+                      raise SystemExit("server closed the connection before the response was complete")
+                  response += chunk
+
+          payload = json.loads(response.decode("utf-8"))
+          if payload.get("type") != "PONG":
+              raise SystemExit(f"unexpected response type: {payload.get('type')!r}")
+
+      - name: Smoke test registration and login flow
+        env:
+          CHATAPP_CI_RUN_ID: ${{ github.run_id }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import socket
+          import struct
+          import time
+
+          host = "127.0.0.1"
+          port = 5050
+          run_id = os.environ["CHATAPP_CI_RUN_ID"]
+          username = f"ci_{run_id}"
+          email = f"ci_{run_id}@example.com"
+          password = "CItest1234!"
+
+          def round_trip(message):
+              encoded = json.dumps(message, separators=(",", ":")).encode("utf-8")
+              with socket.create_connection((host, port), timeout=5) as sock:
+                  sock.sendall(struct.pack(">i", len(encoded)) + encoded)
+                  header = b""
+                  while len(header) < 4:
+                      chunk = sock.recv(4 - len(header))
+                      if not chunk:
+                          raise SystemExit("server closed connection before response header was complete")
+                      header += chunk
+                  length = struct.unpack(">i", header)[0]
+                  if length <= 0 or length > 8 * 1024 * 1024:
+                      raise SystemExit(f"invalid response frame length: {length}")
+                  response = b""
+                  while len(response) < length:
+                      chunk = sock.recv(length - len(response))
+                      if not chunk:
+                          raise SystemExit("server closed connection before response was complete")
+                      response += chunk
+              return json.loads(response.decode("utf-8"))
+
+          register = round_trip({
+              "type": "C2S_REGISTER",
+              "payload": {
+                  "username": username,
+                  "email": email,
+                  "password": password,
+                  "confirmPassword": password,
+              },
+              "timestamp": int(time.time() * 1000),
+          })
+          if register.get("type") != "S2C_REGISTER_SUCCESS":
+              raise SystemExit(f"registration failed: {register!r}")
+
+          login = round_trip({
+              "type": "C2S_LOGIN",
+              "payload": {
+                  "usernameOrEmail": username,
+                  "password": password,
+              },
+              "timestamp": int(time.time() * 1000),
+          })
+          if login.get("type") != "S2C_LOGIN_SUCCESS":
+              raise SystemExit(f"login failed: {login!r}")
+          payload = login.get("payload") or {}
+          if payload.get("username") != username or not payload.get("sessionToken"):
+              raise SystemExit(f"login response missing expected identity/session token: {login!r}")
+          PY
+
+      - name: Verify graceful server shutdown
+        run: |
+          container_id=$(docker compose ps -q server)
+          test -n "$container_id"
+          docker stop --time 10 "$container_id"
+          exit_code=$(docker inspect "$container_id" --format '{{.State.ExitCode}}')
+          test "$exit_code" = "0"
+          test "$(docker inspect "$container_id" --format '{{.State.Status}}')" = "exited"
+
+      - name: Show service logs on failure
+        if: failure()
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: docker compose logs --no-color server db
+
+      - name: Tear down Docker Compose stack
+        if: always()
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: docker compose down --volumes --remove-orphans
