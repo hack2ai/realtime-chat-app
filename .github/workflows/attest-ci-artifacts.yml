@@ -51,7 +51,6 @@ jobs:
           test -s artifacts/server/chatapp-server.jar.sha256
           test -s artifacts/sbom/bom.json
           test -s artifacts/sbom/bom.json.sha256
-          (cd artifacts/server && sha256sum --check chatapp-server-${GITHUB_EVENT_WORKFLOW_RUN_HEAD_SHA}.jar.sha256 2>/dev/null || true)
           sha256sum --check artifacts/server/chatapp-server.jar.sha256
           sha256sum --check artifacts/sbom/bom.json.sha256
 
