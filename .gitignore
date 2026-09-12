@@ -13,6 +13,13 @@ src/main/resources/config.properties
 # Runtime attachment data — never commit user files
 /data/
 
+# Local TLS keystores and private keys
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.key
+
 # IDEs
 .idea/
 *.iml
