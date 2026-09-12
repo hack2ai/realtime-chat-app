@@ -113,3 +113,6 @@ jobs:
       - name: Verify attachment directory permissions
         run: |
           docker run --rm --entrypoint sh realtime-chat-app:${{ github.sha }} -c 'test "$(id -u)" = "10001" && test -w /app/data/attachments && ! test -w /app/chatapp-server.jar'
+
+      - name: Verify server image Java runtime
+        run: docker run --rm --entrypoint java realtime-chat-app:${{ github.sha }} -version
