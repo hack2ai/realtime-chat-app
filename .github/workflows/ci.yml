@@ -57,6 +57,20 @@ jobs:
           CHATAPP_DB_PASSWORD: ci-app-password
         run: docker compose config --quiet
 
+      - name: Verify Compose server hardening
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: |
+          docker compose config --format json > /tmp/chatapp-compose.json
+          test "$(jq -r '.services.server.read_only' /tmp/chatapp-compose.json)" = "true"
+          test "$(jq -r '.services.server.init' /tmp/chatapp-compose.json)" = "true"
+          test "$(jq -r '.services.server.security_opt[0]' /tmp/chatapp-compose.json)" = "no-new-privileges:true"
+          test "$(jq -r '.services.server.cap_drop | join(",")' /tmp/chatapp-compose.json)" = "ALL"
+          test "$(jq -r '.services.server.pids_limit' /tmp/chatapp-compose.json)" = "256"
+          test "$(jq -r '.services.server.ulimits.nofile.soft' /tmp/chatapp-compose.json)" = "4096"
+          test "$(jq -r '.services.server.ulimits.nofile.hard' /tmp/chatapp-compose.json)" = "8192"
+
       - name: Build server container image
         run: docker build --pull --tag realtime-chat-app:${{ github.sha }} .
 
