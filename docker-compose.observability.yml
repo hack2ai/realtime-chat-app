@@ -35,6 +35,7 @@ services:
       - --storage.tsdb.path=/prometheus
     volumes:
       - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/alerts.yml:/etc/prometheus/alerts.yml:ro
       - prometheus-data:/prometheus
     secrets:
       - metrics_auth_token
