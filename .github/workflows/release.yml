@@ -55,6 +55,22 @@ jobs:
         run: |
           IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
           docker build --pull --tag "${IMAGE_NAME}:${RELEASE_VERSION}" --tag "${IMAGE_NAME}:latest" .
+
+      - name: Verify release image hardening
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{.Config.User}}')" = "chatapp"
+          test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{json .Config.Entrypoint}}')" = '["java","-jar","/app/chatapp-server.jar"]'
+
+      - name: Push release container
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
           docker push "${IMAGE_NAME}:${RELEASE_VERSION}"
           docker push "${IMAGE_NAME}:latest"
 
