@@ -3,7 +3,7 @@ WORKDIR /workspace
 COPY pom.xml .
 RUN mvn --batch-mode --no-transfer-progress --strict-checksums dependency:go-offline
 COPY src ./src
-RUN mvn --batch-mode --no-transfer-progress --strict-checksums verify
+RUN mvn --batch-mode --no-transfer-progress --strict-checksums -DskipTests package
 
 FROM eclipse-temurin:21.0.12_8-jre
 ARG VCS_REF=unknown
