@@ -17,7 +17,7 @@ LABEL org.opencontainers.image.title="Real-Time Chat Application" \
 ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError"
 WORKDIR /app
 COPY --from=build /workspace/target/chatapp-server.jar /app/chatapp-server.jar
-RUN useradd --system --no-create-home --uid 10001 --shell /usr/sbin/nologin chatapp \
+RUN useradd --user-group --no-create-home --uid 10001 --shell /usr/sbin/nologin chatapp \
     && mkdir -p /app/data/attachments \
     && chown chatapp:chatapp /app/data/attachments \
     && chmod 0755 /app /app/data \
