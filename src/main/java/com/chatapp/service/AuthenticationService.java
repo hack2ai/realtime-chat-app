@@ -27,6 +27,7 @@ public class AuthenticationService {
             "$2y$12$vgm76N96ItnRWvltvIMMReV0FQkritT0LtRtzB/U4fHvqV.aYVY.O";
     private static final int MAX_LOGIN_IDENTIFIER_LENGTH = 254;
     private static final int MAX_BCRYPT_PASSWORD_BYTES = 72;
+    private static final int MAX_SESSION_TOKEN_LENGTH = 64;
 
     private final UserDAO userDAO;
     private final BCryptPasswordEncoder passwordEncoder;
@@ -122,18 +123,31 @@ public class AuthenticationService {
 
         String token = generateSessionToken();
         String tokenDigest = digestToken(token);
-        LocalDateTime expiry = LocalDateTime.now().plusHours(AppConfig.getSessionExpiryHours());
-        Session session = new Session(user.getId(), expiry);
-        if (activeTokenByUser.putIfAbsent(user.getId(), tokenDigest) != null) {
-            throw new AuthenticationException("This account is already connected.");
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime expiry = now.plusHours(AppConfig.getSessionExpiryHours());
+        long expiryNanos = System.nanoTime() + java.time.Duration.ofHours(AppConfig.getSessionExpiryHours()).toNanos();
+
+        String existingDigest = activeTokenByUser.get(user.getId());
+        if (existingDigest != null) {
+            Session existingSession = activeSessions.get(existingDigest);
+            if (existingSession != null && isExpired(existingSession)) {
+                expireSession(existingDigest, existingSession);
+            }
         }
-        activeSessions.put(tokenDigest, session);
-        try {
-            userDAO.updateStatus(user.getId(), User.Status.ONLINE);
-        } catch (RuntimeException e) {
-            activeSessions.remove(tokenDigest, session);
-            activeTokenByUser.remove(user.getId(), tokenDigest);
-            throw e;
+
+        Session session = new Session(user.getId(), expiry, expiryNanos);
+        synchronized (activeTokenByUser) {
+            if (activeTokenByUser.putIfAbsent(user.getId(), tokenDigest) != null) {
+                throw new AuthenticationException("This account is already connected.");
+            }
+            activeSessions.put(tokenDigest, session);
+            try {
+                userDAO.updateStatus(user.getId(), User.Status.ONLINE);
+            } catch (RuntimeException e) {
+                activeSessions.remove(tokenDigest, session);
+                activeTokenByUser.remove(user.getId(), tokenDigest);
+                throw e;
+            }
         }
         return new LoginResult(user, token, expiry);
     }
@@ -148,6 +162,7 @@ public class AuthenticationService {
 
     public void logout(String sessionToken) {
         if (sessionToken == null) return;
+        if (sessionToken.length() > MAX_SESSION_TOKEN_LENGTH) return;
         String tokenDigest = digestToken(sessionToken);
         Session session = activeSessions.remove(tokenDigest);
         if (session != null) {
@@ -157,15 +172,37 @@ public class AuthenticationService {
     }
 
     public int validateSession(String sessionToken) throws AuthenticationException {
-        if (sessionToken == null || sessionToken.isBlank()) throw invalidSession();
+        if (sessionToken == null || sessionToken.isBlank() || sessionToken.length() > MAX_SESSION_TOKEN_LENGTH) {
+            throw invalidSession();
+        }
         String tokenDigest = digestToken(sessionToken);
         Session session = activeSessions.get(tokenDigest);
         if (session == null) throw invalidSession();
-        if (!LocalDateTime.now().isBefore(session.expiresAt)) {
+        if (isExpired(session)) {
             expireSession(tokenDigest, session);
             throw invalidSession();
         }
         return session.userId;
+    }
+
+    /** Removes expired bearer-token sessions that have not been touched since expiry. */
+    public int cleanupExpiredSessions() {
+        int expiredCount = 0;
+        for (Map.Entry<String, Session> entry : activeSessions.entrySet()) {
+            Session session = entry.getValue();
+            if (!isExpired(session)) continue;
+            if (activeSessions.remove(entry.getKey(), session)) {
+                activeTokenByUser.remove(session.userId, entry.getKey());
+                markOfflineSafely(session.userId);
+                expiredCount++;
+            }
+        }
+        return expiredCount;
+    }
+
+    private boolean isExpired(Session session) {
+        // Session expiry is enforced with monotonic time so wall-clock changes cannot extend a session.
+        return System.nanoTime() - session.expiresAtNanos >= 0;
     }
 
     private void expireSession(String tokenDigest, Session session) {
@@ -181,15 +218,20 @@ public class AuthenticationService {
      * while the next successful lifecycle operation can repair persisted status.
      */
     private void markOfflineSafely(int userId) {
-        try {
-            userDAO.updateStatus(userId, User.Status.OFFLINE);
-        } catch (RuntimeException e) {
-            logger.warn("Failed to persist offline status for user {} ({}).", userId, e.getClass().getSimpleName());
-        }
-        try {
-            userDAO.updateLastSeen(userId, LocalDateTime.now());
-        } catch (RuntimeException e) {
-            logger.warn("Failed to persist last-seen timestamp for user {} ({}).", userId, e.getClass().getSimpleName());
+        synchronized (activeTokenByUser) {
+            if (activeTokenByUser.containsKey(userId)) {
+                return;
+            }
+            try {
+                userDAO.updateStatus(userId, User.Status.OFFLINE);
+            } catch (RuntimeException e) {
+                logger.warn("Failed to persist offline status for user {} ({}).", userId, e.getClass().getSimpleName());
+            }
+            try {
+                userDAO.updateLastSeen(userId, LocalDateTime.now());
+            } catch (RuntimeException e) {
+                logger.warn("Failed to persist last-seen timestamp for user {} ({}).", userId, e.getClass().getSimpleName());
+            }
         }
     }
 
@@ -213,6 +255,6 @@ public class AuthenticationService {
         }
     }
 
-    private record Session(int userId, LocalDateTime expiresAt) {}
+    private record Session(int userId, LocalDateTime expiresAt, long expiresAtNanos) {}
     public record LoginResult(User user, String sessionToken, LocalDateTime expiresAt) {}
 }

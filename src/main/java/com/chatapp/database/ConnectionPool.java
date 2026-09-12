@@ -20,20 +20,54 @@ public final class ConnectionPool {
     private static final Logger logger = LoggerFactory.getLogger(ConnectionPool.class);
     private static volatile ConnectionPool instance;
 
+    @FunctionalInterface
+    interface ConnectionFactory {
+        Connection open() throws SQLException;
+    }
+
     private final BlockingQueue<Connection> availableConnections;
     private final Set<Connection> trackedConnections = ConcurrentHashMap.newKeySet();
     private final int maxSize;
     private final int connectionTimeoutMs;
+    private final ConnectionFactory connectionFactory;
     private final AtomicInteger totalCreated = new AtomicInteger();
     private final AtomicBoolean shutdown = new AtomicBoolean();
 
     private ConnectionPool() {
-        this.maxSize = AppConfig.getDbPoolMaxSize();
-        this.connectionTimeoutMs = AppConfig.getDbConnectionTimeoutMs();
+        this(
+                AppConfig.getDbPoolMinIdle(),
+                AppConfig.getDbPoolMaxSize(),
+                AppConfig.getDbConnectionTimeoutMs(),
+                () -> DriverManager.getConnection(AppConfig.getJdbcUrl(), AppConfig.getDbUser(), AppConfig.getDbPassword())
+        );
+    }
+
+    ConnectionPool(int minIdle, int maxSize, int connectionTimeoutMs, ConnectionFactory connectionFactory) {
+        if (minIdle < 0 || maxSize <= 0 || minIdle > maxSize || connectionTimeoutMs < 0 || connectionFactory == null) {
+            throw new IllegalArgumentException("Invalid connection pool configuration.");
+        }
+        this.maxSize = maxSize;
+        this.connectionTimeoutMs = connectionTimeoutMs;
+        this.connectionFactory = connectionFactory;
         this.availableConnections = new ArrayBlockingQueue<>(maxSize);
-        int minIdle = AppConfig.getDbPoolMinIdle();
-        for (int i = 0; i < minIdle; i++) availableConnections.offer(createConnection());
+        try {
+            for (int i = 0; i < minIdle; i++) availableConnections.offer(createConnection());
+        } catch (RuntimeException e) {
+            cleanupStartupConnections();
+            throw e;
+        }
         logger.info("Connection pool initialized with {} idle connections (max size {})", minIdle, maxSize);
+    }
+
+    private void cleanupStartupConnections() {
+        Connection conn;
+        while ((conn = availableConnections.poll()) != null) {
+            trackedConnections.remove(conn);
+            closeQuietly(conn);
+        }
+        trackedConnections.forEach(this::closeQuietly);
+        trackedConnections.clear();
+        totalCreated.set(0);
     }
 
     public static ConnectionPool getInstance() {
@@ -45,10 +79,16 @@ public final class ConnectionPool {
         return instance;
     }
 
+    /** Shuts down the singleton only when it has already been initialized. */
+    public static void shutdownInstance() {
+        ConnectionPool current = instance;
+        if (current != null) current.shutdown();
+    }
+
     private Connection createConnection() {
         if (shutdown.get()) throw new IllegalStateException("Database connection pool is shut down.");
         try {
-            Connection conn = DriverManager.getConnection(AppConfig.getJdbcUrl(), AppConfig.getDbUser(), AppConfig.getDbPassword());
+            Connection conn = connectionFactory.open();
             if (shutdown.get()) {
                 closeQuietly(conn);
                 throw new IllegalStateException("Database connection pool is shut down.");
@@ -102,7 +142,7 @@ public final class ConnectionPool {
             throw new SQLException("Database connection pool is shut down.");
         }
         try {
-            Connection conn = DriverManager.getConnection(AppConfig.getJdbcUrl(), AppConfig.getDbUser(), AppConfig.getDbPassword());
+            Connection conn = connectionFactory.open();
             if (shutdown.get()) {
                 closeQuietly(conn);
                 totalCreated.decrementAndGet();
@@ -135,6 +175,18 @@ public final class ConnectionPool {
         }
     }
 
+    public int getTotalConnections() {
+        return totalCreated.get();
+    }
+
+    public int getIdleConnections() {
+        return availableConnections.size();
+    }
+
+    public int getMaxSize() {
+        return maxSize;
+    }
+
     private boolean isValid(Connection conn) {
         try { return conn != null && !conn.isClosed() && conn.isValid(2); }
         catch (SQLException e) { return false; }
@@ -145,15 +197,11 @@ public final class ConnectionPool {
         catch (SQLException e) { logger.warn("Error closing database connection ({}).", e.getClass().getSimpleName()); }
     }
 
-    /** Idempotently closes all currently idle connections. Borrowed connections are rejected after shutdown. */
+    /** Idempotently closes every tracked connection, including connections currently borrowed by callers. */
     public void shutdown() {
         if (!shutdown.compareAndSet(false, true)) return;
-        Connection conn;
-        while ((conn = availableConnections.poll()) != null) {
-            trackedConnections.remove(conn);
-            closeQuietly(conn);
-            totalCreated.updateAndGet(current -> Math.max(0, current - 1));
-        }
+        for (Connection conn : trackedConnections.toArray(Connection[]::new)) discardConnection(conn);
+        availableConnections.clear();
         logger.info("Connection pool shut down.");
     }
 }

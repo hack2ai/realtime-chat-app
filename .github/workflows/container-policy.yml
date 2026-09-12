@@ -1,0 +1,244 @@
+name: Container Policy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: container-policy-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  container-policy:
+    name: Check container runtime
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Verify immutable workflow actions
+        run: |
+          if grep -RInP '^\s*uses:\s*[^@#\s]+@(?![0-9a-fA-F]{40}\b)[^#\s]+' .github/workflows; then
+            echo 'All GitHub Actions must be pinned to a 40-character commit SHA.'
+            exit 1
+          fi
+
+      - name: Reject mutable latest container images
+        run: |
+          if grep -nE '^\s*FROM\s+[^[:space:]]+:latest([[:space:]]|$)' Dockerfile; then
+            echo 'Docker base images must not use the mutable :latest tag.'
+            exit 1
+          fi
+          if grep -nE '^\s*image:\s*[^[:space:]@]+:latest([[:space:]]|$)' docker-compose.yml; then
+            echo 'Compose service images must not use the mutable :latest tag.'
+            exit 1
+          fi
+
+      - name: Require non-root runtime user
+        run: |
+          if ! grep -nE '^USER\s+chatapp\s*$' Dockerfile; then
+            echo 'The final Docker image must declare USER chatapp.'
+            exit 1
+          fi
+          if grep -nE '^USER\s+root\s*$' Dockerfile; then
+            echo 'Dockerfile must not explicitly switch the runtime back to root.'
+            exit 1
+          fi
+
+      - name: Require stable runtime identity
+        run: |
+          if ! grep -nE 'useradd --system .*--uid 10001 .*chatapp' Dockerfile; then
+            echo 'The chatapp runtime user must use the fixed UID 10001.'
+            exit 1
+          fi
+
+      - name: Require safe runtime directives
+        run: |
+          if ! grep -nE '^STOPSIGNAL\s+SIGTERM\s*$' Dockerfile; then
+            echo 'Dockerfile must declare STOPSIGNAL SIGTERM for graceful server shutdown.'
+            exit 1
+          fi
+          if ! grep -nF 'HEALTHCHECK --interval=10s --timeout=3s --retries=5 --start-period=10s CMD java -cp /app/chatapp-server.jar com.chatapp.server.ServerHealthCheck' Dockerfile; then
+            echo 'Dockerfile must declare the expected readiness healthcheck.'
+            exit 1
+          fi
+          if ! grep -nF 'VOLUME ["/app/data/attachments"]' Dockerfile; then
+            echo 'Dockerfile must declare the attachment storage volume at the expected path.'
+            exit 1
+          fi
+          if ! grep -nF 'ENTRYPOINT ["java", "-jar", "/app/chatapp-server.jar"]' Dockerfile; then
+            echo 'Dockerfile must start the packaged server JAR with the expected Java entrypoint.'
+            exit 1
+          fi
+
+      - name: Require immutable server binary
+        run: |
+          if ! grep -nF 'chown root:root /app/chatapp-server.jar' Dockerfile; then
+            echo 'The server JAR must remain owned by root in the runtime image.'
+            exit 1
+          fi
+          if ! grep -nF 'chmod 0444 /app/chatapp-server.jar' Dockerfile; then
+            echo 'The server JAR must be read-only in the runtime image.'
+            exit 1
+          fi
+
+      - name: Require JVM safety options
+        run: |
+          if ! grep -nF 'ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError"' Dockerfile; then
+            echo 'Dockerfile must configure bounded JVM memory usage and exit cleanly on out-of-memory errors.'
+            exit 1
+          fi
+
+      - name: Require Compose runtime resource policy
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: |
+          set -euo pipefail
+          config=$(docker compose config --format json)
+
+          assert_jq() {
+            local description="$1"
+            local expression="$2"
+            if ! printf '%s\n' "$config" | jq -e "$expression" >/dev/null; then
+              echo "Compose policy assertion failed: $description"
+              exit 1
+            fi
+          }
+
+          assert_jq 'server read_only is true' '.services.server.read_only == true'
+          assert_jq 'server init is true' '.services.server.init == true'
+          assert_jq 'server restart policy is unless-stopped' '.services.server.restart == "unless-stopped"'
+          assert_jq 'server pids_limit is 256' '.services.server.pids_limit == 256'
+          assert_jq 'server mem_limit is 1 GiB' '((.services.server.mem_limit | tostring) == "1g") or (.services.server.mem_limit == 1073741824)'
+          assert_jq 'server memswap_limit is 1 GiB' '((.services.server.memswap_limit | tostring) == "1g") or (.services.server.memswap_limit == 1073741824)'
+          assert_jq 'server CPU limit is 2' '(.services.server.cpus | tonumber) == 2'
+          assert_jq 'server drops all capabilities' '.services.server.cap_drop == ["ALL"]'
+          assert_jq 'server enables no-new-privileges' '.services.server.security_opt == ["no-new-privileges:true"]'
+          assert_jq 'server uses hardened /tmp tmpfs' '(.services.server.tmpfs // []) | index("/tmp:rw,noexec,nosuid,size=64m") != null'
+          assert_jq 'database restart policy is unless-stopped' '.services.db.restart == "unless-stopped"'
+          assert_jq 'database pids_limit is 256' '.services.db.pids_limit == 256'
+          assert_jq 'database mem_limit is 1 GiB' '((.services.db.mem_limit | tostring) == "1g") or (.services.db.mem_limit == 1073741824)'
+          assert_jq 'database memswap_limit is 1 GiB' '((.services.db.memswap_limit | tostring) == "1g") or (.services.db.memswap_limit == 1073741824)'
+          assert_jq 'database CPU limit is 2' '(.services.db.cpus | tonumber) == 2'
+          assert_jq 'database drops all capabilities' '.services.db.cap_drop == ["ALL"]'
+          assert_jq 'database enables no-new-privileges' '.services.db.security_opt == ["no-new-privileges:true"]'
+          assert_jq 'database stop grace period is 30s' '.services.db.stop_grace_period == "30s"'
+
+      - name: Require Compose database privilege protection
+        run: |
+          db_block=$(sed -n '/^  db:/,/^  server:/p' docker-compose.yml)
+          printf '%s\n' "$db_block" | grep -q '^    security_opt:$' || {
+            echo 'The Compose database service must configure no-new-privileges.'
+            exit 1
+          }
+          printf '%s\n' "$db_block" | grep -q 'no-new-privileges:true' || {
+            echo 'The Compose database service must use no-new-privileges:true.'
+            exit 1
+          }
+          printf '%s\n' "$db_block" | grep -q '^    cap_drop:$' || {
+            echo 'The Compose database service must configure capability dropping.'
+            exit 1
+          }
+          printf '%s\n' "$db_block" | grep -q '^      - ALL$' || {
+            echo 'The Compose database service must drop all Linux capabilities.'
+            exit 1
+          }
+
+      - name: Require secret-backed database configuration
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: |
+          config=$(docker compose config --format json)
+          printf '%s\n' "$config" | jq -e '.services.db.environment.MYSQL_ROOT_PASSWORD_FILE == "/run/secrets/mysql_root_password"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.environment.MYSQL_PASSWORD_FILE == "/run/secrets/db_password"' >/dev/null
+          printf '%s\n' "$config" | jq -e '(.services.db.secrets // []) | map(.source) | sort == ["db_password", "mysql_root_password"]' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.healthcheck.test[0] == "CMD-SHELL"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.healthcheck.test[1] | contains("/run/secrets/db_password") and contains("-u chatapp_user") and contains("mysqladmin ping")' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.environment.CHATAPP_DB_PASSWORD_FILE == "/run/secrets/db_password"' >/dev/null
+          printf '%s\n' "$config" | jq -e '(.services.server.secrets // []) | map(.source) == ["db_password"]' >/dev/null
+          printf '%s\n' "$config" | jq -e '(.services.server.environment | keys | any(. == "CHATAPP_DB_PASSWORD")) | not' >/dev/null
+
+      - name: Require bounded container logging
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: |
+          config=$(docker compose config --format json)
+          printf '%s\n' "$config" | jq -e '.services.server.logging.driver == "json-file"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.logging.options["max-size"] == "10m"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.logging.options["max-file"] == "3"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.logging.driver == "json-file"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.logging.options["max-size"] == "10m"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.logging.options["max-file"] == "3"' >/dev/null
+
+      - name: Require localhost-only server publishing
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: |
+          config=$(docker compose config --format json)
+          printf '%s\n' "$config" | jq -e '.networks.backend.internal == true' >/dev/null
+          printf '%s\n' "$config" | jq -e '(.services.db.ports // []) == []' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.ports[0].host_ip == "127.0.0.1"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.ports[0] | ((.target | tostring) == "5050" and (.published | tostring) == "5050" and .protocol == "tcp")' >/dev/null
+
+      - name: Reject tracked credential patterns
+        run: |
+          set +e
+          matches=$(git grep -nEI 'BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9_]{20,}' -- ':!target' ':!*.md')
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ] && [ -n "$matches" ]; then
+            echo 'Tracked source files contain a private-key header or credential-token pattern:'
+            printf '%s\n' "$matches"
+            exit 1
+          fi
+
+      - name: Reject remote Dockerfile fetches and piped installers
+        run: |
+          if grep -nE '^\s*ADD\s+https?://|\b(curl|wget)[[:space:]].*\|[[:space:]]*(sh|bash)([[:space:]]|$)' Dockerfile; then
+            echo 'Dockerfile must not fetch remote content or pipe network downloads into a shell.'
+            exit 1
+          fi
+
+      - name: Build runtime image
+        run: docker build --pull --tag realtime-chat-app:container-policy .
+
+      - name: Verify runtime image excludes build tooling and source tree
+        run: |
+          docker run --rm --entrypoint sh realtime-chat-app:container-policy -c '
+            test ! -e /workspace &&
+            test ! -e /app/src &&
+            ! command -v mvn
+          '
+
+      - name: Verify runtime image identity and entrypoint
+        run: |
+          image=realtime-chat-app:container-policy
+          test "$(docker image inspect "$image" --format '{{.Config.User}}')" = "chatapp"
+          test "$(docker run --rm --entrypoint id "$image" -u)" = "10001"
+          test "$(docker image inspect "$image" --format '{{json .Config.Entrypoint}}')" = '["java","-jar","/app/chatapp-server.jar"]'
+
+      - name: Verify runtime image healthcheck and shutdown policy
+        run: |
+          image=realtime-chat-app:container-policy
+          test "$(docker image inspect "$image" --format '{{json .Config.Healthcheck.Test}}')" = '["CMD-SHELL","java -cp /app/chatapp-server.jar com.chatapp.server.ServerHealthCheck"]'
+          test "$(docker image inspect "$image" --format '{{.Config.StopSignal}}')" = "SIGTERM"
+          test "$(docker image inspect "$image" --format '{{json .Config.ExposedPorts}}')" = '{"5050/tcp":{}}'
+
+      - name: Verify runtime image filesystem protection
+        run: |
+          image=realtime-chat-app:container-policy
+          test "$(docker image inspect "$image" --format '{{json .Config.Volumes}}')" = '{"/app/data/attachments":{}}'
+          test "$(docker run --rm --entrypoint stat "$image" -c '%u:%g:%a' /app/chatapp-server.jar)" = "0:0:444"

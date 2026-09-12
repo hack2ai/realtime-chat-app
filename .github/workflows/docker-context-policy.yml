@@ -1,0 +1,65 @@
+name: Docker Context Policy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-context-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Verify required Docker ignore rules
+        run: |
+          required_patterns=(
+            '.git'
+            '.github'
+            'target'
+            '/data'
+            '*.log'
+            '.env'
+            '.env.*'
+            'config.properties'
+            '*.p12'
+            '*.pfx'
+            '*.jks'
+            '*.key'
+            '*.pem'
+            '*.sqlite'
+            '*.sqlite3'
+            '*.db'
+          )
+          for pattern in "${required_patterns[@]}"; do
+            if ! grep -Fqx "$pattern" .dockerignore; then
+              echo "Missing required .dockerignore exclusion: $pattern"
+              exit 1
+            fi
+          done
+
+      - name: Reject risky Dockerfile download instructions
+        run: |
+          if grep -nE '^\s*ADD\s+https?://|^\s*RUN\s+.*(curl|wget)[^\n]*(\||;|&&)[^\n]*(sh|bash)' Dockerfile; then
+            echo 'Dockerfiles must not fetch remote content directly or pipe downloads into a shell.'
+            exit 1
+          fi
+
+      - name: Reject floating Docker image tags
+        run: |
+          if grep -nE '^\s*FROM\s+[^[:space:]#]+:latest([[:space:]]|$)' Dockerfile; then
+            echo 'Docker base images must not use the mutable :latest tag.'
+            exit 1
+          fi

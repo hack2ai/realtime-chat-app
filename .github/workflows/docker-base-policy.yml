@@ -1,0 +1,32 @@
+name: Docker Base Policy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-base-policy-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify Java base images
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Verify Dockerfile Java base images
+        run: |
+          grep -Fqx 'FROM maven:3.9.11-eclipse-temurin-21 AS build' Dockerfile
+          test "$(grep '^FROM ' Dockerfile | tail -n 1)" = 'FROM eclipse-temurin:21-jre'

@@ -51,8 +51,7 @@ public class ChatService {
 
     public boolean markDelivered(int receiverId, long messageId) throws ValidationException {
         if (messageId <= 0) throw new ValidationException("Invalid message id.");
-        privateMessageDAO.markDelivered(messageId, receiverId);
-        return true;
+        return privateMessageDAO.markDelivered(messageId, receiverId);
     }
 
     public OptionalInt findMessageSender(int receiverId, long messageId) throws ValidationException {

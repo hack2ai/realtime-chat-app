@@ -16,12 +16,17 @@ public final class AttachmentService {
     private final AttachmentStorageService storage;
     private final AttachmentDAO dao;
     private final UserDAO userDAO;
+    private final Runnable rateLimitRecorder;
     private final RequestRateLimiter downloadRateLimiter =
             new RequestRateLimiter(MAX_DOWNLOADS_PER_MINUTE, Duration.ofMinutes(1), 10_000);
 
-    public AttachmentService() { this(new AttachmentStorageService(), new AttachmentDAO(), new UserDAO()); }
+    public AttachmentService() { this(new AttachmentStorageService(), new AttachmentDAO(), new UserDAO(), () -> { }); }
     public AttachmentService(AttachmentStorageService storage, AttachmentDAO dao, UserDAO userDAO) {
+        this(storage, dao, userDAO, () -> { });
+    }
+    public AttachmentService(AttachmentStorageService storage, AttachmentDAO dao, UserDAO userDAO, Runnable rateLimitRecorder) {
         this.storage=storage; this.dao=dao; this.userDAO=userDAO;
+        this.rateLimitRecorder = rateLimitRecorder == null ? () -> { } : rateLimitRecorder;
     }
 
     public PrivateFileEvent upload(int senderId, int receiverId, String fileName, String contentType, String dataBase64, String senderUsername)
@@ -41,6 +46,7 @@ public final class AttachmentService {
 
     public DownloadedFile download(int userId, String fileId) throws ValidationException {
         if (userId <= 0 || !downloadRateLimiter.allow(Integer.toString(userId))) {
+            if (userId > 0) rateLimitRecorder.run();
             throw new ValidationException("Too many file downloads. Please try again later.");
         }
         AttachmentRecord record=dao.findForUser(fileId,userId).orElseThrow(()->new ValidationException("Attachment not found."));

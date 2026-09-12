@@ -1,0 +1,152 @@
+name: Source Policy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: source-policy-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-policy:
+    name: Source safety policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Reject unsafe debug and deserialization APIs
+        run: |
+          if git grep -nE 'printStackTrace|System\.(out|err)|ObjectInputStream|Runtime\.getRuntime\(\)\.exec\(|new[[:space:]]+ProcessBuilder([[:space:](]|\.)' -- src/main/java; then
+            echo 'Unsafe debug, console, object-deserialization, or process-execution APIs must not be introduced into production source.'
+            exit 1
+          fi
+
+      - name: Reject private key material
+        run: |
+          if git grep -nE -- '-----BEGIN ([A-Z0-9]+ )?PRIVATE KEY-----' -- ':!src/test/resources'; then
+            echo 'Private key material must not be committed.'
+            exit 1
+          fi
+
+      - name: Require prepared JDBC statements
+        run: |
+          if git grep -nE '(^|[^A-Za-z])createStatement[[:space:]]*\(|(^|[^A-Za-z])Statement[[:space:]]+[A-Za-z_]' -- src/main/java; then
+            echo 'Production database access must use PreparedStatement rather than raw JDBC Statement APIs.'
+            exit 1
+          fi
+
+      - name: Reject weak cryptographic hashes
+        run: |
+          if git grep -nEi 'MessageDigest\.getInstance\("(MD5|SHA-1)"\)' -- src/main/java || git grep -nEi '\b(MD5|SHA-1)\b' -- src/main/java; then
+            echo 'Do not introduce MD5 or SHA-1 into production cryptographic code.'
+            exit 1
+          fi
+
+      - name: Require immutable workflow actions
+        run: |
+          set -eu
+          if grep -RInP '^\s*uses:\s*[^@#\s]+@(?![0-9a-fA-F]{40}\b)[^#\s]+' .github/workflows; then
+            echo 'All GitHub Actions must be pinned to a 40-character commit SHA.'
+            exit 1
+          fi
+
+      - name: Require explicit workflow permissions
+        run: |
+          set -eu
+          failures=0
+          for path in .github/workflows/*.y*ml; do
+            if ! grep -q '^permissions:' "$path"; then
+              echo "$path: missing explicit workflow-level permissions"
+              failures=1
+            fi
+          done
+          if [ "$failures" -ne 0 ]; then
+            exit 1
+          fi
+          echo 'All workflows declare explicit workflow-level permissions.'
+
+      - name: Require timeouts on runner-based workflow jobs
+        run: |
+          set -eu
+          python3 - <<'PY'
+          from pathlib import Path
+
+          failures = []
+          for path in sorted(Path('.github/workflows').glob('*.y*ml')):
+              lines = path.read_text(encoding='utf-8').splitlines()
+              in_jobs = False
+              current = None
+              has_runner = False
+              has_timeout = False
+
+              def finish():
+                  if current and has_runner and not has_timeout:
+                      failures.append(f'{path}: job {current!r} has runs-on but no timeout-minutes')
+
+              for line in lines:
+                  if line == 'jobs:':
+                      finish()
+                      in_jobs = True
+                      current = None
+                      has_runner = False
+                      has_timeout = False
+                      continue
+
+                  if not in_jobs:
+                      continue
+
+                  if line and not line.startswith(' '):
+                      finish()
+                      in_jobs = False
+                      current = None
+                      has_runner = False
+                      has_timeout = False
+                      continue
+
+                  if line.startswith('  ') and not line.startswith('    ') and line.rstrip().endswith(':'):
+                      finish()
+                      current = line.strip()[:-1]
+                      has_runner = False
+                      has_timeout = False
+                      continue
+
+                  if current is None:
+                      continue
+
+                  if line.startswith('    runs-on:'):
+                      has_runner = True
+                  elif line.startswith('    timeout-minutes:'):
+                      has_timeout = True
+
+              finish()
+
+          if failures:
+              print('\n'.join(failures))
+              raise SystemExit(1)
+          print('All runner-based workflow jobs declare timeout-minutes.')
+          PY
+
+      - name: Require workflow concurrency controls
+        run: |
+          set -eu
+          failures=0
+          for path in .github/workflows/*.y*ml; do
+            if ! grep -q '^concurrency:' "$path"; then
+              echo "$path: missing workflow-level concurrency policy"
+              failures=1
+            fi
+          done
+          if [ "$failures" -ne 0 ]; then
+            exit 1
+          fi
+          echo 'All workflows declare workflow-level concurrency controls.'

@@ -1,0 +1,56 @@
+services:
+  server:
+    environment:
+      CHATAPP_METRICS_ENABLED: "true"
+      # The endpoint listens on the container interface so the host mapping below
+      # can expose it only on localhost. Remote metrics access requires the
+      # explicitly supplied bearer token below.
+      CHATAPP_METRICS_BINDADDRESS: 0.0.0.0
+      CHATAPP_METRICS_ALLOWREMOTE: "true"
+      CHATAPP_METRICS_AUTHTOKEN: ${CHATAPP_METRICS_AUTH_TOKEN:?set CHATAPP_METRICS_AUTH_TOKEN}
+    ports:
+      - "127.0.0.1:9100:9100"
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    restart: unless-stopped
+    networks:
+      - backend
+    read_only: true
+    pids_limit: 128
+    mem_limit: 512m
+    memswap_limit: 512m
+    cpus: 1.0
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    depends_on:
+      server:
+        condition: service_healthy
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    secrets:
+      - metrics_auth_token
+    ports:
+      - "127.0.0.1:9090:9090"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+secrets:
+  metrics_auth_token:
+    environment: CHATAPP_METRICS_AUTH_TOKEN
+
+volumes:
+  prometheus-data:

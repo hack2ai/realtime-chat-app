@@ -1,0 +1,76 @@
+name: Observability Compose
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docker-compose.yml'
+      - 'docker-compose.observability.yml'
+      - 'observability/**'
+      - '.github/workflows/observability-config.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'docker-compose.yml'
+      - 'docker-compose.observability.yml'
+      - 'observability/**'
+      - '.github/workflows/observability-config.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: observability-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check whitespace errors
+        run: git diff --check
+
+      - name: Verify immutable workflow actions
+        run: |
+          if grep -RInP '^\s*uses:\s*[^@#\s]+@(?![0-9a-fA-F]{40}\b)[^#\s]+' .github/workflows; then
+            echo 'All GitHub Actions must be pinned to a 40-character commit SHA.'
+            exit 1
+          fi
+
+      - name: Validate observability Compose configuration
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+          CHATAPP_METRICS_AUTH_TOKEN: ci-metrics-token
+        run: docker compose -f docker-compose.yml -f docker-compose.observability.yml config --quiet
+
+      - name: Verify observability security policy
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+          CHATAPP_METRICS_AUTH_TOKEN: ci-metrics-token
+        run: |
+          config=$(docker compose -f docker-compose.yml -f docker-compose.observability.yml config --format json)
+          printf '%s\n' "$config" | jq -e '.services.prometheus.read_only == true' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.prometheus.pids_limit == 128' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.prometheus.mem_limit == "512m"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.prometheus.memswap_limit == "512m"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.prometheus.cpus == 1' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.prometheus.cap_drop == ["ALL"]' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.prometheus.security_opt == ["no-new-privileges:true"]' >/dev/null
+          printf '%s\n' "$config" | jq -e '(.services.prometheus.tmpfs // []) | index("/tmp:rw,noexec,nosuid,size=32m") != null' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.prometheus.logging.driver == "json-file"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.prometheus.logging.options["max-size"] == "10m"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.prometheus.logging.options["max-file"] == "3"' >/dev/null
+          printf '%s\n' "$config" | jq -e '(.services.prometheus.ports // []) == ["127.0.0.1:9090:9090"]' >/dev/null
+          printf '%s\n' "$config" | jq -e '(.services.server.ports // []) | index("127.0.0.1:9100:9100") != null' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.prometheus.depends_on.server.condition == "service_healthy"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.prometheus.secrets == ["metrics_auth_token"]' >/dev/null
+          printf '%s\n' "$config" | jq -e '.secrets.metrics_auth_token.environment == "CHATAPP_METRICS_AUTH_TOKEN"' >/dev/null

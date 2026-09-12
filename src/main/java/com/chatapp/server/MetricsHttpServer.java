@@ -1,0 +1,200 @@
+package com.chatapp.server;
+
+import com.chatapp.config.AppConfig;
+import com.chatapp.database.ConnectionPool;
+import com.chatapp.service.RequestRateLimiter;
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpServer;
+
+import java.io.IOException;
+import java.lang.management.ManagementFactory;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+
+/** Optional read-only HTTP endpoint for Prometheus-style operational metrics. */
+public final class MetricsHttpServer {
+    private static final RequestRateLimiter METRICS_RATE_LIMITER =
+            new RequestRateLimiter(60, java.time.Duration.ofMinutes(1), 10_000);
+    private static final int METRICS_CORE_THREADS = 2;
+    private static final int METRICS_MAX_THREADS = 16;
+    private static final int METRICS_QUEUE_CAPACITY = 64;
+    private static final String AUTHORIZATION_HEADER = "Authorization";
+    private static final String BEARER_PREFIX = "Bearer ";
+
+    private final ServerMetrics metrics;
+    private final ChatServer server;
+    private HttpServer httpServer;
+    private ExecutorService executor;
+
+    public MetricsHttpServer(ServerMetrics metrics, ChatServer server) {
+        this.metrics = metrics;
+        this.server = server;
+    }
+
+    public synchronized void start() throws IOException {
+        if (httpServer != null) return;
+        if (!AppConfig.isMetricsEnabled()) return;
+
+        InetAddress address = InetAddress.getByName(AppConfig.getMetricsBindAddress());
+        boolean remoteExposure = !address.isLoopbackAddress();
+        String authToken = AppConfig.getMetricsAuthToken();
+        if (!isRemoteExposureAllowed(remoteExposure, AppConfig.isMetricsRemoteAllowed(), authToken)) {
+            if (remoteExposure && !AppConfig.isMetricsRemoteAllowed()) {
+                throw new IOException("Remote metrics exposure is disabled. Enable metrics.allowRemote=true when intentionally exposing the metrics endpoint.");
+            }
+            throw new IOException("Remote metrics exposure requires metrics.authToken to be configured.");
+        }
+
+        HttpServer candidate = null;
+        ThreadPoolExecutor candidateExecutor = null;
+        try {
+            candidate = HttpServer.create(new InetSocketAddress(address, AppConfig.getMetricsPort()), 0);
+            candidateExecutor = new ThreadPoolExecutor(
+                    METRICS_CORE_THREADS,
+                    METRICS_MAX_THREADS,
+                    30L,
+                    TimeUnit.SECONDS,
+                    new ArrayBlockingQueue<>(METRICS_QUEUE_CAPACITY),
+                    Thread.ofVirtual().name("chat-metrics-").factory(),
+                    new ThreadPoolExecutor.AbortPolicy());
+            candidateExecutor.allowCoreThreadTimeOut(true);
+            candidate.createContext("/metrics", this::handleMetrics);
+            candidate.setExecutor(candidateExecutor);
+            candidate.start();
+            httpServer = candidate;
+            executor = candidateExecutor;
+        } catch (IOException | RuntimeException | Error e) {
+            if (candidate != null) {
+                candidate.stop(0);
+            }
+            if (candidateExecutor != null) {
+                candidateExecutor.shutdownNow();
+            }
+            throw e;
+        }
+    }
+
+    public synchronized void stop() {
+        if (httpServer == null) return;
+        httpServer.stop(0);
+        httpServer = null;
+        if (executor != null) {
+            executor.shutdownNow();
+            executor = null;
+        }
+    }
+
+    private void handleMetrics(HttpExchange exchange) throws IOException {
+        try (exchange) {
+            exchange.getResponseHeaders().set("X-Content-Type-Options", "nosniff");
+            exchange.getResponseHeaders().set("Content-Security-Policy", "default-src 'none'");
+            exchange.getResponseHeaders().set("X-Frame-Options", "DENY");
+            exchange.getResponseHeaders().set("Referrer-Policy", "no-referrer");
+            if (!"/metrics".equals(exchange.getRequestURI().getPath())) {
+                exchange.sendResponseHeaders(404, -1);
+                return;
+            }
+            if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+                exchange.getResponseHeaders().set("Allow", "GET");
+                exchange.sendResponseHeaders(405, -1);
+                return;
+            }
+
+            String key = exchange.getRemoteAddress().getAddress() == null
+                    ? "metrics:unknown"
+                    : "metrics:" + exchange.getRemoteAddress().getAddress().getHostAddress();
+            if (!METRICS_RATE_LIMITER.allow(key)) {
+                exchange.getResponseHeaders().set("Retry-After", "60");
+                exchange.sendResponseHeaders(429, -1);
+                return;
+            }
+
+            String configuredToken = AppConfig.getMetricsAuthToken();
+            if (!configuredToken.isBlank() && !isAuthorized(exchange.getRequestHeaders().getFirst(AUTHORIZATION_HEADER), configuredToken)) {
+                exchange.getResponseHeaders().set("WWW-Authenticate", "Bearer");
+                exchange.sendResponseHeaders(401, -1);
+                return;
+            }
+
+            byte[] payload = renderMetrics().getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "text/plain; version=0.0.4; charset=utf-8");
+            exchange.getResponseHeaders().set("Cache-Control", "no-store");
+            exchange.sendResponseHeaders(200, payload.length);
+            exchange.getResponseBody().write(payload);
+        }
+    }
+
+    static boolean isRemoteExposureAllowed(boolean remoteExposure, boolean remoteAllowed, String authToken) {
+        return !remoteExposure || (remoteAllowed && authToken != null && !authToken.isBlank());
+    }
+
+    static boolean isAuthorized(String authorizationHeader, String expectedToken) {
+        if (authorizationHeader == null || expectedToken == null || expectedToken.isBlank()) return false;
+        if (!authorizationHeader.startsWith(BEARER_PREFIX)) return false;
+        String suppliedToken = authorizationHeader.substring(BEARER_PREFIX.length()).trim();
+        if (suppliedToken.isEmpty()) return false;
+        return MessageDigest.isEqual(
+                suppliedToken.getBytes(StandardCharsets.UTF_8),
+                expectedToken.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private String renderMetrics() {
+        ServerMetrics.Snapshot snapshot = metrics.snapshot();
+        Runtime runtime = Runtime.getRuntime();
+        long uptimeMillis = ManagementFactory.getRuntimeMXBean().getUptime();
+        long liveThreads = ManagementFactory.getThreadMXBean().getThreadCount();
+        long dbTotalConnections = 0;
+        long dbIdleConnections = 0;
+        long dbMaxConnections = 0;
+        try {
+            ConnectionPool connectionPool = ConnectionPool.getInstance();
+            dbTotalConnections = connectionPool.getTotalConnections();
+            dbIdleConnections = connectionPool.getIdleConnections();
+            dbMaxConnections = connectionPool.getMaxSize();
+        } catch (RuntimeException e) {
+            org.slf4j.LoggerFactory.getLogger(MetricsHttpServer.class)
+                    .warn("Database metrics unavailable ({}).", e.getClass().getSimpleName());
+        }
+        StringBuilder output = new StringBuilder(3600);
+        appendGauge(output, "chatapp_connected_users", "Currently connected authenticated users.", server.connectedUserCount());
+        appendGauge(output, "chatapp_active_handlers", "Currently active client handlers.", server.activeHandlerCount());
+        appendCounter(output, "chatapp_accepted_connections_total", "Accepted client connections.", snapshot.acceptedConnections());
+        appendCounter(output, "chatapp_rejected_connections_total", "Rejected client connections.", snapshot.rejectedConnections());
+        appendCounter(output, "chatapp_requests_total", "Processed client requests.", snapshot.requests());
+        appendCounter(output, "chatapp_protocol_errors_total", "Protocol errors observed.", snapshot.protocolErrors());
+        appendCounter(output, "chatapp_authentication_failures_total", "Authentication failures observed.", snapshot.authenticationFailures());
+        appendCounter(output, "chatapp_rate_limited_requests_total", "Requests rejected by application rate limits.", snapshot.rateLimitedRequests());
+        appendCounter(output, "chatapp_internal_errors_total", "Internal request-handler errors observed.", snapshot.internalErrors());
+        appendGauge(output, "chatapp_handler_pool_active", "Active client handler executor tasks.", server.handlerPoolActiveCount());
+        appendGauge(output, "chatapp_handler_pool_size", "Current client handler executor pool size.", server.handlerPoolSize());
+        appendGauge(output, "chatapp_handler_pool_queue_depth", "Queued client handler tasks.", server.handlerPoolQueueDepth());
+        appendCounter(output, "chatapp_handler_pool_completed_total", "Completed client handler tasks.", server.completedHandlerCount());
+        appendGauge(output, "chatapp_db_pool_connections", "Database connections currently created.", dbTotalConnections);
+        appendGauge(output, "chatapp_db_pool_idle_connections", "Database connections currently available for borrowing.", dbIdleConnections);
+        appendGauge(output, "chatapp_db_pool_max_connections", "Configured maximum database connections.", dbMaxConnections);
+        appendGauge(output, "chatapp_jvm_memory_used_bytes", "JVM heap memory currently used.", runtime.totalMemory() - runtime.freeMemory());
+        appendGauge(output, "chatapp_jvm_memory_committed_bytes", "JVM heap memory currently committed.", runtime.totalMemory());
+        appendGauge(output, "chatapp_jvm_memory_max_bytes", "Maximum JVM heap memory available.", runtime.maxMemory());
+        appendGauge(output, "chatapp_jvm_uptime_seconds", "JVM uptime in seconds.", uptimeMillis / 1000);
+        appendGauge(output, "chatapp_jvm_threads_live", "Currently live JVM threads.", liveThreads);
+        return output.toString();
+    }
+
+    private static void appendCounter(StringBuilder output, String name, String help, long value) {
+        output.append("# HELP ").append(name).append(' ').append(help).append('\n');
+        output.append("# TYPE ").append(name).append(" counter\n");
+        output.append(name).append(' ').append(value).append('\n');
+    }
+
+    private static void appendGauge(StringBuilder output, String name, String help, long value) {
+        output.append("# HELP ").append(name).append(' ').append(help).append('\n');
+        output.append("# TYPE ").append(name).append(" gauge\n");
+        output.append(name).append(' ').append(value).append('\n');
+    }
+}

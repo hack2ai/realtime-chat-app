@@ -1,0 +1,60 @@
+name: Source Hygiene
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: source-hygiene-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-hygiene:
+    name: Source hygiene
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Verify immutable workflow actions
+        run: |
+          if grep -RInP '^\s*uses:\s*[^@#\s]+@(?![0-9a-fA-F]{40}\b)[^#\s]+' .github/workflows; then
+            echo 'All GitHub Actions must be pinned to a 40-character commit SHA.'
+            exit 1
+          fi
+
+      - name: Reject direct console and stack-trace output
+        run: |
+          if git grep -nE 'printStackTrace|System\.(out|err)\.' -- 'src/main/java'; then
+            echo 'Application code must use structured logging instead of direct console or stack-trace output.'
+            exit 1
+          fi
+
+      - name: Reject debug markers in production sources
+        run: |
+          if git grep -nE '//[[:space:]]*(TODO|FIXME|XXX):' -- 'src/main/java'; then
+            echo 'Resolve production TODO/FIXME/XXX markers before merging.'
+            exit 1
+          fi
+
+      - name: Reject broad exception handlers
+        run: |
+          if git grep -nE 'catch[[:space:]]*\([[:space:]]*(Exception|RuntimeException|Throwable)[[:space:]]' -- 'src/main/java'; then
+            echo 'Handle specific exception types instead of broad Exception, RuntimeException, or Throwable catches.'
+            exit 1
+          fi
+
+      - name: Reject high-risk dynamic execution and deserialization APIs
+        run: |
+          if git grep -nE 'ObjectInputStream|Runtime\.getRuntime\(\)\.exec|ScriptEngineManager|InitialContext' -- 'src/main/java'; then
+            echo 'Avoid high-risk dynamic execution, JNDI, and native Java deserialization APIs in production sources.'
+            exit 1
+          fi

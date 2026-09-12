@@ -1,0 +1,215 @@
+name: Integration Smoke
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: integration-smoke-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  private-message-smoke:
+    name: Private message delivery smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate Docker Compose configuration
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: docker compose config --quiet
+
+      - name: Start Docker Compose stack
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: docker compose up -d --build
+
+      - name: Wait for Docker Compose health
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: |
+          for attempt in {1..24}; do
+            statuses=$(docker compose ps --format json)
+            db_status=$(printf '%s\n' "$statuses" | jq -r 'select(.Service == "db") | .Health // "unknown"')
+            server_status=$(printf '%s\n' "$statuses" | jq -r 'select(.Service == "server") | .Health // "unknown"')
+            if [ "$db_status" = "healthy" ] && [ "$server_status" = "healthy" ]; then
+              exit 0
+            fi
+            sleep 5
+          done
+          docker compose ps
+          docker compose logs --no-color server db
+          exit 1
+
+      - name: Smoke test authenticated private messaging
+        env:
+          CHATAPP_CI_RUN_ID: ${{ github.run_id }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import socket
+          import struct
+          import time
+
+          HOST = "127.0.0.1"
+          PORT = 5050
+          MAX_FRAME = 8 * 1024 * 1024
+          RUN_ID = os.environ["CHATAPP_CI_RUN_ID"]
+          PASSWORD = "CItest1234!"
+
+          def connect():
+              return socket.create_connection((HOST, PORT), timeout=5)
+
+          def send(sock, message):
+              payload = json.dumps(message, separators=(",", ":")).encode("utf-8")
+              if len(payload) <= 0 or len(payload) > MAX_FRAME:
+                  raise SystemExit("invalid outbound frame size")
+              sock.sendall(struct.pack(">i", len(payload)) + payload)
+
+          def recv(sock):
+              header = b""
+              while len(header) < 4:
+                  chunk = sock.recv(4 - len(header))
+                  if not chunk:
+                      raise SystemExit("server closed the connection before the response header was complete")
+                  header += chunk
+              length = struct.unpack(">i", header)[0]
+              if length <= 0 or length > MAX_FRAME:
+                  raise SystemExit(f"invalid response frame length: {length}")
+              payload = b""
+              while len(payload) < length:
+                  chunk = sock.recv(length - len(payload))
+                  if not chunk:
+                      raise SystemExit("server closed the connection before the response was complete")
+                  payload += chunk
+              return json.loads(payload.decode("utf-8"))
+
+          def wait_for(sock, message_type, timeout=8):
+              deadline = time.monotonic() + timeout
+              sock.settimeout(1)
+              while time.monotonic() < deadline:
+                  try:
+                      message = recv(sock)
+                  except socket.timeout:
+                      continue
+                  if message.get("type") == message_type:
+                      return message
+              raise SystemExit(f"timed out waiting for {message_type}")
+
+          alice_username = f"ci_smoke_{RUN_ID}_a"
+          alice_email = f"ci_smoke_{RUN_ID}_a@example.com"
+          bob_username = f"ci_smoke_{RUN_ID}_b"
+          bob_email = f"ci_smoke_{RUN_ID}_b@example.com"
+          text = f"integration-smoke-{RUN_ID}"
+
+          alice = connect()
+          bob = connect()
+          try:
+              send(alice, {
+                  "type": "C2S_REGISTER",
+                  "payload": {
+                      "username": alice_username,
+                      "email": alice_email,
+                      "password": PASSWORD,
+                      "confirmPassword": PASSWORD,
+                  },
+                  "timestamp": int(time.time() * 1000),
+              })
+              alice_register = wait_for(alice, "S2C_REGISTER_SUCCESS")
+              alice_id = alice_register["payload"]["userId"]
+
+              send(bob, {
+                  "type": "C2S_REGISTER",
+                  "payload": {
+                      "username": bob_username,
+                      "email": bob_email,
+                      "password": PASSWORD,
+                      "confirmPassword": PASSWORD,
+                  },
+                  "timestamp": int(time.time() * 1000),
+              })
+              bob_register = wait_for(bob, "S2C_REGISTER_SUCCESS")
+              bob_id = bob_register["payload"]["userId"]
+
+              send(alice, {
+                  "type": "C2S_LOGIN",
+                  "payload": {
+                      "usernameOrEmail": alice_username,
+                      "password": PASSWORD,
+                  },
+                  "timestamp": int(time.time() * 1000),
+              })
+              alice_login = wait_for(alice, "S2C_LOGIN_SUCCESS")
+              if not alice_login["payload"].get("sessionToken") or alice_login["payload"].get("userId") != alice_id:
+                  raise SystemExit("Alice login response was invalid")
+
+              send(bob, {
+                  "type": "C2S_LOGIN",
+                  "payload": {
+                      "usernameOrEmail": bob_username,
+                      "password": PASSWORD,
+                  },
+                  "timestamp": int(time.time() * 1000),
+              })
+              bob_login = wait_for(bob, "S2C_LOGIN_SUCCESS")
+              if not bob_login["payload"].get("sessionToken") or bob_login["payload"].get("userId") != bob_id:
+                  raise SystemExit("Bob login response was invalid")
+
+              send(alice, {
+                  "type": "C2S_PRIVATE_MESSAGE",
+                  "payload": {
+                      "receiverId": bob_id,
+                      "message": text,
+                  },
+                  "timestamp": int(time.time() * 1000),
+              })
+
+              delivered = wait_for(alice, "S2C_MESSAGE_DELIVERED")
+              received = wait_for(bob, "S2C_PRIVATE_MESSAGE")
+
+              delivered_payload = delivered["payload"]
+              received_payload = received["payload"]
+              if delivered_payload["message"] != text:
+                  raise SystemExit("delivery acknowledgement contained the wrong message")
+              if received_payload["senderId"] != alice_id or received_payload["receiverId"] != bob_id:
+                  raise SystemExit("private message recipient metadata was incorrect")
+              if received_payload["message"] != text or received_payload["status"] != "DELIVERED":
+                  raise SystemExit("private message delivery state was incorrect")
+
+              message_id = received_payload["messageId"]
+              send(bob, {
+                  "type": "C2S_MESSAGE_READ",
+                  "payload": {"messageId": message_id},
+                  "timestamp": int(time.time() * 1000),
+              })
+
+              read = wait_for(alice, "S2C_MESSAGE_READ")
+              if read["payload"]["messageId"] != message_id:
+                  raise SystemExit("read acknowledgement referenced the wrong message")
+          finally:
+              alice.close()
+              bob.close()
+          PY
+
+      - name: Stop Docker Compose stack
+        if: always()
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: docker compose down -v

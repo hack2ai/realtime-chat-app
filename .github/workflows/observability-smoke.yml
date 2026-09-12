@@ -1,0 +1,100 @@
+name: Observability Smoke
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: observability-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke-test:
+    name: Smoke test observability stack
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate observability Compose configuration
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+          CHATAPP_METRICS_AUTH_TOKEN: ci-metrics-token
+        run: docker compose -f docker-compose.yml -f docker-compose.observability.yml config --quiet
+
+      - name: Start observability stack
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+          CHATAPP_METRICS_AUTH_TOKEN: ci-metrics-token
+        run: docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d --build
+
+      - name: Wait for services to become healthy
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+          CHATAPP_METRICS_AUTH_TOKEN: ci-metrics-token
+        run: |
+          for attempt in {1..36}; do
+            statuses=$(docker compose -f docker-compose.yml -f docker-compose.observability.yml ps --format json)
+            db_status=$(printf '%s\n' "$statuses" | jq -r 'select(.Service == "db") | .Health // "unknown"')
+            server_status=$(printf '%s\n' "$statuses" | jq -r 'select(.Service == "server") | .Health // "unknown"')
+            prometheus_status=$(printf '%s\n' "$statuses" | jq -r 'select(.Service == "prometheus") | .State // "unknown"')
+            if [ "$db_status" = "healthy" ] && [ "$server_status" = "healthy" ] && [ "$prometheus_status" = "running" ]; then
+              exit 0
+            fi
+            sleep 5
+          done
+          docker compose -f docker-compose.yml -f docker-compose.observability.yml ps
+          docker compose -f docker-compose.yml -f docker-compose.observability.yml logs --no-color server db prometheus
+          exit 1
+
+      - name: Verify metrics endpoint requires authentication
+        run: |
+          status=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' http://127.0.0.1:9100/metrics)
+          test "$status" = "401"
+
+      - name: Verify authenticated metrics endpoint
+        run: |
+          curl --silent --show-error --fail \
+            -H 'Authorization: Bearer ci-metrics-token' \
+            http://127.0.0.1:9100/metrics \
+            > metrics.txt
+          grep -Fq '# TYPE chatapp_connected_users gauge' metrics.txt
+          grep -Fq 'chatapp_connected_users ' metrics.txt
+          grep -Fq '# TYPE chatapp_requests_total counter' metrics.txt
+
+      - name: Verify Prometheus readiness
+        run: |
+          curl --silent --show-error --fail http://127.0.0.1:9090/-/ready
+
+      - name: Verify Prometheus is scraping the chat server
+        run: |
+          for attempt in {1..12}; do
+            if curl --silent --show-error --fail http://127.0.0.1:9090/api/v1/targets \
+              | jq -e '.data.activeTargets[] | select(.labels.job == "chatapp-server") | .health == "up"' >/dev/null; then
+              exit 0
+            fi
+            sleep 5
+          done
+          curl --silent --show-error http://127.0.0.1:9090/api/v1/targets | jq .
+          exit 1
+
+      - name: Stop observability stack
+        if: always()
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+          CHATAPP_METRICS_AUTH_TOKEN: ci-metrics-token
+        run: docker compose -f docker-compose.yml -f docker-compose.observability.yml down -v

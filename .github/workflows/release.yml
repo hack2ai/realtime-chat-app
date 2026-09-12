@@ -5,20 +5,49 @@ on:
     tags:
       - 'v*.*.*'
 
-permissions:
-  contents: write
-  packages: write
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
 
 jobs:
   release:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: write
+      packages: write
+      attestations: write
+      id-token: write
 
     steps:
       - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.ref }}
           persist-credentials: false
+
+      - name: Verify tag points to released commit
+        env:
+          RELEASE_REF: ${{ github.ref }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          test "$(git rev-parse "${RELEASE_REF}^{commit}")" = "$RELEASE_SHA"
+
+      - name: Verify tagged commit is on main
+        env:
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$RELEASE_SHA" origin/main
+
+      - name: Verify immutable workflow actions
+        run: |
+          if grep -RInP '^\s*uses:\s*[^@#\s]+@(?![0-9a-fA-F]{40}\b)[^#\s]+' .github/workflows; then
+            echo 'All GitHub Actions must be pinned to a 40-character commit SHA.'
+            exit 1
+          fi
 
       - name: Set up JDK 21
         uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
@@ -28,35 +57,309 @@ jobs:
           cache: maven
 
       - name: Verify and package
-        run: mvn --batch-mode --no-transfer-progress verify
+        run: mvn --batch-mode --no-transfer-progress --strict-checksums -Dbuild.revision="${{ github.sha }}" verify
+
+      - name: Verify release version matches Git tag
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          project_version=$(mvn --batch-mode --no-transfer-progress help:evaluate -Dexpression=project.version -q -DforceStdout)
+          expected_tag="v${project_version}"
+          test "$RELEASE_VERSION" = "$expected_tag"
 
       - name: Verify runnable server package
         run: |
           test -s target/chatapp-server.jar
           unzip -p target/chatapp-server.jar META-INF/MANIFEST.MF | grep -Eq '^Main-Class: com\.chatapp\.server\.ChatServer[[:space:]]*$'
 
+      - name: Verify embedded build revision
+        run: |
+          unzip -p target/chatapp-server.jar META-INF/MANIFEST.MF | grep -Eq '^Build-Revision: ${{ github.sha }}[[:space:]]*$'
+
+      - name: Verify release JAR contains no local secret material
+        run: |
+          leaked=$(unzip -Z1 target/chatapp-server.jar | grep -Ei '(^|/)(\.env|config\.properties|[^/]+\.(p12|pfx|jks|key|pem))$' || true)
+          test -z "$leaked"
+
+      - name: Verify generated SBOM
+        run: |
+          test -s target/bom.json
+          jq -e '.bomFormat == "CycloneDX" and (.specVersion | type == "string")' target/bom.json >/dev/null
+
+      - name: Verify SBOM project identity
+        run: |
+          project_version=$(mvn --batch-mode --no-transfer-progress help:evaluate -Dexpression=project.version -q -DforceStdout)
+          jq -e --arg version "$project_version" '
+            .metadata.component.name == "realtime-chat-app" and
+            .metadata.component.version == $version
+          ' target/bom.json >/dev/null
+
+      - name: Validate Docker Compose configuration
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: docker compose config --quiet
+
+      - name: Verify Docker Compose security policy
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: |
+          config=$(docker compose config --format json)
+          printf '%s\n' "$config" | jq -e '.services.server.user == "10001"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.read_only == true' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.init == true' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.pids_limit == 256' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.mem_limit == "1g"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.cpus == 2' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.cap_drop == ["ALL"]' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.security_opt == ["no-new-privileges:true"]' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.restart == "unless-stopped"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.restart == "unless-stopped"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.pids_limit == 256' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.mem_limit == "1g"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.cpus == 2' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.cap_drop == ["ALL"]' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.security_opt == ["no-new-privileges:true"]' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.stop_grace_period == "30s"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.networks.backend.internal == true' >/dev/null
+          printf '%s\n' "$config" | jq -e '(.services.db.ports // []) == []' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.logging.driver == "json-file"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.logging.options["max-size"] == "10m"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.logging.options["max-file"] == "3"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.logging.driver == "json-file"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.logging.options["max-size"] == "10m"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.logging.options["max-file"] == "3"' >/dev/null
+
       - name: Prepare release assets
         env:
           RELEASE_VERSION: ${{ github.ref_name }}
         run: |
           cp target/chatapp-server.jar "chatapp-server-${RELEASE_VERSION}.jar"
+          cp target/bom.json "chatapp-sbom-${RELEASE_VERSION}.json"
           sha256sum "chatapp-server-${RELEASE_VERSION}.jar" > "chatapp-server-${RELEASE_VERSION}.jar.sha256"
+          sha256sum "chatapp-sbom-${RELEASE_VERSION}.json" > "chatapp-sbom-${RELEASE_VERSION}.json.sha256"
           sha256sum --check "chatapp-server-${RELEASE_VERSION}.jar.sha256"
+          sha256sum --check "chatapp-sbom-${RELEASE_VERSION}.json.sha256"
+
+      - name: Attest release server artifact
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: "chatapp-server-${{ github.ref_name }}.jar"
+
+      - name: Attest release SBOM
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: "chatapp-sbom-${{ github.ref_name }}.json"
 
       - name: Login to GitHub Container Registry
         env:
           GH_TOKEN: ${{ github.token }}
         run: echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
 
-      - name: Build and push release container
+      - name: Build release container image
         env:
           IMAGE_NAME: ghcr.io/${{ github.repository }}
           RELEASE_VERSION: ${{ github.ref_name }}
         run: |
           IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
-          docker build --pull --tag "${IMAGE_NAME}:${RELEASE_VERSION}" --tag "${IMAGE_NAME}:latest" .
+          docker build --pull \
+            --build-arg VCS_REF="${{ github.sha }}" \
+            --build-arg VERSION="${RELEASE_VERSION}" \
+            --tag "${IMAGE_NAME}:${RELEASE_VERSION}" \
+            --tag "${IMAGE_NAME}:latest" .
+
+      - name: Scan release container for HIGH and CRITICAL vulnerabilities, misconfigurations, and secrets
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ghcr.io/hack2ai/realtime-chat-app:${{ github.ref_name }}
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          scanners: vuln,misconfig,secret
+          exit-code: '1'
+
+      - name: Verify release image metadata
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          image="${IMAGE_NAME}:${RELEASE_VERSION}"
+          test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.title"}}')" = "Real-Time Chat Application"
+          test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.description"}}')" = "Secure Java 21 TCP chat server with MySQL persistence and optional TLS"
+          test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.source"}}')" = "https://github.com/hack2ai/realtime-chat-app"
+          test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.licenses"}}')" = "MIT"
+          test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "${{ github.sha }}"
+          test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.version"}}')" = "${RELEASE_VERSION}"
+
+      - name: Verify release image runs as non-root
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          image="${IMAGE_NAME}:${RELEASE_VERSION}"
+          test "$(docker image inspect "$image" --format '{{.Config.User}}')" = "chatapp"
+          test "$(docker run --rm --entrypoint id "$image" -u)" = "10001"
+
+      - name: Verify release image Java runtime
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          image="${IMAGE_NAME}:${RELEASE_VERSION}"
+          docker run --rm --entrypoint java "$image" -version 2>&1 | grep -Fq '21'
+
+      - name: Verify release image entrypoint
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{json .Config.Entrypoint}}')" = '["java","-jar","/app/chatapp-server.jar"]'
+
+      - name: Verify release image port
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{json .Config.ExposedPorts}}')" = '{"5050/tcp":{}}'
+
+      - name: Verify release image healthcheck
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{json .Config.Healthcheck.Test}}')" = '["CMD-SHELL","java -cp /app/chatapp-server.jar com.chatapp.server.ServerHealthCheck"]'
+
+      - name: Verify release image healthcheck executes successfully
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          image="${IMAGE_NAME}:${RELEASE_VERSION}"
+          docker run --rm --network host --entrypoint java "$image" -cp /app/chatapp-server.jar com.chatapp.server.ServerHealthCheck
+
+      - name: Verify release image stop signal
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{.Config.StopSignal}}')" = "SIGTERM"
+
+      - name: Verify release image filesystem policy
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          image="${IMAGE_NAME}:${RELEASE_VERSION}"
+          test "$(docker image inspect "$image" --format '{{.Config.WorkingDir}}')" = "/app"
+          test "$(docker image inspect "$image" --format '{{json .Config.Volumes}}')" = '{"/app/data/attachments":{}}'
+
+      - name: Verify release image contains no local secret material
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          image="${IMAGE_NAME}:${RELEASE_VERSION}"
+          leaked=$(docker run --rm --entrypoint sh "$image" -c '
+            find /app -type f \( \
+              -name ".env" -o \
+              -name "config.properties" -o \
+              -name "*.p12" -o \
+              -name "*.pfx" -o \
+              -name "*.jks" -o \
+              -name "*.key" -o \
+              -name "*.pem" \
+            \) -print -quit
+          ')
+          test -z "$leaked"
+
+      - name: Verify release image JVM safety options
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          image="${IMAGE_NAME}:${RELEASE_VERSION}"
+          env_json=$(docker image inspect "$image" --format '{{json .Config.Env}}')
+          printf '%s\n' "$env_json" | jq -e 'index("JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError") != null' >/dev/null
+
+      - name: Verify release image size budget
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          image="${IMAGE_NAME}:${RELEASE_VERSION}"
+          size_bytes=$(docker image inspect "$image" --format '{{.Size}}')
+          test "$size_bytes" -lt 524288000
+
+      - name: Push release container
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
           docker push "${IMAGE_NAME}:${RELEASE_VERSION}"
           docker push "${IMAGE_NAME}:latest"
+
+      - name: Determine release container digest
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          image="${IMAGE_NAME}:${RELEASE_VERSION}"
+          digest=$(docker image inspect "$image" --format '{{index .RepoDigests 0}}' | sed 's/^.*@//')
+          test -n "$digest"
+          echo "IMAGE_DIGEST=$digest" >> "$GITHUB_ENV"
+
+      - name: Verify release image digest format
+        run: |
+          printf '%s\n' "${IMAGE_DIGEST}" | grep -Eq '^sha256:[0-9a-f]{64}$'
+
+      - name: Verify published registry digest
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          image="${IMAGE_NAME}:${RELEASE_VERSION}"
+          docker pull "$image"
+          published_digest=$(docker image inspect "$image" --format '{{index .RepoDigests 0}}' | sed 's/^.*@//')
+          test "$published_digest" = "${IMAGE_DIGEST}"
+
+      - name: Verify latest tag matches release digest
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+        run: |
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          image="${IMAGE_NAME}:latest"
+          docker pull "$image"
+          latest_digest=$(docker image inspect "$image" --format '{{index .RepoDigests 0}}' | sed 's/^.*@//')
+          test "$latest_digest" = "${IMAGE_DIGEST}"
+
+      - name: Publish release container provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ghcr.io/${{ github.repository }}
+          subject-digest: ${{ env.IMAGE_DIGEST }}
+          push-to-registry: true
+
+      - name: Prepare container digest asset
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          printf 'ghcr.io/%s@%s\n' "${{ github.repository }}" "${IMAGE_DIGEST}" > "chatapp-container-${RELEASE_VERSION}.digest"
 
       - name: Create GitHub release
         env:
@@ -66,5 +369,8 @@ jobs:
           gh release create "$RELEASE_VERSION" \
             "chatapp-server-${RELEASE_VERSION}.jar" \
             "chatapp-server-${RELEASE_VERSION}.jar.sha256" \
+            "chatapp-sbom-${RELEASE_VERSION}.json" \
+            "chatapp-sbom-${RELEASE_VERSION}.json.sha256" \
+            "chatapp-container-${RELEASE_VERSION}.digest" \
             --title "$RELEASE_VERSION" \
             --generate-notes

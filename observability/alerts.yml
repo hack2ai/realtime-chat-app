@@ -1,0 +1,75 @@
+groups:
+  - name: chatapp-health
+    interval: 30s
+    rules:
+      - alert: ChatAppServerDown
+        expr: up{job="chatapp-server"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Chat server metrics target is down
+          description: Prometheus has been unable to scrape the chat server metrics endpoint for at least 2 minutes.
+
+      - alert: ChatAppHighAuthenticationFailureRate
+        expr: rate(chatapp_authentication_failures_total[5m]) > 0.0833
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Authentication failures are elevated
+          description: Authentication failures have exceeded 5 per minute for at least 10 minutes.
+
+      - alert: ChatAppProtocolErrorsElevated
+        expr: rate(chatapp_protocol_errors_total[5m]) > 0.0167
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Protocol errors are elevated
+          description: Protocol errors have exceeded 1 per minute for at least 10 minutes.
+
+      - alert: ChatAppRateLimitPressure
+        expr: rate(chatapp_rate_limited_requests_total[5m]) > 0.1667
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Rate limiting pressure is elevated
+          description: Rate-limited requests have exceeded 10 per minute for at least 10 minutes.
+
+      - alert: ChatAppHandlerQueueSaturation
+        expr: chatapp_handler_pool_queue_depth > 48
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: Client handler queue is nearing saturation
+          description: The server has more than 48 queued client-handler tasks for at least 5 minutes.
+
+      - alert: ChatAppDatabasePoolExhaustion
+        expr: chatapp_db_pool_connections >= chatapp_db_pool_max_connections and chatapp_db_pool_idle_connections == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: Database connection pool is exhausted
+          description: The database pool is at its configured maximum with no idle connections for at least 5 minutes.
+
+      - alert: ChatAppJvmHeapPressure
+        expr: chatapp_jvm_memory_max_bytes > 0 and (chatapp_jvm_memory_used_bytes / chatapp_jvm_memory_max_bytes) > 0.85
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: JVM heap usage is high
+          description: JVM heap usage has exceeded 85% of the configured maximum for at least 10 minutes.
+
+      - alert: ChatAppConnectionCapacityPressure
+        expr: chatapp_connected_users >= 180
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Chat server is nearing client capacity
+          description: At least 180 authenticated users are connected, approaching the configured 200-client capacity.

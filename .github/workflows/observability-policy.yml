@@ -1,0 +1,57 @@
+name: Observability Policy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: observability-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate observability overlay
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate base Compose configuration
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: docker compose config --quiet
+
+      - name: Validate observability Compose configuration
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: docker compose -f docker-compose.yml -f docker-compose.observability.yml config --quiet
+
+      - name: Verify observability policy
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: |
+          config=$(docker compose -f docker-compose.yml -f docker-compose.observability.yml config --format json)
+          printf '%s\n' "$config" | jq -e '.services.server.environment.CHATAPP_METRICS_ENABLED == "true"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.environment.CHATAPP_METRICS_BINDADDRESS == "0.0.0.0"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.environment.CHATAPP_METRICS_ALLOWREMOTE == "true"' >/dev/null
+          printf '%s\n' "$config" | jq -e '(.services.server.ports // []) | any(. == "127.0.0.1:9100:9100")' >/dev/null
+
+      - name: Verify default stack keeps metrics disabled
+        run: |
+          test "$(grep -Fxc 'metrics.enabled=false' src/main/resources/config.properties.example)" = "1"
+          if grep -nE '^\s*CHATAPP_METRICS_ENABLED:\s*["'"']?true["'"']?\s*$' docker-compose.yml; then
+            echo 'The default Compose stack must not enable metrics.'
+            exit 1
+          fi

@@ -7,10 +7,14 @@ db.host=localhost
 db.port=3306
 db.name=chatapp_db
 db.user=chatapp_user
-db.password=CHANGE_ME
+db.password=
 db.pool.minIdle=2
 db.pool.maxSize=10
 db.pool.connectionTimeoutMs=5000
+# Timeout for establishing a new JDBC connection, in milliseconds.
+db.connectTimeoutMs=10000
+# Timeout for JDBC socket I/O, in milliseconds. Prevents stalled database operations from hanging indefinitely.
+db.socketTimeoutMs=120000
 # TLS is enabled by default. Disable only for trusted local development.
 db.useSsl=true
 # Keep false unless the MySQL server explicitly requires RSA public-key retrieval.
@@ -20,9 +24,21 @@ db.allowPublicKeyRetrieval=false
 server.port=5050
 # Bind to localhost by default. Set to 0.0.0.0 only when remote clients are intended.
 server.bindAddress=127.0.0.1
+# Plain TCP on a non-loopback bind is blocked by default. Prefer TLS; only opt in when a trusted network intentionally provides transport security elsewhere.
+server.allowPlaintextRemote=false
 server.maxClients=200
 # Authentication handshake timeout in milliseconds. Authenticated chat connections clear this timeout.
-server.socketReadTimeoutMs=120000
+server.socketReadTimeoutMs=30000
+
+# ---------------- Runtime Metrics ----------------
+# Optional read-only Prometheus-style HTTP endpoint. Disabled by default.
+metrics.enabled=false
+# Keep loopback by default. Remote exposure is blocked unless explicitly enabled below.
+metrics.bindAddress=127.0.0.1
+metrics.allowRemote=false
+# Required when metrics.allowRemote=true. Use a dedicated secret; do not reuse a user/database password.
+metrics.authToken=
+metrics.port=9100
 
 # ---------------- Transport TLS ----------------
 # Enable for encrypted TCP transport. Keep false for local plain-TCP development only.

@@ -1,0 +1,130 @@
+name: Observability Compose
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: observability-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate observability stack
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Verify immutable workflow actions
+        run: |
+          if grep -RInP '^\s*uses:\s*[^@#\s]+@(?![0-9a-fA-F]{40}\b)[^#\s]+' .github/workflows; then
+            echo 'All GitHub Actions must be pinned to a 40-character commit SHA.'
+            exit 1
+          fi
+
+      - name: Verify required configuration
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+          CHATAPP_METRICS_AUTH_TOKEN: ci-metrics-token
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.observability.yml config --quiet
+
+      - name: Verify metrics secret is mandatory
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: |
+          if env -u CHATAPP_METRICS_AUTH_TOKEN docker compose -f docker-compose.yml -f docker-compose.observability.yml config --quiet; then
+            echo 'Observability configuration must require CHATAPP_METRICS_AUTH_TOKEN.'
+            exit 1
+          fi
+
+      - name: Verify metrics exposure policy
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+          CHATAPP_METRICS_AUTH_TOKEN: ci-metrics-token
+        run: |
+          config=$(docker compose -f docker-compose.yml -f docker-compose.observability.yml config --format json)
+          printf '%s\n' "$config" | jq -e '.services.server.environment.CHATAPP_METRICS_ENABLED == "true"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.environment.CHATAPP_METRICS_BINDADDRESS == "0.0.0.0"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.environment.CHATAPP_METRICS_ALLOWREMOTE == "true"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.environment.CHATAPP_METRICS_AUTHTOKEN == "ci-metrics-token"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.ports | index("127.0.0.1:9100:9100") != null' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.ports | all(. != "0.0.0.0:9100:9100" and . != "9100:9100")' >/dev/null
+
+      - name: Verify base container security is preserved
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+          CHATAPP_METRICS_AUTH_TOKEN: ci-metrics-token
+        run: |
+          config=$(docker compose -f docker-compose.yml -f docker-compose.observability.yml config --format json)
+          printf '%s\n' "$config" | jq -e '.services.server.user == "10001"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.read_only == true' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.cap_drop == ["ALL"]' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.security_opt == ["no-new-privileges:true"]' >/dev/null
+          printf '%s\n' "$config" | jq -e '.networks.backend.internal == true' >/dev/null
+
+      - name: Start observability stack
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+          CHATAPP_METRICS_AUTH_TOKEN: ci-metrics-token
+        run: docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d --build
+
+      - name: Wait for observability stack health
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+          CHATAPP_METRICS_AUTH_TOKEN: ci-metrics-token
+        run: |
+          for attempt in {1..24}; do
+            statuses=$(docker compose -f docker-compose.yml -f docker-compose.observability.yml ps --format json)
+            db_status=$(printf '%s\n' "$statuses" | jq -r 'select(.Service == "db") | .Health // "unknown"')
+            server_status=$(printf '%s\n' "$statuses" | jq -r 'select(.Service == "server") | .Health // "unknown"')
+            if [ "$db_status" = "healthy" ] && [ "$server_status" = "healthy" ]; then
+              exit 0
+            fi
+            sleep 5
+          done
+          docker compose -f docker-compose.yml -f docker-compose.observability.yml ps
+          docker compose -f docker-compose.yml -f docker-compose.observability.yml logs --no-color server db
+          exit 1
+
+      - name: Smoke test protected metrics endpoint
+        run: |
+          unauthorized_status=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' http://127.0.0.1:9100/metrics)
+          test "$unauthorized_status" = "401"
+          curl --fail --silent --show-error \
+            -H 'Authorization: Bearer ci-metrics-token' \
+            http://127.0.0.1:9100/metrics > metrics.txt
+          grep -Fq '# TYPE chatapp_connected_users gauge' metrics.txt
+          grep -Fq '# TYPE chatapp_requests_total counter' metrics.txt
+
+      - name: Show service logs on failure
+        if: failure()
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+          CHATAPP_METRICS_AUTH_TOKEN: ci-metrics-token
+        run: docker compose -f docker-compose.yml -f docker-compose.observability.yml logs --no-color server db
+
+      - name: Cleanup observability stack
+        if: always()
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+          CHATAPP_METRICS_AUTH_TOKEN: ci-metrics-token
+        run: docker compose -f docker-compose.yml -f docker-compose.observability.yml down --volumes --remove-orphans
