@@ -134,6 +134,7 @@ jobs:
             db_status=$(docker compose ps -q db | xargs -r docker inspect -f '{{.State.Health.Status}}' 2>/dev/null || true)
             server_status=$(docker compose ps -q server | xargs -r docker inspect -f '{{.State.Health.Status}}' 2>/dev/null || true)
             if [ "$db_status" = "healthy" ] && [ "$server_status" = "healthy" ]; then
+              timeout 5 bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/5050'
               exit 0
             fi
             docker compose ps
