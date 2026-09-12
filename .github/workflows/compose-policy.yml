@@ -29,7 +29,28 @@ jobs:
         env:
           CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
           CHATAPP_DB_PASSWORD: ci-app-password
+          CHATAPP_METRICS_AUTH_TOKEN: ci-metrics-token
         run: docker compose config --quiet
+
+      - name: Validate observability Compose configuration
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+          CHATAPP_METRICS_AUTH_TOKEN: ci-metrics-token
+        run: docker compose -f docker-compose.yml -f docker-compose.observability.yml config --quiet
+
+      - name: Validate Prometheus configuration and alert rules
+        run: |
+          docker run --rm \
+            -v "$PWD/observability:/etc/prometheus:ro" \
+            --entrypoint promtool \
+            prom/prometheus:v3.5.0 \
+            check config /etc/prometheus/prometheus.yml
+          docker run --rm \
+            -v "$PWD/observability:/etc/prometheus:ro" \
+            --entrypoint promtool \
+            prom/prometheus:v3.5.0 \
+            check rules /etc/prometheus/alerts.yml
 
       - name: Verify Compose isolation policy
         env:
