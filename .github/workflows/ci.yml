@@ -500,6 +500,100 @@ jobs:
               raise SystemExit("login response did not include a session token")
           PY
 
+      - name: Smoke test TLS PING/PONG protocol
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+          CHATAPP_TLS_KEYSTORE_PASSWORD: ci-tls-password
+        run: |
+          tls_dir="$RUNNER_TEMP/chatapp-tls"
+          mkdir -p "$tls_dir"
+          keytool -genkeypair \
+            -alias chatapp-ci \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 2 \
+            -storetype PKCS12 \
+            -keystore "$tls_dir/server.p12" \
+            -storepass "$CHATAPP_TLS_KEYSTORE_PASSWORD" \
+            -keypass "$CHATAPP_TLS_KEYSTORE_PASSWORD" \
+            -dname 'CN=localhost' \
+            -ext 'EKU=serverAuth' \
+            -ext 'SAN=dns:localhost,ip:127.0.0.1'
+
+          export CHATAPP_TLS_KEYSTORE="$tls_dir/server.p12"
+          cat > "$RUNNER_TEMP/docker-compose.tls.yml" <<'YAML'
+          services:
+            server:
+              environment:
+                CHATAPP_SERVER_PORT: 5051
+                CHATAPP_TLS_ENABLED: "true"
+                CHATAPP_TLS_KEYSTOREPATH: /run/chatapp-tls/server.p12
+                CHATAPP_TLS_KEYSTOREPASSWORD: ${CHATAPP_TLS_KEYSTORE_PASSWORD}
+                CHATAPP_SERVER_ALLOWPLAINTEXTREMOTE: "false"
+              ports:
+                - "127.0.0.1:5051:5051"
+              volumes:
+                - chatapp-attachments:/app/data/attachments
+                - ${CHATAPP_TLS_KEYSTORE}:/run/chatapp-tls/server.p12:ro
+          YAML
+
+          docker compose down
+          docker compose -f docker-compose.yml -f "$RUNNER_TEMP/docker-compose.tls.yml" up -d
+
+          for attempt in {1..24}; do
+            server_status=$(docker compose -f docker-compose.yml -f "$RUNNER_TEMP/docker-compose.tls.yml" ps --format json | jq -r 'select(.Service == "server") | .Health // "unknown"')
+            if [ "$server_status" = "healthy" ]; then
+              break
+            fi
+            sleep 5
+          done
+
+          docker compose -f docker-compose.yml -f "$RUNNER_TEMP/docker-compose.tls.yml" ps | grep -F 'server'
+
+          python3 - <<'PY'
+          import json
+          import socket
+          import ssl
+          import struct
+          import time
+
+          request = json.dumps({
+              "type": "PING",
+              "payload": None,
+              "timestamp": int(time.time() * 1000),
+          }, separators=(",", ":")).encode("utf-8")
+
+          context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+          context.check_hostname = False
+          context.verify_mode = ssl.CERT_NONE
+
+          with socket.create_connection(("127.0.0.1", 5051), timeout=5) as raw:
+              with context.wrap_socket(raw, server_hostname="localhost") as sock:
+                  if sock.version() not in {"TLSv1.2", "TLSv1.3"}:
+                      raise SystemExit(f"unexpected TLS version: {sock.version()!r}")
+                  sock.sendall(struct.pack(">i", len(request)) + request)
+                  header = b""
+                  while len(header) < 4:
+                      chunk = sock.recv(4 - len(header))
+                      if not chunk:
+                          raise SystemExit("TLS server closed the connection before the response header was complete")
+                      header += chunk
+                  length = struct.unpack(">i", header)[0]
+                  if length <= 0 or length > 8 * 1024 * 1024:
+                      raise SystemExit(f"invalid TLS response frame length: {length}")
+                  response = b""
+                  while len(response) < length:
+                      chunk = sock.recv(length - len(response))
+                      if not chunk:
+                          raise SystemExit("TLS server closed the connection before the response was complete")
+                      response += chunk
+
+          payload = json.loads(response.decode("utf-8"))
+          if payload.get("type") != "PONG":
+              raise SystemExit(f"unexpected TLS response type: {payload.get('type')!r}")
+          PY
+
       - name: Stop Docker Compose stack
         if: always()
         env:
