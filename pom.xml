@@ -16,14 +16,17 @@
     <properties>
         <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.build.outputTimestamp>2026-01-01T00:00:00Z</project.build.outputTimestamp>
+        <build.revision>unknown</build.revision>
 
         <javafx.version>21.0.2</javafx.version>
         <mysql.connector.version>8.3.0</mysql.connector.version>
-        <gson.version>2.10.1</gson.version>
+        <gson.version>2.14.0</gson.version>
         <spring.security.crypto.version>6.2.3</spring.security.crypto.version>
         <junit.version>5.10.2</junit.version>
-        <slf4j.version>2.0.12</slf4j.version>
-        <commons.logging.version>1.3.5</commons.logging.version>
+        <slf4j.version>2.0.19</slf4j.version>
+        <commons.logging.version>1.4.0</commons.logging.version>
+        <cyclonedx.maven.plugin.version>2.9.3</cyclonedx.maven.plugin.version>
 
         <server.mainClass>com.chatapp.server.ChatServer</server.mainClass>
         <client.mainClass>com.chatapp.client.ChatClientApp</client.mainClass>
@@ -93,8 +96,20 @@
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-clean-plugin</artifactId>
+                <version>3.2.0</version>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <version>3.5.0</version>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.13.0</version>
+                <version>3.16.0</version>
                 <configuration>
                     <release>${maven.compiler.release}</release>
                     <parameters>true</parameters>
@@ -104,7 +119,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-enforcer-plugin</artifactId>
-                <version>3.5.0</version>
+                <version>3.6.3</version>
                 <executions>
                     <execution>
                         <id>enforce-build-requirements</id>
@@ -114,10 +129,41 @@
                                 <requireJavaVersion>
                                     <version>[21,22)</version>
                                 </requireJavaVersion>
+                                <requireMavenVersion>
+                                    <version>[3.9,4)</version>
+                                </requireMavenVersion>
+                                <requirePluginVersions>
+                                    <message>All build plugins must declare explicit versions.</message>
+                                </requirePluginVersions>
+                                <requireReleaseDeps>
+                                    <message>Release builds must not depend on SNAPSHOT artifacts.</message>
+                                </requireReleaseDeps>
+                                <requireUpperBoundDeps>
+                                    <message>All dependency versions must resolve to their declared upper bounds.</message>
+                                </requireUpperBoundDeps>
+                                <dependencyConvergence/>
                             </rules>
                         </configuration>
                     </execution>
                 </executions>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-install-plugin</artifactId>
+                <version>3.1.4</version>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-site-plugin</artifactId>
+                <version>3.12.1</version>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-deploy-plugin</artifactId>
+                <version>3.1.4</version>
             </plugin>
 
             <plugin>
@@ -132,13 +178,19 @@
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>
-                <version>3.3.0</version>
+                <version>3.6.3</version>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.5.1</version>
             </plugin>
 
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
-                <version>3.5.2</version>
+                <version>3.6.2</version>
                 <executions>
                     <execution>
                         <phase>package</phase>
@@ -152,6 +204,9 @@
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                                     <mainClass>${server.mainClass}</mainClass>
+                                    <manifestEntries>
+                                        <Build-Revision>${build.revision}</Build-Revision>
+                                    </manifestEntries>
                                 </transformer>
                             </transformers>
                             <finalName>chatapp-server</finalName>
@@ -161,9 +216,27 @@
             </plugin>
 
             <plugin>
+                <groupId>org.cyclonedx</groupId>
+                <artifactId>cyclonedx-maven-plugin</artifactId>
+                <version>${cyclonedx.maven.plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>generate-sbom</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>makeAggregateBom</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
-                <version>3.2.5</version>
+                <version>3.6.0</version>
+                <configuration>
+                    <failIfNoTests>true</failIfNoTests>
+                </configuration>
             </plugin>
         </plugins>
     </build>

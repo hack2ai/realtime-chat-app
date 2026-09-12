@@ -1,0 +1,197 @@
+name: Private Message Smoke
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: private-message-smoke-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  private-message-smoke:
+    name: End-to-end private messaging
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Verify immutable workflow actions
+        run: |
+          if grep -RInP '^\s*uses:\s*[^@#\s]+@(?![0-9a-fA-F]{40}\b)[^#\s]+' .github/workflows; then
+            echo 'All GitHub Actions must be pinned to a 40-character commit SHA.'
+            exit 1
+          fi
+
+      - name: Start Docker Compose stack
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: docker compose up -d --build
+
+      - name: Wait for Docker Compose health
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: |
+          for attempt in {1..24}; do
+            statuses=$(docker compose ps --format json)
+            db_status=$(printf '%s\n' "$statuses" | jq -r 'select(.Service == "db") | .Health // "unknown"')
+            server_status=$(printf '%s\n' "$statuses" | jq -r 'select(.Service == "server") | .Health // "unknown"')
+            if [ "$db_status" = "healthy" ] && [ "$server_status" = "healthy" ]; then
+              exit 0
+            fi
+            sleep 5
+          done
+          docker compose ps
+          docker compose logs --no-color server db
+          exit 1
+
+      - name: Smoke test authenticated private message delivery
+        env:
+          CHATAPP_CI_RUN_ID: ${{ github.run_id }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import socket
+          import struct
+          import time
+
+          HOST = "127.0.0.1"
+          PORT = 5050
+          RUN_ID = os.environ["CHATAPP_CI_RUN_ID"]
+          PASSWORD = "CItest1234!"
+          USER_A = f"ci_msg_a_{RUN_ID}"
+          USER_B = f"ci_msg_b_{RUN_ID}"
+          EMAIL_A = f"{USER_A}@example.com"
+          EMAIL_B = f"{USER_B}@example.com"
+          MESSAGE = f"private-message-smoke-{RUN_ID}"
+
+          def recv_frame(sock):
+              header = b""
+              while len(header) < 4:
+                  chunk = sock.recv(4 - len(header))
+                  if not chunk:
+                      raise SystemExit("server closed the connection before the response header was complete")
+                  header += chunk
+              length = struct.unpack(">i", header)[0]
+              if length <= 0 or length > 8 * 1024 * 1024:
+                  raise SystemExit(f"invalid response frame length: {length}")
+              payload = b""
+              while len(payload) < length:
+                  chunk = sock.recv(length - len(payload))
+                  if not chunk:
+                      raise SystemExit("server closed the connection before the response was complete")
+                  payload += chunk
+              return json.loads(payload.decode("utf-8"))
+
+          def send_frame(sock, message):
+              payload = json.dumps(message, separators=(",", ":")).encode("utf-8")
+              sock.sendall(struct.pack(">i", len(payload)) + payload)
+
+          def send(sock, message_type, payload):
+              send_frame(sock, {
+                  "type": message_type,
+                  "payload": payload,
+                  "timestamp": int(time.time() * 1000),
+              })
+
+          def recv_until(sock, expected_type, label):
+              deadline = time.time() + 5
+              while time.time() < deadline:
+                  response = recv_frame(sock)
+                  if response.get("type") == expected_type:
+                      return response
+              raise SystemExit(f"timed out waiting for {expected_type} during {label}")
+
+          def register_and_login(sock, username, email):
+              send(sock, "C2S_REGISTER", {
+                  "username": username,
+                  "email": email,
+                  "password": PASSWORD,
+                  "confirmPassword": PASSWORD,
+              })
+              registration = recv_until(sock, "S2C_REGISTER_SUCCESS", f"registration of {username}")
+              user_id = (registration.get("payload") or {}).get("userId")
+              if not isinstance(user_id, int) or user_id <= 0:
+                  raise SystemExit(f"registration response missing userId: {registration!r}")
+
+              send(sock, "C2S_LOGIN", {
+                  "usernameOrEmail": username,
+                  "password": PASSWORD,
+              })
+              login = recv_until(sock, "S2C_LOGIN_SUCCESS", f"login of {username}")
+              login_payload = login.get("payload") or {}
+              if login_payload.get("username") != username or not login_payload.get("sessionToken"):
+                  raise SystemExit(f"login response missing expected identity/session token: {login!r}")
+              return user_id
+
+          with socket.create_connection((HOST, PORT), timeout=5) as sock_a, socket.create_connection((HOST, PORT), timeout=5) as sock_b:
+              sock_a.settimeout(5)
+              sock_b.settimeout(5)
+
+              user_a_id = register_and_login(sock_a, USER_A, EMAIL_A)
+              user_b_id = register_and_login(sock_b, USER_B, EMAIL_B)
+
+              send(sock_a, "C2S_PRIVATE_MESSAGE", {
+                  "receiverId": user_b_id,
+                  "message": MESSAGE,
+              })
+
+              delivered = recv_until(sock_a, "S2C_MESSAGE_DELIVERED", "sender delivery acknowledgement")
+              delivered_payload = delivered.get("payload") or {}
+              if delivered_payload.get("senderId") != user_a_id or delivered_payload.get("receiverId") != user_b_id:
+                  raise SystemExit(f"delivery acknowledgement has unexpected participants: {delivered!r}")
+
+              received = recv_until(sock_b, "S2C_PRIVATE_MESSAGE", "recipient private message")
+              received_payload = received.get("payload") or {}
+              if received_payload.get("senderId") != user_a_id:
+                  raise SystemExit(f"private message has unexpected sender: {received!r}")
+              if received_payload.get("receiverId") != user_b_id:
+                  raise SystemExit(f"private message has unexpected recipient: {received!r}")
+              if received_payload.get("message") != MESSAGE:
+                  raise SystemExit(f"private message content mismatch: {received!r}")
+              if received_payload.get("status") != "DELIVERED":
+                  raise SystemExit(f"private message status mismatch: {received!r}")
+
+              send(sock_b, "C2S_REQUEST_PRIVATE_HISTORY", {
+                  "otherUserId": user_a_id,
+                  "limit": 10,
+                  "beforeMessageId": 0,
+              })
+              history = recv_until(sock_b, "S2C_PRIVATE_HISTORY", "private message history")
+              history_payload = history.get("payload") or {}
+              messages = history_payload.get("messages") or []
+              if not any(
+                  message.get("senderId") == user_a_id
+                  and message.get("receiverId") == user_b_id
+                  and message.get("message") == MESSAGE
+                  for message in messages
+              ):
+                  raise SystemExit(f"sent message was not persisted in private history: {history!r}")
+          PY
+
+      - name: Show service logs on failure
+        if: failure()
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: docker compose logs --no-color server db
+
+      - name: Cleanup Docker Compose resources
+        if: always()
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: docker compose down --volumes --remove-orphans

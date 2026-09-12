@@ -5,21 +5,42 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
-    labels:
-      - dependencies
+    rebase-strategy: auto
+    commit-message:
+      prefix: deps
+      include: scope
+    groups:
+      maven-minor-patch:
+        update-types:
+          - minor
+          - patch
 
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
-      interval: weekly
+      interval: daily
     open-pull-requests-limit: 5
-    labels:
-      - dependencies
+    rebase-strategy: auto
+    commit-message:
+      prefix: ci(deps)
+      include: scope
+    groups:
+      github-actions-minor-patch:
+        update-types:
+          - minor
+          - patch
 
   - package-ecosystem: docker
     directory: "/"
     schedule:
-      interval: weekly
+      interval: daily
     open-pull-requests-limit: 5
-    labels:
-      - dependencies
+    rebase-strategy: auto
+    commit-message:
+      prefix: docker(deps)
+      include: scope
+    groups:
+      docker-minor-patch:
+        update-types:
+          - minor
+          - patch

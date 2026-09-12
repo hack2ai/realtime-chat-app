@@ -5,7 +5,6 @@ import com.chatapp.model.User;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Statement;
 import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.List;
@@ -43,7 +42,7 @@ public class UserDAO {
                 """;
 
         return DatabaseManager.execute(conn -> {
-            try (PreparedStatement stmt = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+            try (PreparedStatement stmt = conn.prepareStatement(sql, new String[]{"id"})) {
                 stmt.setString(1, user.getUsername());
                 stmt.setString(2, user.getEmail());
                 stmt.setString(3, user.getPasswordHash());

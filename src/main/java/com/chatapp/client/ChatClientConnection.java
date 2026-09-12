@@ -13,6 +13,7 @@ import com.chatapp.security.TlsContextFactory;
 import com.chatapp.socket.protocol.Envelope;
 import com.chatapp.socket.protocol.MessageCodec;
 import com.chatapp.socket.protocol.MessageType;
+import javax.net.ssl.SSLParameters;
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.SSLSocketFactory;
 import java.io.DataInputStream;
@@ -26,6 +27,7 @@ import java.util.function.Consumer;
 
 /** Thread-safe asynchronous transport for the chat application's wire protocol. */
 public final class ChatClientConnection implements AutoCloseable {
+    private static final long MIN_HEARTBEAT_INTERVAL_MILLIS = 250L;
     private final MessageCodec codec = new MessageCodec();
     private final Consumer<Envelope> eventListener;
     private final Consumer<Boolean> connectionListener;
@@ -35,6 +37,7 @@ public final class ChatClientConnection implements AutoCloseable {
     private Socket socket;
     private DataInputStream in;
     private DataOutputStream out;
+    private volatile Thread heartbeatThread;
     private volatile boolean running;
 
     public ChatClientConnection(Consumer<Envelope> eventListener) { this(eventListener, ignored -> {}); }
@@ -72,6 +75,9 @@ public final class ChatClientConnection implements AutoCloseable {
             SSLSocket sslSocket = (SSLSocket) factory.createSocket();
             sslSocket.connect(new InetSocketAddress(host, port), 5000);
             sslSocket.setEnabledProtocols(new String[]{"TLSv1.3", "TLSv1.2"});
+            SSLParameters parameters = sslSocket.getSSLParameters();
+            parameters.setEndpointIdentificationAlgorithm("HTTPS");
+            sslSocket.setSSLParameters(parameters);
             sslSocket.startHandshake();
             return sslSocket;
         } catch (IllegalStateException e) {
@@ -122,6 +128,7 @@ public final class ChatClientConnection implements AutoCloseable {
         Object response = codec.unwrap(envelope, responseType);
         if (response == null) { future.completeExceptionally(new IOException("Invalid authentication response.")); return; }
         complete(future, response);
+        if (envelope.getType() == MessageType.S2C_LOGIN_SUCCESS) startHeartbeat();
     }
     @SuppressWarnings("unchecked") private static <T> void complete(CompletableFuture<?> future, Object value) { ((CompletableFuture<T>) future).complete((T) value); }
     private void readLoop() {
@@ -143,13 +150,37 @@ public final class ChatClientConnection implements AutoCloseable {
                 safeEvent(codec.wrap(MessageType.S2C_ERROR, new AuthFailedResponse("Client protocol error.")));
             }
         } finally {
-            boolean wasRunning = running; running = false; failPendingAuth(new IOException("Connection closed.")); if (wasRunning) notifyConnectionState(false);
+            boolean wasRunning = running; running = false; stopHeartbeat(); failPendingAuth(new IOException("Connection closed.")); if (wasRunning) notifyConnectionState(false);
         }
+    }
+    private void startHeartbeat() {
+        long timeoutMillis = AppConfig.getSocketReadTimeoutMs();
+        if (timeoutMillis <= 0 || heartbeatThread != null) return;
+        long intervalMillis = Math.max(MIN_HEARTBEAT_INTERVAL_MILLIS, timeoutMillis / 3);
+        heartbeatThread = Thread.ofVirtual().name("chat-client-heartbeat").start(() -> {
+            try {
+                while (running) {
+                    Thread.sleep(intervalMillis);
+                    if (!running) return;
+                    try { send(MessageType.PING, null); }
+                    catch (IOException e) { close(); return; }
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } finally {
+                if (Thread.currentThread() == heartbeatThread) heartbeatThread = null;
+            }
+        });
+    }
+    private void stopHeartbeat() {
+        Thread heartbeat = heartbeatThread;
+        heartbeatThread = null;
+        if (heartbeat != null && heartbeat != Thread.currentThread()) heartbeat.interrupt();
     }
     private void safeEvent(Envelope envelope) { try { eventListener.accept(envelope); } catch (RuntimeException ignored) {} }
     private void notifyConnectionState(boolean connected) { try { connectionListener.accept(connected); } catch (RuntimeException ignored) {} }
     public synchronized void send(MessageType type, Object payload) throws IOException { if (!running || out == null) throw new IOException("Not connected."); codec.write(out, codec.wrap(type, payload)); }
     public CompletableFuture<Void> sendAsync(MessageType type, Object payload) { return CompletableFuture.runAsync(() -> { try { send(type, payload); } catch (IOException e) { throw new CompletionException(e); } }); }
     public boolean isConnected() { return running; }
-    @Override public synchronized void close() { boolean wasRunning = running; running = false; failPendingAuth(new IOException("Connection closed.")); if (socket != null) try { socket.close(); } catch (IOException ignored) {} socket = null; in = null; out = null; if (wasRunning) notifyConnectionState(false); }
+    @Override public synchronized void close() { boolean wasRunning = running; running = false; stopHeartbeat(); failPendingAuth(new IOException("Connection closed.")); if (socket != null) try { socket.close(); } catch (IOException ignored) {} socket = null; in = null; out = null; if (wasRunning) notifyConnectionState(false); }
 }

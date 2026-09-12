@@ -1,0 +1,78 @@
+name: Attest CI Artifacts
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions: {}
+
+concurrency:
+  group: attest-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+jobs:
+  attest:
+    name: Attest successful main artifacts
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      attestations: write
+      id-token: write
+    steps:
+      - name: Download server artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: chatapp-server-${{ github.event.workflow_run.head_sha }}
+          path: artifacts/server
+          github-token: ${{ github.token }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Download SBOM artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: chatapp-sbom-${{ github.event.workflow_run.head_sha }}
+          path: artifacts/sbom
+          github-token: ${{ github.token }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Verify downloaded artifacts
+        env:
+          BUILD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          server_jar=$(find artifacts/server -type f -name 'chatapp-server.jar' -print -quit)
+          server_checksum=$(find artifacts/server -type f -name 'chatapp-server.jar.sha256' -print -quit)
+          sbom=$(find artifacts/sbom -type f -name 'bom.json' -print -quit)
+          sbom_checksum=$(find artifacts/sbom -type f -name 'bom.json.sha256' -print -quit)
+
+          test -n "$server_jar" && test -s "$server_jar"
+          test -n "$server_checksum" && test -s "$server_checksum"
+          test -n "$sbom" && test -s "$sbom"
+          test -n "$sbom_checksum" && test -s "$sbom_checksum"
+
+          (
+            cd "$(dirname "$server_checksum")"
+            sha256sum --check "$(basename "$server_checksum")"
+          )
+          (
+            cd "$(dirname "$sbom_checksum")"
+            sha256sum --check "$(basename "$sbom_checksum")"
+          )
+
+          unzip -p "$server_jar" META-INF/MANIFEST.MF |
+            grep -Eq "^Build-Revision: ${BUILD_SHA}[[:space:]]*$"
+
+      - name: Attest server build artifact
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: artifacts/server/**/chatapp-server.jar
+
+      - name: Attest generated SBOM
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: artifacts/sbom/**/bom.json

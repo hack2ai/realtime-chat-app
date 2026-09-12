@@ -26,7 +26,9 @@ public class GroupService {
     public boolean join(int userId, int groupId) throws ValidationException {
         requireUser(userId); requireGroup(groupId);
         if (groupDAO.isMember(groupId, userId)) return false;
-        return groupDAO.addMember(groupId, userId);
+        if (groupDAO.addMember(groupId, userId)) return true;
+        if (groupDAO.isMember(groupId, userId)) return false;
+        throw new ValidationException("The group has reached its maximum of 200 members.");
     }
 
     public boolean leave(int userId, int groupId) throws ValidationException {
@@ -40,6 +42,7 @@ public class GroupService {
 
     public List<GroupSummary> list(int userId) { return groupDAO.findForUser(userId); }
     public List<Integer> members(int groupId) throws ValidationException { requireGroup(groupId); return groupDAO.memberIds(groupId); }
+    public boolean isMember(int groupId, int userId) { return groupDAO.isMember(groupId, userId); }
 
     public GroupMessageEvent sendMessage(int userId, String username, int groupId, String message) throws ValidationException {
         requireMembership(groupId, userId);

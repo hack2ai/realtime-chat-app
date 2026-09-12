@@ -3,14 +3,14 @@
 > A professional Java 21 networking project for building a secure, database-backed real-time chat system over TCP.
 
 [![Java](https://img.shields.io/badge/Java-21-ED8B00?style=for-the-badge&logo=openjdk&logoColor=white)](https://www.java.com/)
-[![Maven](https://img.shields.io/badge/Maven-3.8%2B-C71A36?style=for-the-badge&logo=apachemaven&logoColor=white)](https://maven.apache.org/)
+[![Maven](https://img.shields.io/badge/Maven-3.9%2B-C71A36?style=for-the-badge&logo=apachemaven&logoColor=white)](https://maven.apache.org/)
 [![MySQL](https://img.shields.io/badge/MySQL-8-4479A1?style=for-the-badge&logo=mysql&logoColor=white)](https://www.mysql.com/)
 
 ## Status
 
-**Phase 6 — production hardening and deployment readiness.**
+**Phase 6 complete — entering Phase 7 production follow-through.**
 
-The application provides secure authentication, real-time private messaging, presence and typing events, delivery/read states, paginated history, group chat, private file sharing, message search, MySQL persistence, a responsive JavaFX desktop client, automated dependency updates, container packaging, CI/CD checks, and configurable TLS transport.
+The application provides secure authentication, real-time private messaging, presence and typing events, delivery/read states, paginated history, group chat, private file sharing, message search, MySQL persistence, a responsive JavaFX desktop client, automated dependency updates, container packaging, SBOM generation, CI/CD checks, configurable TLS transport, and lightweight runtime metrics. Phase 7 focuses on centralized observability and alerting, managed storage, certificate lifecycle automation, and external security testing.
 
 ## Highlights
 
@@ -31,9 +31,13 @@ The application provides secure authentication, real-time private messaging, pre
 - Private attachment upload/download with participant authorization, 5 MB limit, safe filenames, and SHA-256 integrity verification
 - Private message search with bounded result sets
 - Java 21 virtual threads for asynchronous message pushes
-- Environment-variable and JVM-property configuration overrides
+- Periodic runtime metrics for connections, requests, protocol errors, authentication failures, rate-limited requests, and handler-pool usage
+- Environment-variable, JVM-property, and optional file-based configuration overrides
 - JUnit protocol tests and GitHub Actions CI
 - Docker image and Docker Compose deployment support
+- Non-root container execution with read-only server filesystem and dropped Linux capabilities
+- OCI image metadata stamped with source, revision, license, and release version
+- CycloneDX SBOM generation with checksum verification and release publication
 - Weekly Dependabot updates for Maven dependencies, GitHub Actions, and Docker
 
 ## Architecture
@@ -105,6 +109,29 @@ The JavaFX client provides:
 - Private file upload/download controls
 - Non-blocking socket reads/writes so the UI stays responsive
 
+### Operational metrics
+
+The server exposes an optional read-only Prometheus-style endpoint at `GET /metrics`. It is **disabled by default** and binds to `127.0.0.1:9100` when enabled.
+
+Enable it with:
+
+```properties
+metrics.enabled=true
+metrics.bindAddress=127.0.0.1
+metrics.port=9100
+```
+
+A minimal Prometheus configuration for a server where Prometheus runs on the same host is:
+
+```yaml
+scrape_configs:
+  - job_name: chatapp
+    static_configs:
+      - targets: ['127.0.0.1:9100']
+```
+
+The endpoint reports connected users, active handlers, accepted/rejected connections, processed requests, protocol errors, authentication failures, rate-limited requests, handler-pool activity/queue depth, completed handler tasks, JVM memory usage, uptime, and live thread count. For remote scraping, bind it to a trusted interface and protect it at the network layer; the endpoint does not provide application authentication.
+
 ## Security
 
 Current defensive controls include:
@@ -122,20 +149,31 @@ Current defensive controls include:
 - attachment filename/path sanitization
 - attachment size limits and SHA-256 integrity verification
 - no application password or admin seed account in the database schema
-- secrets can be supplied through environment variables or JVM system properties
+- secrets can be supplied through environment variables, JVM system properties, or file-based secret overrides
 - runtime attachment data is excluded from Git
 - optional TLS for the application TCP transport
+- non-root server container with dropped Linux capabilities and read-only root filesystem
+- bounded container logs in Docker Compose
+- OCI image metadata for traceability
+- CycloneDX SBOM generation and checksum verification
+- periodic runtime metrics for capacity, authentication failures, rate-limit pressure, and protocol-error visibility
 
-**Important:** this is a portfolio/learning project, not a security-audited production service. A production deployment still needs certificate lifecycle management, secret rotation, hardened database permissions, monitoring, threat modeling, malware/content scanning for uploads, and security testing.
+**Important:** this is a portfolio/learning project, not a security-audited production service. A production deployment still needs certificate lifecycle management, secret rotation, hardened database permissions, centralized monitoring/alerting, threat modeling, malware/content scanning for uploads, and security testing.
 
 See [SECURITY.md](SECURITY.md) for reporting guidance.
+
+## GitHub Security Prerequisites
+
+The repository's Dependency Review workflow requires GitHub's **Dependency graph** to be enabled. Enable it under **Repository Settings → Security → Advanced Security → Dependency graph** before relying on Dependency Review checks for pull requests.
+
+Do not disable or bypass the Dependency Review workflow when the feature is unavailable; the intended behavior is to restore the repository setting and rerun the affected pull-request checks.
 
 ## Getting Started
 
 ### Prerequisites
 
 - JDK 21+
-- Maven 3.8+
+- Maven 3.9+
 - MySQL 8+
 
 ### 1. Create the database
@@ -161,7 +199,16 @@ export CHATAPP_DB_PASSWORD='your-secret'
 export CHATAPP_DB_USER='chatapp_user'
 ```
 
-The precedence is: **JVM system property → environment variable → config file**.
+For stronger secret isolation, the same setting can be loaded from a file. Use either a JVM property named `<key>.file` or an environment variable named `<ENV_KEY>_FILE`:
+
+```bash
+java -Dchatapp.db.password.file=/run/secrets/db_password \
+  -jar target/chatapp-server.jar
+```
+
+For example, `CHATAPP_DB_PASSWORD_FILE=/run/secrets/db_password` loads the password from that file. Secret files are trimmed, must be non-empty, and are limited to 16 KiB. Existing direct environment/JVM/config-file configuration remains supported.
+
+The precedence is: **JVM system property → JVM secret-file property → environment secret-file override → environment variable → config file**.
 
 Attachment files default to `data/attachments` and are intentionally excluded from version control. For production, replace local storage with durable object storage and keep only attachment metadata in MySQL.
 
@@ -226,6 +273,14 @@ Start the stack:
 docker compose up --build -d
 ```
 
+Check service health after startup:
+
+```bash
+docker compose ps
+```
+
+The `db` and `server` services should report `healthy` before clients connect. The server healthcheck is backed by the readiness marker created only after the database connection has been validated and the TCP listener is ready.
+
 The TCP server listens on port `5050`. The JavaFX desktop client can connect to the Docker host using that address and port. Stop the stack with:
 
 ```bash
@@ -236,7 +291,22 @@ The server container runs as a non-root user. The Compose database is intended f
 
 ### Automated releases
 
-Pushing a semantic version tag such as `v1.1.0` triggers the release workflow. It verifies the Maven build, publishes the runnable server JAR and SHA-256 checksum to a GitHub Release, and builds and pushes the tagged and `latest` server image to GHCR.
+Pushing a semantic version tag such as `v1.1.0` triggers the release workflow. It verifies the Maven build, validates the runnable server JAR and CycloneDX SBOM, publishes the versioned server JAR, SHA-256 checksums, and SBOM to a GitHub Release, and builds and pushes the tagged and `latest` server image to GHCR after validating its non-root identity, entrypoint, healthcheck, stop signal, filesystem policy, and OCI metadata.
+
+Before consuming a release, verify the published checksums from the GitHub Release page:
+
+```bash
+sha256sum --check chatapp-server-v1.1.0.jar.sha256
+sha256sum --check chatapp-sbom-v1.1.0.json.sha256
+```
+
+The release also publishes `chatapp-container-v1.1.0.digest`. Use that digest rather than the mutable `latest` tag when an immutable container reference is required:
+
+```text
+ghcr.io/hack2ai/realtime-chat-app@sha256:<verified-digest>
+```
+
+CI and the release workflow also publish build-provenance attestations for the server artifact and SBOM, and the release workflow publishes provenance for the container image. Treat the recorded checksums, image digest, and provenance together as the integrity record for a release.
 
 ## Protocol
 
@@ -269,7 +339,18 @@ Notifications      S2C_NOTIFICATION
 realtime-chat-app/
 ├── .github/workflows/ci.yml
 ├── .github/workflows/codeql.yml
+├── .github/workflows/container-attestation.yml
+├── .github/workflows/container-hardening.yml
+├── .github/workflows/container-policy.yml
+├── .github/workflows/container-scan.yml
+├── .github/workflows/dependency-review.yml
+├── .github/workflows/docker-context-policy.yml
 ├── .github/workflows/release.yml
+├── .github/workflows/scorecard.yml
+├── .github/workflows/secret-material.yml
+├── .github/workflows/secret-scan.yml
+├── .github/workflows/source-hygiene.yml
+├── .github/workflows/source-policy.yml
 ├── .github/dependabot.yml
 ├── .dockerignore
 ├── Dockerfile
@@ -286,7 +367,7 @@ realtime-chat-app/
     │   ├── database/            # Pool, manager, DAOs
     │   ├── exception/           # Application exceptions
     │   ├── model/               # Domain models and DTOs
-    │   ├── server/              # Server and connection handlers
+    │   ├── server/              # Server, metrics, and connection handlers
     │   ├── service/             # Business logic
     │   ├── socket/protocol/     # Envelope, framing, message types
     │   └── util/                # Validation helpers
@@ -295,7 +376,6 @@ realtime-chat-app/
     │   ├── config.properties.example
     │   └── sql/schema.sql
     └── test/java/com/chatapp/   # Automated tests
-```
 
 ## Roadmap
 
@@ -304,8 +384,8 @@ realtime-chat-app/
 - [x] Phase 3 — group chat and membership controls
 - [x] Phase 4 — JavaFX desktop client
 - [x] Phase 5 — file sharing and message search
-- [x] Phase 6 — notifications, deployment packaging, CI/CD hardening, rate limiting, dependency automation, and configurable TLS
-- [ ] Phase 7 — production observability, managed storage, certificate lifecycle automation, and external security testing
+- [x] Phase 6 — notifications, deployment packaging, CI/CD hardening, rate limiting, dependency automation, configurable TLS, container hardening, SBOM generation, runtime metrics, and release verification
+- [ ] Phase 7 — centralized observability and alerting, managed storage, certificate lifecycle automation, and external security testing
 
 ## Development
 
@@ -315,7 +395,7 @@ Run the complete verification suite before submitting changes:
 mvn verify
 ```
 
-GitHub Actions runs the same Maven verification on pushes and pull requests targeting `main`. CodeQL analysis and container builds are also automated, and tagged releases publish versioned server packages.
+GitHub Actions runs the same Maven verification on pushes and pull requests targeting `main`. CodeQL analysis, dependency review, SBOM checks, and container builds are also automated, and tagged releases publish versioned server packages and a verified SBOM.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for project conventions.
 

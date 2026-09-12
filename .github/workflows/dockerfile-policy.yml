@@ -1,0 +1,39 @@
+name: Dockerfile Policy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dockerfile-policy-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate Docker base images
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Verify Docker build image
+        run: grep -Fqx 'FROM maven:3.9.11-eclipse-temurin-21 AS build' Dockerfile
+
+      - name: Verify Docker runtime image
+        run: grep -Fqx 'FROM eclipse-temurin:21-jre' <(grep '^FROM ' Dockerfile | tail -n 1)
+
+      - name: Reject floating Docker image tags
+        run: |
+          if grep -nE '^FROM[[:space:]]+[^[:space:]]+:latest([[:space:]]|$)' Dockerfile; then
+            echo 'Dockerfile must not use the floating latest image tag.'
+            exit 1
+          fi

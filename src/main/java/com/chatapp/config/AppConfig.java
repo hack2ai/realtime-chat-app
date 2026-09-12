@@ -2,13 +2,27 @@ package com.chatapp.config;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.attribute.PosixFileAttributeView;
+import java.nio.file.attribute.PosixFilePermission;
+import java.util.EnumSet;
 import java.util.Locale;
 import java.util.Properties;
+import java.util.Set;
+import java.util.regex.Pattern;
 
 /** Centralized runtime configuration with file, environment, and JVM overrides. */
 public final class AppConfig {
     private static final String CONFIG_FILE = "config.properties";
     private static final String ENV_PREFIX = "CHATAPP_";
+    private static final int MAX_SECRET_FILE_BYTES = 16 * 1024;
+    private static final Pattern DATABASE_NAME_PATTERN = Pattern.compile("[A-Za-z0-9_]+");
+    private static final Pattern DATABASE_HOST_PATTERN = Pattern.compile("(?:[A-Za-z0-9][A-Za-z0-9.-]*|\\[[0-9A-Fa-f:]+\\])");
     private static final Properties PROPERTIES = new Properties();
 
     static {
@@ -21,19 +35,92 @@ public final class AppConfig {
 
     private AppConfig() {}
 
-    private static String require(String key) {
+    private static String environmentKey(String key) {
+        return ENV_PREFIX + key.replace('.', '_').toUpperCase(Locale.ROOT);
+    }
+
+    private static void validateSecretFilePermissions(String key, Path path) {
+        PosixFileAttributeView posixView = Files.getFileAttributeView(path, PosixFileAttributeView.class, LinkOption.NOFOLLOW_LINKS);
+        if (posixView == null) {
+            return;
+        }
+        try {
+            Set<PosixFilePermission> permissions = posixView.readAttributes().permissions();
+            Set<PosixFilePermission> forbidden = EnumSet.of(
+                    PosixFilePermission.GROUP_READ,
+                    PosixFilePermission.GROUP_WRITE,
+                    PosixFilePermission.GROUP_EXECUTE,
+                    PosixFilePermission.OTHERS_READ,
+                    PosixFilePermission.OTHERS_WRITE,
+                    PosixFilePermission.OTHERS_EXECUTE
+            );
+            forbidden.retainAll(permissions);
+            if (!forbidden.isEmpty()) {
+                throw new IllegalStateException("Secret file for config key '" + key + "' must not be readable, writable, or executable by group or other users.");
+            }
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to inspect permissions for secret file for config key '" + key + "'.", e);
+        }
+    }
+
+    private static String readSecretFile(String key, String filePath) {
+        try {
+            Path path = Path.of(filePath);
+            BasicFileAttributes attributes = Files.readAttributes(path, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+            if (!attributes.isRegularFile()) {
+                throw new IllegalStateException("Secret file for config key '" + key + "' is missing, not a regular file, or is a symlink.");
+            }
+            validateSecretFilePermissions(key, path);
+
+            try (InputStream in = Files.newInputStream(path, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)) {
+                byte[] bytes = in.readNBytes(MAX_SECRET_FILE_BYTES + 1);
+                if (bytes.length > MAX_SECRET_FILE_BYTES) {
+                    throw new IllegalStateException("Secret file for config key '" + key + "' is too large.");
+                }
+                String value = new String(bytes, StandardCharsets.UTF_8).trim();
+                if (value.isBlank()) {
+                    throw new IllegalStateException("Secret file for config key '" + key + "' is blank.");
+                }
+                return value;
+            }
+        } catch (IOException | RuntimeException e) {
+            if (e instanceof IllegalStateException state) {
+                throw state;
+            }
+            throw new IllegalStateException("Failed to read secret file for config key '" + key + "'.", e);
+        }
+    }
+
+    private static String resolve(String key) {
         String value = System.getProperty("chatapp." + key);
-        if (value == null || value.isBlank()) value = System.getenv(ENV_PREFIX + key.replace('.', '_').toUpperCase(Locale.ROOT));
-        if (value == null || value.isBlank()) value = PROPERTIES.getProperty(key);
-        if (value == null || value.isBlank()) throw new IllegalStateException("Missing required config key: " + key);
-        return value.trim();
+        if (value != null && !value.isBlank()) return value.trim();
+
+        String systemPropertyFile = System.getProperty("chatapp." + key + ".file");
+        if (systemPropertyFile != null && !systemPropertyFile.isBlank()) {
+            return readSecretFile(key, systemPropertyFile.trim());
+        }
+
+        String environmentFile = System.getenv(environmentKey(key) + "_FILE");
+        if (environmentFile != null && !environmentFile.isBlank()) {
+            return readSecretFile(key, environmentFile.trim());
+        }
+
+        value = System.getenv(environmentKey(key));
+        if (value != null && !value.isBlank()) return value.trim();
+
+        value = PROPERTIES.getProperty(key);
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private static String require(String key) {
+        String value = resolve(key);
+        if (value == null) throw new IllegalStateException("Missing required config key: " + key);
+        return value;
     }
 
     private static String optional(String key, String defaultValue) {
-        String value = System.getProperty("chatapp." + key);
-        if (value == null || value.isBlank()) value = System.getenv(ENV_PREFIX + key.replace('.', '_').toUpperCase(Locale.ROOT));
-        if (value == null || value.isBlank()) value = PROPERTIES.getProperty(key);
-        return value == null || value.isBlank() ? defaultValue : value.trim();
+        String value = resolve(key);
+        return value == null ? defaultValue : value;
     }
 
     private static int requireInt(String key) {
@@ -67,9 +154,25 @@ public final class AppConfig {
         return Boolean.parseBoolean(value);
     }
 
-    public static String getDbHost() { return require("db.host"); }
+    private static String requireDatabaseHost() {
+        String host = require("db.host");
+        if (!DATABASE_HOST_PATTERN.matcher(host).matches()) {
+            throw new IllegalStateException("Config key 'db.host' must be a hostname, IPv4 address, or bracketed IPv6 address without URL syntax characters.");
+        }
+        return host;
+    }
+
+    private static String requireDatabaseName() {
+        String databaseName = require("db.name");
+        if (!DATABASE_NAME_PATTERN.matcher(databaseName).matches()) {
+            throw new IllegalStateException("Config key 'db.name' must contain only letters, digits, and underscores.");
+        }
+        return databaseName;
+    }
+
+    public static String getDbHost() { return requireDatabaseHost(); }
     public static int getDbPort() { return requirePort("db.port"); }
-    public static String getDbName() { return require("db.name"); }
+    public static String getDbName() { return requireDatabaseName(); }
     public static String getDbUser() { return require("db.user"); }
     public static String getDbPassword() { return require("db.password"); }
     public static int getDbPoolMinIdle() { return requirePositiveInt("db.pool.minIdle"); }
@@ -79,16 +182,21 @@ public final class AppConfig {
         return value;
     }
     public static int getDbConnectionTimeoutMs() { return requireRange("db.pool.connectionTimeoutMs", 1000, 120000); }
+    public static int getDbConnectTimeoutMs() { return requireRange("db.connectTimeoutMs", 1000, 120000); }
+    public static int getDbSocketTimeoutMs() { return requireRange("db.socketTimeoutMs", 1000, 300000); }
     public static boolean isDbUseSsl() { return optionalBoolean("db.useSsl", true); }
     public static boolean isDbAllowPublicKeyRetrieval() { return optionalBoolean("db.allowPublicKeyRetrieval", false); }
     public static String getJdbcUrl() {
         return "jdbc:mysql://" + getDbHost() + ":" + getDbPort() + "/" + getDbName()
                 + "?useSSL=" + isDbUseSsl()
                 + "&allowPublicKeyRetrieval=" + isDbAllowPublicKeyRetrieval()
-                + "&serverTimezone=UTC&characterEncoding=utf8mb4&useUnicode=true";
+                + "&serverTimezone=UTC&characterEncoding=UTF-8&useUnicode=true"
+                + "&connectTimeout=" + getDbConnectTimeoutMs()
+                + "&socketTimeout=" + getDbSocketTimeoutMs();
     }
     public static int getServerPort() { return requirePort("server.port"); }
     public static String getServerBindAddress() { return require("server.bindAddress"); }
+    public static boolean isPlaintextRemoteAllowed() { return optionalBoolean("server.allowPlaintextRemote", false); }
     public static int getServerMaxClients() { return requireRange("server.maxClients", 1, 10000); }
     public static int getSocketReadTimeoutMs() { return requireRange("server.socketReadTimeoutMs", 0, 300000); }
     public static boolean isTlsEnabled() { return optionalBoolean("tls.enabled", false); }
@@ -100,4 +208,8 @@ public final class AppConfig {
     public static int getBcryptStrength() { return requireRange("auth.bcrypt.strength", 10, 31); }
     public static int getSessionExpiryHours() { return requireRange("auth.session.expiryHours", 1, 8760); }
     public static String getAttachmentStoragePath() { return require("attachments.storagePath"); }
+    public static boolean isMetricsEnabled() { return optionalBoolean("metrics.enabled", false); }
+    public static String getMetricsBindAddress() { return optional("metrics.bindAddress", "127.0.0.1"); }
+    public static boolean isMetricsRemoteAllowed() { return optionalBoolean("metrics.allowRemote", false); }
+    public static int getMetricsPort() { return requirePort("metrics.port"); }
 }

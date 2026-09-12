@@ -1,0 +1,62 @@
+name: Compose Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: compose-security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Validate Compose configuration
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: docker compose config --quiet
+
+      - name: Verify Compose security invariants
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: |
+          config=$(docker compose config --format json)
+          printf '%s\n' "$config" | jq -e '.services.server.user == "10001"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.read_only == true' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.init == true' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.cap_drop == ["ALL"]' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.security_opt == ["no-new-privileges:true"]' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.pids_limit == 256' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.mem_limit == 1073741824' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.cpus == 2' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.cap_drop == ["ALL"]' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.security_opt == ["no-new-privileges:true"]' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.pids_limit == 256' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.mem_limit == 1073741824' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.cpus == 2' >/dev/null
+          printf '%s\n' "$config" | jq -e '.networks.backend.internal == true' >/dev/null
+          printf '%s\n' "$config" | jq -e '(.services.db.ports // []) == []' >/dev/null
+          printf '%s\n' "$config" | jq -e '.secrets.mysql_root_password.environment == "CHATAPP_MYSQL_ROOT_PASSWORD"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.secrets.db_password.environment == "CHATAPP_DB_PASSWORD"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.logging.options["max-size"] == "10m"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.logging.options["max-file"] == "3"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.logging.options["max-size"] == "10m"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.logging.options["max-file"] == "3"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.ports[0].host_ip == "127.0.0.1"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.ports[0].target == 5050' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.ports[0].published == 5050' >/dev/null

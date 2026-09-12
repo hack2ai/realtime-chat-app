@@ -60,6 +60,16 @@ class AttachmentValidatorTest {
     }
 
     @Test
+    void rejectsMalformedUtf8Json() {
+        byte[] malformedJson = {
+                '{', '"', 'm', 'e', 's', 's', 'a', 'g', 'e', '"', ':', '"',
+                'h', 'i', (byte) 0xFF, '"', '}'
+        };
+        assertThrows(ValidationException.class,
+                () -> AttachmentValidator.validateContent("application/json", malformedJson));
+    }
+
+    @Test
     void acceptsValidJson() throws Exception {
         AttachmentValidator.validateContent("application/json", "{\"message\":\"hello\",\"ok\":true}".getBytes(StandardCharsets.UTF_8));
     }
@@ -67,6 +77,28 @@ class AttachmentValidatorTest {
     @Test
     void rejectsOrdinaryZipDeclaredAsDocx() throws Exception {
         byte[] zip = zipWithEntries("readme.txt");
+        assertThrows(ValidationException.class,
+                () -> AttachmentValidator.validateContent(
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document", zip));
+    }
+
+    @Test
+    void rejectsUnsafeDocxZipEntryNames() throws Exception {
+        byte[] zip = zipWithEntries("[Content_Types].xml", "word/document.xml", "../outside.txt");
+        assertThrows(ValidationException.class,
+                () -> AttachmentValidator.validateContent(
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document", zip));
+    }
+
+    @Test
+    void rejectsDocxWithTooManyEntries() throws Exception {
+        String[] names = new String[513];
+        names[0] = "[Content_Types].xml";
+        names[1] = "word/document.xml";
+        for (int i = 2; i < names.length; i++) {
+            names[i] = "word/part" + i + ".xml";
+        }
+        byte[] zip = zipWithEntries(names);
         assertThrows(ValidationException.class,
                 () -> AttachmentValidator.validateContent(
                         "application/vnd.openxmlformats-officedocument.wordprocessingml.document", zip));

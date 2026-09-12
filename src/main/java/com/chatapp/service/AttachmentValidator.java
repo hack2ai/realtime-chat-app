@@ -2,18 +2,24 @@ package com.chatapp.service;
 
 import com.chatapp.exception.ValidationException;
 
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.Locale;
 import java.util.Set;
-import java.util.zip.ZipInputStream;
+import java.util.zip.ZipFile;
 
 /** Validates attachment metadata and file signatures before storage. */
 public final class AttachmentValidator {
     private static final int MAX_NAME_LENGTH = 180;
     private static final int MAX_CONTENT_TYPE_LENGTH = 120;
+    private static final int MAX_ZIP_ENTRIES = 512;
+    private static final long MAX_ZIP_UNCOMPRESSED_BYTES = 50L * 1024 * 1024;
     private static final Set<String> ALLOWED_TYPES = Set.of(
             "application/pdf", "text/plain", "text/csv", "application/octet-stream",
             "image/jpeg", "image/png", "image/gif", "image/webp",
@@ -89,26 +95,71 @@ public final class AttachmentValidator {
         if (!startsWith(value, new byte[]{0x50, 0x4b, 0x03, 0x04})) {
             throw new ValidationException("File content does not match its declared " + type + " type.");
         }
-        Set<String> entries = new HashSet<>();
-        try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(value), StandardCharsets.UTF_8)) {
-            java.util.zip.ZipEntry entry;
-            while ((entry = zip.getNextEntry()) != null) {
-                entries.add(entry.getName());
-                zip.closeEntry();
+
+        Path temp = null;
+        try {
+            temp = Files.createTempFile("chatapp-ooxml-", ".zip");
+            Files.write(temp, value);
+            Set<String> entries = new HashSet<>();
+            long totalUncompressedBytes = 0;
+            try (ZipFile zip = new ZipFile(temp.toFile(), StandardCharsets.UTF_8)) {
+                var iterator = zip.entries();
+                int entryCount = 0;
+                while (iterator.hasMoreElements()) {
+                    var entry = iterator.nextElement();
+                    entryCount++;
+                    if (entryCount > MAX_ZIP_ENTRIES) throw new UnsafeZipEntryException();
+                    if (hasUnsafeZipEntryName(entry.getName())) throw new UnsafeZipEntryException();
+                    long size = entry.getSize();
+                    if (size < 0 || size > MAX_ZIP_UNCOMPRESSED_BYTES - totalUncompressedBytes) {
+                        throw new UnsafeZipEntryException();
+                    }
+                    totalUncompressedBytes += size;
+                    entries.add(entry.getName());
+                }
             }
+            if (!entries.contains("[Content_Types].xml") || !entries.contains(requiredEntry)) {
+                throw new ValidationException("File content does not match its declared " + type + " structure.");
+            }
+        } catch (ValidationException e) {
+            throw e;
+        } catch (UnsafeZipEntryException e) {
+            throw new ValidationException("Invalid " + type + " archive.");
         } catch (IOException | RuntimeException e) {
             throw new ValidationException("Invalid " + type + " archive.");
+        } finally {
+            if (temp != null) {
+                try {
+                    Files.deleteIfExists(temp);
+                } catch (IOException ignored) {
+                    // Best-effort cleanup; never expose filesystem details to clients.
+                }
+            }
         }
-        if (!entries.contains("[Content_Types].xml") || !entries.contains(requiredEntry)) {
-            throw new ValidationException("File content does not match its declared " + type + " structure.");
-        }
+    }
+
+    private static boolean hasUnsafeZipEntryName(String name) {
+        if (name == null || name.isBlank() || name.startsWith("/") || name.contains("\\")) return true;
+        String normalized = name.replaceAll("/+", "/");
+        return normalized.equals("..")
+                || normalized.startsWith("../")
+                || normalized.contains("/../")
+                || normalized.endsWith("/..");
+    }
+
+    private static final class UnsafeZipEntryException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
     }
 
     private static void requireJson(byte[] value) throws ValidationException {
         try {
-            String json = new String(value, StandardCharsets.UTF_8);
+            String json = StandardCharsets.UTF_8.newDecoder()
+                    .onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT)
+                    .decode(ByteBuffer.wrap(value))
+                    .toString();
             com.google.gson.JsonParser.parseString(json);
-        } catch (RuntimeException e) {
+        } catch (CharacterCodingException | RuntimeException e) {
             throw new ValidationException("File content is not valid JSON.");
         }
     }

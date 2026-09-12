@@ -17,6 +17,15 @@ public class MessageSearchService {
     private static final int MAX_RESULTS = 50;
     private static final RequestRateLimiter SEARCH_RATE_LIMITER =
             new RequestRateLimiter(20, Duration.ofMinutes(1), 10_000);
+    private final Runnable rateLimitRecorder;
+
+    public MessageSearchService() {
+        this(() -> { });
+    }
+
+    public MessageSearchService(Runnable rateLimitRecorder) {
+        this.rateLimitRecorder = rateLimitRecorder == null ? () -> { } : rateLimitRecorder;
+    }
 
     public record SearchResult(long messageId, int senderId, String senderUsername,
                                int receiverId, String message, LocalDateTime sentAt) {}
@@ -27,6 +36,7 @@ public class MessageSearchService {
         String normalized = query.strip();
         if (normalized.length() > MAX_QUERY_LENGTH) throw new ValidationException("Search text is too long.");
         if (!SEARCH_RATE_LIMITER.allow(Integer.toString(userId))) {
+            rateLimitRecorder.run();
             throw new ValidationException("Too many searches. Please try again later.");
         }
         int safeLimit = Math.max(1, Math.min(limit, MAX_RESULTS));
