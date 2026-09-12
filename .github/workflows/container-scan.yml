@@ -43,6 +43,16 @@ jobs:
             --build-arg VERSION="${{ github.sha }}" \
             --tag realtime-chat-app:${{ github.sha }} .
 
+      - name: Verify server image runs as non-root
+        run: |
+          image=realtime-chat-app:${{ github.sha }}
+          test "$(docker image inspect "$image" --format '{{.Config.User}}')" = "chatapp"
+          test "$(docker run --rm --entrypoint id "$image" -u)" = "10001"
+
+      - name: Verify server image entrypoint
+        run: |
+          test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{json .Config.Entrypoint}}')" = '["java","-jar","/app/chatapp-server.jar"]'
+
       - name: Scan server image for HIGH and CRITICAL vulnerabilities, misconfigurations, and secrets
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
