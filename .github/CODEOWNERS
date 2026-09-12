@@ -1,0 +1,9 @@
+# Repository ownership and security-sensitive review coverage.
+* @hack2ai
+
+# Require explicit owner review for automation, deployment, and security configuration.
+/.github/ @hack2ai
+/Dockerfile @hack2ai
+/docker-compose.yml @hack2ai
+/pom.xml @hack2ai
+/SECURITY.md @hack2ai
