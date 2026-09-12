@@ -10,4 +10,5 @@ COPY --from=build /workspace/target/chatapp-server.jar /app/chatapp-server.jar
 RUN mkdir -p /app/data/attachments && useradd --system --create-home --uid 10001 chatapp && chown -R chatapp:chatapp /app
 USER chatapp
 EXPOSE 5050
+HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=5 CMD test -f /tmp/chatapp.ready || exit 1
 ENTRYPOINT ["java", "-jar", "/app/chatapp-server.jar"]
