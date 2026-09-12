@@ -53,6 +53,28 @@ jobs:
         run: |
           test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{json .Config.Entrypoint}}')" = '["java","-jar","/app/chatapp-server.jar"]'
 
+      - name: Generate container CycloneDX SBOM
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: realtime-chat-app:${{ github.sha }}
+          format: cyclonedx
+          output: container-sbom.cdx.json
+          scanners: vuln
+          exit-code: '0'
+
+      - name: Verify container SBOM
+        run: |
+          test -s container-sbom.cdx.json
+          jq -e '.bomFormat == "CycloneDX" and (.specVersion | type == "string")' container-sbom.cdx.json >/dev/null
+
+      - name: Upload container SBOM
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: chatapp-container-sbom-${{ github.sha }}
+          path: container-sbom.cdx.json
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Scan server image for HIGH and CRITICAL vulnerabilities, misconfigurations, and secrets
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
