@@ -2,6 +2,15 @@ groups:
   - name: chatapp-health
     interval: 30s
     rules:
+      - alert: ChatAppServerDown
+        expr: up{job="chatapp-server"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Chat server metrics target is down
+          description: Prometheus has been unable to scrape the chat server metrics endpoint for at least 2 minutes.
+
       - alert: ChatAppHighAuthenticationFailureRate
         expr: rate(chatapp_authentication_failures_total[5m]) > 0.0833
         for: 10m
