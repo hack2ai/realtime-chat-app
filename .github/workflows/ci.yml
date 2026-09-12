@@ -135,6 +135,29 @@ jobs:
             server_status=$(docker compose ps -q server | xargs -r docker inspect -f '{{.State.Health.Status}}' 2>/dev/null || true)
             if [ "$db_status" = "healthy" ] && [ "$server_status" = "healthy" ]; then
               timeout 5 bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/5050'
+              python3 - <<'PY'
+import json
+import socket
+import struct
+
+request = json.dumps({"type": "PING", "payload": {}, "timestamp": 0}).encode("utf-8")
+with socket.create_connection(("127.0.0.1", 5050), timeout=5) as sock:
+    sock.sendall(struct.pack(">I", len(request)) + request)
+    header = sock.recv(4)
+    if len(header) != 4:
+        raise SystemExit("server returned an incomplete frame header")
+    length = struct.unpack(">I", header)[0]
+    response = b""
+    while len(response) < length:
+        chunk = sock.recv(length - len(response))
+        if not chunk:
+            raise SystemExit("server closed the connection before the response was complete")
+        response += chunk
+
+message = json.loads(response.decode("utf-8"))
+if message.get("type") != "PONG":
+    raise SystemExit(f"expected PONG, received {message.get('type')!r}")
+PY
               exit 0
             fi
             docker compose ps
