@@ -92,6 +92,7 @@ jobs:
           test "$(jq -r '.services.server.ports[0].published' /tmp/chatapp-compose.json)" = "5050"
           test "$(jq -r '.services.server.depends_on.db.condition' /tmp/chatapp-compose.json)" = "service_healthy"
           test "$(jq -r '.services.server.volumes[0].target' /tmp/chatapp-compose.json)" = "/app/data/attachments"
+          test "$(jq -r '.services.server.tmpfs[0]' /tmp/chatapp-compose.json)" = "/tmp:rw,noexec,nosuid,size=64m"
 
       - name: Build server container image
         run: docker build --pull --tag realtime-chat-app:${{ github.sha }} .
