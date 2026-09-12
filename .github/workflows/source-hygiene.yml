@@ -45,6 +45,13 @@ jobs:
             exit 1
           fi
 
+      - name: Reject broad exception handlers
+        run: |
+          if git grep -nE 'catch[[:space:]]*\([[:space:]]*(Exception|RuntimeException|Throwable)[[:space:]]' -- 'src/main/java'; then
+            echo 'Handle specific exception types instead of broad Exception, RuntimeException, or Throwable catches.'
+            exit 1
+          fi
+
       - name: Reject high-risk dynamic execution and deserialization APIs
         run: |
           if git grep -nE 'ObjectInputStream|Runtime\.getRuntime\(\)\.exec|ScriptEngineManager|InitialContext' -- 'src/main/java'; then
