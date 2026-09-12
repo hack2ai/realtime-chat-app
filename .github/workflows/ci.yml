@@ -59,6 +59,19 @@ jobs:
             exit 1
           fi
 
+      - name: Verify Docker Compose images use explicit versions
+        run: |
+          images=$(grep -hE '^\s*image:\s*[^[:space:]#]+' docker-compose*.yml | awk '{print $2}')
+          while IFS= read -r image; do
+            [ -n "$image" ] || continue
+            case "$image" in
+              *@sha256:*) ;;
+              *:latest) echo "Docker Compose image must not use :latest: $image"; exit 1 ;;
+              *:*) ;;
+              *) echo "Docker Compose image has no explicit version: $image"; exit 1 ;;
+            esac
+          done <<< "$images"
+
       - name: Verify tracked secret material is absent
         run: |
           forbidden=$(git ls-files | grep -E '(^|/)(\.env|config\.properties|[^/]+\.(p12|jks|key|pem))$' | grep -v '^src/test/resources/config\.properties$' || true)
