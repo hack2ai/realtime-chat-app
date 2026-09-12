@@ -76,6 +76,7 @@ jobs:
           test "$(jq -r '.services.db.logging.driver' /tmp/chatapp-compose.json)" = "json-file"
           test "$(jq -r '.services.db.logging.options[\"max-size\"]' /tmp/chatapp-compose.json)" = "10m"
           test "$(jq -r '.services.db.logging.options[\"max-file\"]' /tmp/chatapp-compose.json)" = "3"
+          test "$(jq -r '.networks.backend.internal' /tmp/chatapp-compose.json)" = "true"
 
       - name: Build server container image
         run: docker build --pull --tag realtime-chat-app:${{ github.sha }} .
