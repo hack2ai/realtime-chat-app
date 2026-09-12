@@ -34,7 +34,7 @@ jobs:
       - name: Verify runnable server package
         run: |
           test -s target/chatapp-server.jar
-          unzip -p target/chatapp-server.jar META-INF/MANIFEST.MF | grep -Eq '^Main-Class: com\.chatapp\.server\.ChatServer[[:space:]]*$'
+          unzip -p target/chatapp-server.jar META-INF/MANIFEST.MF | grep -Eq '^Main-Class: com\\.chatapp\\.server\\.ChatServer[[:space:]]*$'
 
       - name: Generate and verify server checksum
         run: |
@@ -66,16 +66,16 @@ jobs:
           test "$(jq -r '.services.server.read_only' /tmp/chatapp-compose.json)" = "true"
           test "$(jq -r '.services.server.init' /tmp/chatapp-compose.json)" = "true"
           test "$(jq -r '.services.server.security_opt[0]' /tmp/chatapp-compose.json)" = "no-new-privileges:true"
-          test "$(jq -r '.services.server.cap_drop | join(",")' /tmp/chatapp-compose.json)" = "ALL"
+          test "$(jq -r '.services.server.cap_drop | join(\",\")' /tmp/chatapp-compose.json)" = "ALL"
           test "$(jq -r '.services.server.pids_limit' /tmp/chatapp-compose.json)" = "256"
           test "$(jq -r '.services.server.ulimits.nofile.soft' /tmp/chatapp-compose.json)" = "4096"
           test "$(jq -r '.services.server.ulimits.nofile.hard' /tmp/chatapp-compose.json)" = "8192"
           test "$(jq -r '.services.server.logging.driver' /tmp/chatapp-compose.json)" = "json-file"
-          test "$(jq -r '.services.server.logging.options["max-size"]' /tmp/chatapp-compose.json)" = "10m"
-          test "$(jq -r '.services.server.logging.options["max-file"]' /tmp/chatapp-compose.json)" = "3"
+          test "$(jq -r '.services.server.logging.options[\"max-size\"]' /tmp/chatapp-compose.json)" = "10m"
+          test "$(jq -r '.services.server.logging.options[\"max-file\"]' /tmp/chatapp-compose.json)" = "3"
           test "$(jq -r '.services.db.logging.driver' /tmp/chatapp-compose.json)" = "json-file"
-          test "$(jq -r '.services.db.logging.options["max-size"]' /tmp/chatapp-compose.json)" = "10m"
-          test "$(jq -r '.services.db.logging.options["max-file"]' /tmp/chatapp-compose.json)" = "3"
+          test "$(jq -r '.services.db.logging.options[\"max-size\"]' /tmp/chatapp-compose.json)" = "10m"
+          test "$(jq -r '.services.db.logging.options[\"max-file\"]' /tmp/chatapp-compose.json)" = "3"
 
       - name: Build server container image
         run: docker build --pull --tag realtime-chat-app:${{ github.sha }} .
@@ -87,3 +87,7 @@ jobs:
       - name: Verify server image entrypoint
         run: |
           test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{json .Config.Entrypoint}}')" = '["java","-jar","/app/chatapp-server.jar"]'
+
+      - name: Verify server image port
+        run: |
+          test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{json .Config.ExposedPorts}}')" = '{"5050/tcp":{}}'
