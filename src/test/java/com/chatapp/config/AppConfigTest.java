@@ -167,6 +167,7 @@ class AppConfigTest {
     void databasePasswordCanBeLoadedFromJvmSecretFile(@TempDir Path tempDir) throws Exception {
         Path secretFile = tempDir.resolve("db-password");
         Files.writeString(secretFile, "file-based-secret\n");
+        setOwnerOnlyPermissions(secretFile);
         System.setProperty("chatapp.db.password.file", secretFile.toString());
 
         assertEquals("file-based-secret", AppConfig.getDbPassword());
@@ -227,6 +228,17 @@ class AppConfigTest {
         System.setProperty("chatapp.db.password.file", secretFile.toString());
 
         assertThrows(IllegalStateException.class, AppConfig::getDbPassword);
+    }
+
+    private static void setOwnerOnlyPermissions(Path path) throws IOException {
+        try {
+            Files.setPosixFilePermissions(path, EnumSet.of(
+                    PosixFilePermission.OWNER_READ,
+                    PosixFilePermission.OWNER_WRITE
+            ));
+        } catch (UnsupportedOperationException | SecurityException e) {
+            assumeTrue(false, "POSIX permissions are unavailable in this test environment");
+        }
     }
 
     private static void setRequiredDatabaseProperties() {
