@@ -85,6 +85,11 @@ jobs:
           test "$(jq -r '.services.db.logging.options[\"max-file\"]' /tmp/chatapp-compose.json)" = "3"
           test "$(jq -r '.networks.backend.internal' /tmp/chatapp-compose.json)" = "true"
           test "$(jq -r '(.services.db.ports // []) | length' /tmp/chatapp-compose.json)" = "0"
+          test "$(jq -r '(.services.server.ports // []) | length' /tmp/chatapp-compose.json)" = "1"
+          test "$(jq -r '.services.server.ports[0].target' /tmp/chatapp-compose.json)" = "5050"
+          test "$(jq -r '.services.server.ports[0].published' /tmp/chatapp-compose.json)" = "5050"
+          test "$(jq -r '.services.server.depends_on.db.condition' /tmp/chatapp-compose.json)" = "service_healthy"
+          test "$(jq -r '.services.server.volumes[0].target' /tmp/chatapp-compose.json)" = "/app/data/attachments"
 
       - name: Build server container image
         run: docker build --pull --tag realtime-chat-app:${{ github.sha }} .
