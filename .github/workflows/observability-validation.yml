@@ -1,0 +1,49 @@
+name: Observability Validation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: observability-validation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-prometheus:
+    name: Validate Prometheus configuration
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Verify immutable workflow actions
+        run: |
+          if grep -RInP '^\s*uses:\s*[^@#\s]+@(?![0-9a-fA-F]{40}\b)[^#\s]+' .github/workflows; then
+            echo 'All GitHub Actions must be pinned to a 40-character commit SHA.'
+            exit 1
+          fi
+
+      - name: Verify Prometheus configuration
+        run: |
+          docker run --rm \
+            --entrypoint /bin/promtool \
+            -v "$PWD/observability:/etc/prometheus:ro" \
+            prom/prometheus:v3.5.0 \
+            check config /etc/prometheus/prometheus.yml
+
+      - name: Verify Prometheus alert rules
+        run: |
+          docker run --rm \
+            --entrypoint /bin/promtool \
+            -v "$PWD/observability:/etc/prometheus:ro" \
+            prom/prometheus:v3.5.0 \
+            check rules /etc/prometheus/alerts.yml
