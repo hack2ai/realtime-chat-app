@@ -94,6 +94,10 @@ jobs:
         run: |
           test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{json .Config.ExposedPorts}}')" = '{\"5050/tcp\":{}}'
 
+      - name: Verify server image healthcheck
+        run: |
+          test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{json .Config.Healthcheck.Test}}')" = '[\"CMD-SHELL\",\"test -f /tmp/chatapp.ready || exit 1\"]'
+
       - name: Verify attachment directory permissions
         run: |
           docker run --rm --entrypoint sh realtime-chat-app:${{ github.sha }} -c 'test "$(id -u)" = "10001" && test -w /app/data/attachments && ! test -w /app/chatapp-server.jar'
