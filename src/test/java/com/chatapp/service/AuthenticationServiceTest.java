@@ -6,6 +6,7 @@ import com.chatapp.exception.ValidationException;
 import com.chatapp.model.User;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.sql.SQLIntegrityConstraintViolationException;
@@ -107,6 +108,29 @@ class AuthenticationServiceTest {
         assertEquals(user.getId(), service.validateSession(result.sessionToken()));
         assertNotNull(result.expiresAt());
         assertTrue(result.expiresAt().isAfter(LocalDateTime.now()));
+    }
+
+    @Test
+    void monotonicSessionDeadlineOverridesFutureWallClockExpiry() throws Exception {
+        User user = userWithHash("alice", new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder(10).encode("correct-password"));
+        AuthenticationService service = new AuthenticationService(new InMemoryUserDAO(user));
+        AuthenticationService.LoginResult result = service.login("alice", "correct-password");
+
+        Field sessionsField = AuthenticationService.class.getDeclaredField("activeSessions");
+        sessionsField.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> sessions = (Map<String, Object>) sessionsField.get(service);
+        String digest = sessions.keySet().iterator().next();
+        Object originalSession = sessions.get(digest);
+        Constructor<?> sessionConstructor = originalSession.getClass().getDeclaredConstructor(
+                int.class, LocalDateTime.class, long.class);
+        sessionConstructor.setAccessible(true);
+        Object expiredMonotonicSession = sessionConstructor.newInstance(
+                user.getId(), LocalDateTime.now().plusHours(1), System.nanoTime() - 1);
+        sessions.put(digest, expiredMonotonicSession);
+
+        assertTrue(expiredMonotonicSession != originalSession);
+        assertThrows(AuthenticationException.class, () -> service.validateSession(result.sessionToken()));
     }
 
     @Test
@@ -230,6 +254,23 @@ class AuthenticationServiceTest {
 
         assertThrows(AuthenticationException.class, () -> service.validateSession("not-a-real-session"));
         assertThrows(AuthenticationException.class, () -> service.validateSession(null));
+    }
+
+    @Test
+    void oversizedSessionTokenIsRejectedBeforeDigesting() {
+        AuthenticationService service = new AuthenticationService(new InMemoryUserDAO(null));
+
+        AuthenticationException error = assertThrows(AuthenticationException.class,
+                () -> service.validateSession("x".repeat(65)));
+
+        assertEquals("Session is invalid or has expired. Please log in again.", error.getMessage());
+    }
+
+    @Test
+    void oversizedLogoutTokenIsIgnored() {
+        AuthenticationService service = new AuthenticationService(new InMemoryUserDAO(null));
+
+        assertDoesNotThrow(() -> service.logout("x".repeat(65)));
     }
 
     private static User userWithHash(String username, String hash) {

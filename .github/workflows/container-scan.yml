@@ -1,0 +1,101 @@
+name: Container Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '15 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+concurrency:
+  group: container-security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    name: Scan server container
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Verify immutable workflow actions
+        run: |
+          if grep -RInP '^\s*uses:\s*[^@#\s]+@(?![0-9a-fA-F]{40}\b)[^#\s]+' .github/workflows; then
+            echo 'All GitHub Actions must be pinned to a 40-character commit SHA.'
+            exit 1
+          fi
+
+      - name: Build server container image
+        run: |
+          docker build --pull \
+            --build-arg VCS_REF="${{ github.sha }}" \
+            --build-arg VERSION="${{ github.sha }}" \
+            --tag realtime-chat-app:${{ github.sha }} .
+
+      - name: Verify server image runs as non-root
+        run: |
+          image=realtime-chat-app:${{ github.sha }}
+          test "$(docker image inspect "$image" --format '{{.Config.User}}')" = "chatapp"
+          test "$(docker run --rm --entrypoint id "$image" -u)" = "10001"
+
+      - name: Verify server image entrypoint
+        run: |
+          test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{json .Config.Entrypoint}}')" = '["java","-jar","/app/chatapp-server.jar"]'
+
+      - name: Generate container CycloneDX SBOM
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: realtime-chat-app:${{ github.sha }}
+          format: cyclonedx
+          output: container-sbom.cdx.json
+          scanners: vuln
+          exit-code: '0'
+
+      - name: Verify container SBOM
+        run: |
+          test -s container-sbom.cdx.json
+          jq -e '.bomFormat == "CycloneDX" and (.specVersion | type == "string")' container-sbom.cdx.json >/dev/null
+
+      - name: Generate and verify container SBOM checksum
+        run: |
+          sha256sum container-sbom.cdx.json > container-sbom.cdx.json.sha256
+          sha256sum --check container-sbom.cdx.json.sha256
+
+      - name: Upload container SBOM
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: chatapp-container-sbom-${{ github.sha }}
+          path: |
+            container-sbom.cdx.json
+            container-sbom.cdx.json.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Scan server image for HIGH and CRITICAL vulnerabilities, misconfigurations, and secrets
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: realtime-chat-app:${{ github.sha }}
+          format: sarif
+          output: trivy-results.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          scanners: vuln,misconfig,secret
+          exit-code: '1'
+
+      - name: Upload Trivy results
+        if: ${{ always() && hashFiles('trivy-results.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
+        with:
+          sarif_file: trivy-results.sarif
+          category: container-trivy

@@ -25,11 +25,14 @@ import java.sql.SQLException;
 import java.time.Duration;
 import java.util.Collection;
 import java.util.Set;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.RejectedExecutionException;
 
 /** Main TCP chat server and connection registry. */
 public class ChatServer {
@@ -37,14 +40,20 @@ public class ChatServer {
     private static final RequestRateLimiter CONNECTION_RATE_LIMITER = new RequestRateLimiter(30, Duration.ofSeconds(10), 10_000);
     private static final ReadinessMarker READINESS_MARKER = new ReadinessMarker(
             Path.of(System.getProperty("java.io.tmpdir"), "chatapp.ready"));
+    private static final long METRICS_INTERVAL_SECONDS = 60L;
 
     private final AuthenticationService authService;
     private final ChatService chatService = new ChatService();
     private final GroupService groupService = new GroupService();
+    private final ServerMetrics metrics = new ServerMetrics();
     private final ConcurrentHashMap<Integer, ClientHandler> connectedClients = new ConcurrentHashMap<>();
     private final Set<ClientHandler> activeHandlers = ConcurrentHashMap.newKeySet();
     private final ThreadPoolExecutor clientThreadPool;
+    private final ScheduledExecutorService metricsScheduler = Executors.newSingleThreadScheduledExecutor(
+            Thread.ofVirtual().name("chat-server-metrics-").factory());
+    private final MetricsHttpServer metricsHttpServer;
     private final Thread shutdownHook = new Thread(this::stop, "chat-server-shutdown");
+    private volatile ScheduledFuture<?> metricsTask;
     private volatile boolean shutdownHookRegistered;
     private volatile boolean running;
     private ServerSocket serverSocket;
@@ -60,6 +69,17 @@ public class ChatServer {
                 Thread.ofVirtual().factory(),
                 new ThreadPoolExecutor.AbortPolicy());
         this.clientThreadPool.allowCoreThreadTimeOut(true);
+        this.metricsHttpServer = new MetricsHttpServer(metrics, this);
+    }
+
+    public static void main(String[] args) {
+        ChatServer server = new ChatServer(new AuthenticationService());
+        try {
+            server.start();
+        } catch (IOException | RuntimeException e) {
+            logger.error("Chat server failed to start.", e);
+            server.stop();
+        }
     }
 
     public void start() throws IOException {
@@ -68,9 +88,12 @@ public class ChatServer {
         String bindAddress = AppConfig.getServerBindAddress();
         int port = AppConfig.getServerPort();
         InetAddress address = InetAddress.getByName(bindAddress);
+        validateTransportSecurity(address);
         serverSocket = createServerSocket(address, port);
         try {
             running = true;
+            scheduleRuntimeMetrics();
+            metricsHttpServer.start();
             READINESS_MARKER.markReady();
             registerShutdownHook();
             logger.info("Chat server listening on {}:{} (TLS: {})", bindAddress, port, AppConfig.isTlsEnabled());
@@ -78,9 +101,63 @@ public class ChatServer {
         } catch (IOException | RuntimeException e) {
             running = false;
             READINESS_MARKER.clear();
+            cancelRuntimeMetrics();
+            metricsHttpServer.stop();
             closeQuietly(serverSocket);
             serverSocket = null;
             throw e;
+        }
+    }
+
+    private void validateTransportSecurity(InetAddress address) throws IOException {
+        validateTransportSecurity(address, AppConfig.isTlsEnabled(), AppConfig.isPlaintextRemoteAllowed());
+    }
+
+    static void validateTransportSecurity(InetAddress address, boolean tlsEnabled, boolean plaintextRemoteAllowed) throws IOException {
+        if (tlsEnabled || plaintextRemoteAllowed) return;
+        if (address.isAnyLocalAddress() || !address.isLoopbackAddress()) {
+            throw new IOException("Remote plaintext server binding is disabled. Enable TLS or explicitly set server.allowPlaintextRemote=true.");
+        }
+    }
+
+    private synchronized void scheduleRuntimeMetrics() {
+        cancelRuntimeMetrics();
+        if (metricsScheduler.isShutdown()) {
+            throw new IllegalStateException("Metrics scheduler is unavailable.");
+        }
+        metricsTask = metricsScheduler.scheduleAtFixedRate(this::logRuntimeMetrics,
+                METRICS_INTERVAL_SECONDS, METRICS_INTERVAL_SECONDS, TimeUnit.SECONDS);
+    }
+
+    private synchronized void cancelRuntimeMetrics() {
+        if (metricsTask == null) return;
+        metricsTask.cancel(false);
+        metricsTask = null;
+    }
+
+    private void logRuntimeMetrics() {
+        if (!running) return;
+        try {
+            int expiredSessions = authService.cleanupExpiredSessions();
+            ServerMetrics.Snapshot snapshot = metrics.snapshot();
+            logger.info("Server metrics: connectedUsers={}, activeHandlers={}, acceptedConnections={}, rejectedConnections={}, requests={}, protocolErrors={}, authenticationFailures={}, rateLimitedRequests={}, internalErrors={}, poolActive={}, poolSize={}, queueDepth={}, completedHandlers={}, expiredSessions={}",
+                    connectedClients.size(),
+                    activeHandlers.size(),
+                    snapshot.acceptedConnections(),
+                    snapshot.rejectedConnections(),
+                    snapshot.requests(),
+                    snapshot.protocolErrors(),
+                    snapshot.authenticationFailures(),
+                    snapshot.rateLimitedRequests(),
+                    snapshot.internalErrors(),
+                    clientThreadPool.getActiveCount(),
+                    clientThreadPool.getPoolSize(),
+                    clientThreadPool.getQueue().size(),
+                    clientThreadPool.getCompletedTaskCount(),
+                    expiredSessions);
+        } catch (RuntimeException e) {
+            metrics.recordInternalError();
+            logger.error("Runtime metrics collection failed; scheduled collection will continue.", e);
         }
     }
 
@@ -129,26 +206,36 @@ public class ChatServer {
 
     private void acceptLoop() {
         while (running) {
+            Socket clientSocket = null;
             try {
-                Socket clientSocket = serverSocket.accept();
+                clientSocket = serverSocket.accept();
                 configureSocket(clientSocket);
                 if (!allowConnection(clientSocket)) {
+                    metrics.recordRejectedConnection();
+                    metrics.recordRateLimitedRequest();
                     logger.warn("Rejecting connection from {} because connection rate limit was exceeded", clientSocket.getRemoteSocketAddress());
                     closeQuietly(clientSocket);
+                    clientSocket = null;
                     continue;
                 }
                 ClientHandler handler = new ClientHandler(clientSocket, this, authService, chatService, groupService);
                 activeHandlers.add(handler);
                 try {
                     clientThreadPool.execute(handler);
+                    metrics.recordAcceptedConnection();
+                    clientSocket = null;
                 } catch (RejectedExecutionException e) {
+                    metrics.recordRejectedConnection();
                     activeHandlers.remove(handler);
                     logger.warn("Rejecting connection from {} because the server is at capacity", clientSocket.getRemoteSocketAddress());
                     closeQuietly(clientSocket);
+                    clientSocket = null;
                 }
             } catch (SocketException e) {
+                closeQuietly(clientSocket);
                 if (running) logger.error("Server socket error while accepting clients", e);
             } catch (IOException e) {
+                closeQuietly(clientSocket);
                 if (running) logger.error("Error accepting client connection", e);
             }
         }
@@ -190,6 +277,19 @@ public class ChatServer {
 
     void handlerClosed(ClientHandler handler) { activeHandlers.remove(handler); }
 
+    public void recordRequest() { metrics.recordRequest(); }
+    public void recordProtocolError() { metrics.recordProtocolError(); }
+    public void recordAuthenticationFailure() { metrics.recordAuthenticationFailure(); }
+    public void recordRateLimitedRequest() { metrics.recordRateLimitedRequest(); }
+    public void recordInternalError() { metrics.recordInternalError(); }
+
+    public long connectedUserCount() { return connectedClients.size(); }
+    public int activeHandlerCount() { return activeHandlers.size(); }
+    public int handlerPoolActiveCount() { return clientThreadPool.getActiveCount(); }
+    public int handlerPoolSize() { return clientThreadPool.getPoolSize(); }
+    public int handlerPoolQueueDepth() { return clientThreadPool.getQueue().size(); }
+    public long completedHandlerCount() { return clientThreadPool.getCompletedTaskCount(); }
+
     private void broadcastPresence(int userId, ClientHandler source, boolean online) {
         UserPresenceEvent event = new UserPresenceEvent(userId, source.getUsername(), online ? "ONLINE" : "OFFLINE");
         MessageType type = online ? MessageType.S2C_USER_ONLINE : MessageType.S2C_USER_OFFLINE;
@@ -205,25 +305,28 @@ public class ChatServer {
     public GroupService getGroupService() { return groupService; }
 
     public void stop() {
-        if (!running) {
-            READINESS_MARKER.clear();
-            return;
-        }
+        boolean wasRunning = running;
         running = false;
         READINESS_MARKER.clear();
+        cancelRuntimeMetrics();
         unregisterShutdownHook();
-        logger.info("Shutting down chat server ({} active connections)...", activeHandlers.size());
+        metricsHttpServer.stop();
         closeQuietly(serverSocket);
         serverSocket = null;
         for (ClientHandler handler : activeHandlers.toArray(ClientHandler[]::new)) handler.closeConnection();
+        activeHandlers.clear();
+        connectedClients.clear();
+
         clientThreadPool.shutdownNow();
         try {
             if (!clientThreadPool.awaitTermination(5, TimeUnit.SECONDS)) logger.warn("Client handler pool did not terminate within 5 seconds");
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
-        ConnectionPool.getInstance().shutdown();
-        logger.info("Chat server stopped.");
+
+        metricsScheduler.shutdownNow();
+        ConnectionPool.shutdownInstance();
+        if (wasRunning) logger.info("Chat server stopped.");
     }
 
     private static void closeQuietly(AutoCloseable closeable) {

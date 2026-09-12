@@ -5,7 +5,6 @@ import com.chatapp.model.dto.ChatDTOs.PrivateMessageEvent;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Statement;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -19,7 +18,7 @@ public class PrivateMessageDAO {
     public PrivateMessageEvent insert(int senderId, int receiverId, String message) {
         String sql = "INSERT INTO private_messages (sender_id, receiver_id, message) VALUES (?, ?, ?)";
         return DatabaseManager.execute(conn -> {
-            try (PreparedStatement stmt = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+            try (PreparedStatement stmt = conn.prepareStatement(sql, new String[]{"id"})) {
                 stmt.setInt(1, senderId);
                 stmt.setInt(2, receiverId);
                 stmt.setString(3, message);
@@ -78,14 +77,15 @@ public class PrivateMessageDAO {
         });
     }
 
-    public void markDelivered(long messageId, int receiverId) {
+    /** Marks a message delivered only when the requesting user is its receiver and it is still SENT. */
+    public boolean markDelivered(long messageId, int receiverId) {
         String sql = "UPDATE private_messages SET msg_status = 'DELIVERED' "
                 + "WHERE id = ? AND receiver_id = ? AND msg_status = 'SENT'";
-        DatabaseManager.executeVoid(conn -> {
+        return DatabaseManager.execute(conn -> {
             try (PreparedStatement stmt = conn.prepareStatement(sql)) {
                 stmt.setLong(1, messageId);
                 stmt.setInt(2, receiverId);
-                stmt.executeUpdate();
+                return stmt.executeUpdate() > 0;
             }
         });
     }

@@ -1,0 +1,66 @@
+name: Docker Base Image Policy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-base-image-policy-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-base-images:
+    name: Verify Docker base image tags
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Check Docker base image references
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          files=$(find . -type f \( -name 'Dockerfile' -o -name 'Dockerfile.*' \) -not -path './.git/*' -print)
+          test -n "$files"
+
+          failed=0
+          while IFS= read -r file; do
+            while IFS= read -r image; do
+              case "$image" in
+                *@sha256:*)
+                  continue
+                  ;;
+                *:latest)
+                  echo "Mutable Docker base image tag is not allowed: $file -> $image"
+                  failed=1
+                  ;;
+                *:*)
+                  continue
+                  ;;
+                *)
+                  echo "Docker base image must use an explicit tag or digest: $file -> $image"
+                  failed=1
+                  ;;
+              esac
+            done < <(
+              awk '
+                /^[[:space:]]*FROM[[:space:]]+/ {
+                  image=$2
+                  sub(/[[:space:]]+AS[[:space:]]+.*/, "", image)
+                  print image
+                }
+              ' "$file"
+            )
+          done <<< "$files"
+
+          test "$failed" -eq 0

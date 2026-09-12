@@ -9,9 +9,28 @@ target/
 
 # Local configuration / secrets
 src/main/resources/config.properties
+config.properties
+.env
+.env.*
+secrets/
+**/secrets/
+
+docker-compose.override.yml
+docker-compose.override.yaml
+compose.override.yml
+compose.override.yaml
+
+# Local certificate / key material
+*.p12
+*.pfx
+*.jks
+*.key
+*.pem
 
 # Runtime attachment data — never commit user files
 /data/
+**/data/
+**/attachments/
 
 # IDEs
 .idea/
@@ -36,4 +55,3 @@ desktop.ini
 logs/
 *.bak
 *.tmp
-.env

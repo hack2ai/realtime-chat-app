@@ -18,6 +18,10 @@ class ReadinessMarkerTest {
 
         marker.markReady();
         assertTrue(Files.isRegularFile(markerPath));
+        if (Files.exists(Path.of("/proc/self"))) {
+            assertTrue(Files.isSymbolicLink(markerPath));
+            assertTrue(Files.isRegularFile(markerPath));
+        }
 
         marker.clear();
         assertFalse(Files.exists(markerPath));
@@ -33,7 +37,10 @@ class ReadinessMarkerTest {
         marker.markReady();
 
         assertTrue(Files.isRegularFile(markerPath));
-        assertEquals(0, Files.size(markerPath));
+        if (Files.exists(Path.of("/proc/self"))) {
+            assertTrue(Files.isSymbolicLink(markerPath));
+            assertTrue(Files.readSymbolicLink(markerPath).toString().matches("/proc/\\d+/status"));
+        }
     }
 
     @Test

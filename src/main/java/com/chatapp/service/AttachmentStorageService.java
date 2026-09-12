@@ -10,21 +10,26 @@ import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 /** Secure local storage for small authenticated chat attachments. */
 public final class AttachmentStorageService {
     public static final long MAX_FILE_BYTES = 5L * 1024 * 1024;
     private static final long MAX_BASE64_CHARS = ((MAX_FILE_BYTES + 2) / 3) * 4;
+    private static final Duration TEMP_FILE_RETENTION = Duration.ofHours(1);
     private static final Path STORAGE_ROOT = Path.of(AppConfig.getAttachmentStoragePath()).toAbsolutePath().normalize();
     public record StoredFile(String fileId,String fileName,String contentType,long sizeBytes,String sha256) {}
 
     public AttachmentStorageService(){
-        try{Files.createDirectories(STORAGE_ROOT);if(!Files.isDirectory(STORAGE_ROOT,LinkOption.NOFOLLOW_LINKS))throw new IOException("Storage path is not a directory.");}
+        try{Files.createDirectories(STORAGE_ROOT);if(!Files.isDirectory(STORAGE_ROOT,LinkOption.NOFOLLOW_LINKS))throw new IOException("Storage path is not a directory.");cleanupOrphanedTempFiles(STORAGE_ROOT);}
         catch(IOException e){throw new IllegalStateException("Unable to initialize attachment storage.",e);}
     }
 
@@ -66,6 +71,23 @@ public final class AttachmentStorageService {
         if(data.length()>MAX_BASE64_CHARS)throw new ValidationException("File exceeds the 5 MB limit.");
         try{byte[] decoded=Base64.getDecoder().decode(data);if(decoded.length>MAX_FILE_BYTES)throw new ValidationException("File exceeds the 5 MB limit.");return decoded;}
         catch(IllegalArgumentException e){throw new ValidationException("File data is not valid Base64.",e);}
+    }
+
+    static void cleanupOrphanedTempFiles(Path storageRoot) throws IOException {
+        Instant cutoff=Instant.now().minus(TEMP_FILE_RETENTION);
+        try(Stream<Path> files=Files.list(storageRoot)){
+            for(Path file:files.filter(AttachmentStorageService::isTempFile).toList()){
+                try{
+                    BasicFileAttributes attributes=Files.readAttributes(file,BasicFileAttributes.class,LinkOption.NOFOLLOW_LINKS);
+                    if(attributes.lastModifiedTime().toInstant().isBefore(cutoff))Files.deleteIfExists(file);
+                }catch(IOException ignored){}
+            }
+        }
+    }
+
+    private static boolean isTempFile(Path path){
+        String name=path.getFileName().toString();
+        return Files.isRegularFile(path,LinkOption.NOFOLLOW_LINKS)&&name.startsWith(".")&&name.endsWith(".tmp");
     }
 
     private static void validateId(String id)throws ValidationException{if(id==null||!id.matches("[0-9a-fA-F-]{36}"))throw new ValidationException("Invalid file id.");}

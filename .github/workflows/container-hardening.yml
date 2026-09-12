@@ -1,0 +1,94 @@
+name: Container Hardening
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: container-hardening-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-image:
+    name: Verify server image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Build server image
+        run: |
+          docker build --pull \
+            --build-arg VCS_REF="${{ github.sha }}" \
+            --build-arg VERSION="${{ github.sha }}" \
+            --tag realtime-chat-app:${{ github.sha }} .
+
+      - name: Verify non-root runtime
+        run: |
+          image=realtime-chat-app:${{ github.sha }}
+          test "$(docker image inspect "$image" --format '{{.Config.User}}')" = "chatapp"
+          test "$(docker run --rm --entrypoint id "$image" -u)" = "10001"
+
+      - name: Verify immutable application filesystem
+        run: |
+          image=realtime-chat-app:${{ github.sha }}
+          test "$(docker image inspect "$image" --format '{{.Config.WorkingDir}}')" = "/app"
+          test "$(docker run --rm --entrypoint sh "$image" -c 'stat -c %a /app/chatapp-server.jar')" = "444"
+          test "$(docker run --rm --entrypoint sh "$image" -c 'stat -c %u:%g /app/chatapp-server.jar')" = "0:0"
+
+      - name: Verify read-only root runtime
+        run: |
+          image=realtime-chat-app:${{ github.sha }}
+          docker run --rm \
+            --read-only \
+            --tmpfs /tmp:rw,noexec,nosuid,size=8m \
+            --entrypoint sh "$image" \
+            -c 'touch /tmp/write-probe && ! touch /app/write-probe'
+
+      - name: Verify startup configuration
+        run: |
+          image=realtime-chat-app:${{ github.sha }}
+          test "$(docker image inspect "$image" --format '{{json .Config.Entrypoint}}')" = '["java","-jar","/app/chatapp-server.jar"]'
+          test "$(docker image inspect "$image" --format '{{.Config.StopSignal}}')" = "SIGTERM"
+          test "$(docker image inspect "$image" --format '{{json .Config.ExposedPorts}}')" = '{"5050/tcp":{}}'
+          test "$(docker image inspect "$image" --format '{{json .Config.Volumes}}')" = '{"/app/data/attachments":{}}'
+          test "$(docker image inspect "$image" --format '{{json .Config.Healthcheck.Test}}')" = '["CMD","java","-cp","/app/chatapp-server.jar","com.chatapp.server.ServerHealthCheck"]'
+
+      - name: Verify healthcheck policy
+        run: |
+          image=realtime-chat-app:${{ github.sha }}
+          test "$(docker image inspect "$image" --format '{{.Config.Healthcheck.Interval}}')" = "10s"
+          test "$(docker image inspect "$image" --format '{{.Config.Healthcheck.Timeout}}')" = "3s"
+          test "$(docker image inspect "$image" --format '{{.Config.Healthcheck.Retries}}')" = "5"
+          test "$(docker image inspect "$image" --format '{{.Config.Healthcheck.StartPeriod}}')" = "10s"
+
+      - name: Verify JVM resource safety
+        run: |
+          image=realtime-chat-app:${{ github.sha }}
+          env_json=$(docker image inspect "$image" --format '{{json .Config.Env}}')
+          printf '%s\n' "$env_json" | jq -e 'index("JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError") != null' >/dev/null
+
+      - name: Verify image contains no local secret material
+        run: |
+          image=realtime-chat-app:${{ github.sha }}
+          leaked=$(docker run --rm --entrypoint sh "$image" -c '
+            find /app -type f \( \
+              -name ".env" -o \
+              -name "config.properties" -o \
+              -name "*.p12" -o \
+              -name "*.pfx" -o \
+              -name "*.jks" -o \
+              -name "*.key" -o \
+              -name "*.pem" \
+            \) -print -quit
+          ')
+          test -z "$leaked"

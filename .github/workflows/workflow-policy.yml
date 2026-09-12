@@ -1,0 +1,68 @@
+name: Workflow Policy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: workflow-policy-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate workflow permissions
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Require explicit workflow permissions
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          workflows=(.github/workflows/*.{yml,yaml})
+          found=false
+          for workflow in "${workflows[@]}"; do
+            [ -f "$workflow" ] || continue
+            found=true
+            if ! grep -Eq '^permissions:([[:space:]]|$)' "$workflow"; then
+              echo "Workflow is missing an explicit permissions policy: $workflow"
+              exit 1
+            fi
+          done
+
+          if [ "$found" != true ]; then
+            echo 'No GitHub Actions workflow files found.'
+            exit 1
+          fi
+
+      - name: Enforce release workflow least-privilege boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          grep -Fqx 'permissions: {}' .github/workflows/release.yml
+          grep -Fqx '      contents: write' .github/workflows/release.yml
+          grep -Fqx '      packages: write' .github/workflows/release.yml
+          grep -Fqx '      attestations: write' .github/workflows/release.yml
+          grep -Fqx '      id-token: write' .github/workflows/release.yml
+
+      - name: Require immutable action references
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if grep -RInP '^\s*uses:\s*[^@#\s]+@(?![0-9a-fA-F]{40}\b)[^#\s]+' .github/workflows; then
+            echo 'All GitHub Actions must be pinned to a 40-character commit SHA.'
+            exit 1
+          fi

@@ -1,0 +1,95 @@
+name: Compose Policy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: compose-policy-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate Compose security policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Validate Compose configuration
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+          CHATAPP_METRICS_AUTH_TOKEN: ci-metrics-token
+        run: docker compose config --quiet
+
+      - name: Validate observability Compose configuration
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+          CHATAPP_METRICS_AUTH_TOKEN: ci-metrics-token
+        run: docker compose -f docker-compose.yml -f docker-compose.observability.yml config --quiet
+
+      - name: Validate Prometheus configuration and alert rules
+        env:
+          CHATAPP_METRICS_AUTH_TOKEN: ci-metrics-token
+        run: |
+          printf '%s\n' "$CHATAPP_METRICS_AUTH_TOKEN" > metrics_auth_token
+          chmod 0444 metrics_auth_token
+          trap 'rm -f metrics_auth_token' EXIT
+
+          docker run --rm \
+            -v "$PWD/observability:/etc/prometheus:ro" \
+            -v "$PWD/metrics_auth_token:/run/secrets/metrics_auth_token:ro" \
+            --entrypoint promtool \
+            prom/prometheus:v3.5.0 \
+            check config /etc/prometheus/prometheus.yml
+          docker run --rm \
+            -v "$PWD/observability:/etc/prometheus:ro" \
+            -v "$PWD/metrics_auth_token:/run/secrets/metrics_auth_token:ro" \
+            --entrypoint promtool \
+            prom/prometheus:v3.5.0 \
+            check rules /etc/prometheus/alerts.yml
+
+      - name: Verify Compose isolation policy
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: |
+          config=$(docker compose config --format json)
+          printf '%s\n' "$config" | jq -e '.services.server.user == "10001"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.read_only == true' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.init == true' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.cap_drop == ["ALL"]' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.security_opt == ["no-new-privileges:true"]' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.pids_limit == 256' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.mem_limit == 1073741824' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.cpus == 2' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.stop_grace_period == "10s"' >/dev/null
+          printf '%s\n' "$config" | jq -e '(.services.server.tmpfs // []) | index("/tmp:rw,noexec,nosuid,size=64m") != null' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.healthcheck.test == ["CMD", "java", "-cp", "/app/chatapp-server.jar", "com.chatapp.server.ServerHealthCheck"]' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.cap_drop == ["ALL"]' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.security_opt == ["no-new-privileges:true"]' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.pids_limit == 256' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.mem_limit == 1073741824' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.cpus == 2' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.stop_grace_period == "30s"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.networks.backend.internal == true' >/dev/null
+          printf '%s\n' "$config" | jq -e '(.services.db.ports // []) == []' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.environment.CHATAPP_SERVER_ALLOWPLAINTEXTREMOTE == "false"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.logging.driver == "json-file"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.logging.options["max-size"] == "10m"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.server.logging.options["max-file"] == "3"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.logging.driver == "json-file"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.logging.options["max-size"] == "10m"' >/dev/null
+          printf '%s\n' "$config" | jq -e '.services.db.logging.options["max-file"] == "3"' >/dev/null
+          printf '%s\n' "$config" | jq -e '(.services.server.ports | length == 1) and (.services.server.ports[0].target == 5050) and (.services.server.ports[0].published == 5050) and (.services.server.ports[0].host_ip == "127.0.0.1")' >/dev/null
