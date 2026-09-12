@@ -63,3 +63,7 @@ jobs:
       - name: Verify server image runs as non-root
         run: |
           test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{.Config.User}}')" = "chatapp"
+
+      - name: Verify server image entrypoint
+        run: |
+          test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{json .Config.Entrypoint}}')" = '["java","-jar","/app/chatapp-server.jar"]'
