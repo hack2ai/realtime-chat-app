@@ -67,11 +67,18 @@ jobs:
           test -s container-sbom.cdx.json
           jq -e '.bomFormat == "CycloneDX" and (.specVersion | type == "string")' container-sbom.cdx.json >/dev/null
 
+      - name: Generate and verify container SBOM checksum
+        run: |
+          sha256sum container-sbom.cdx.json > container-sbom.cdx.json.sha256
+          sha256sum --check container-sbom.cdx.json.sha256
+
       - name: Upload container SBOM
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: chatapp-container-sbom-${{ github.sha }}
-          path: container-sbom.cdx.json
+          path: |
+            container-sbom.cdx.json
+            container-sbom.cdx.json.sha256
           if-no-files-found: error
           retention-days: 14
 
