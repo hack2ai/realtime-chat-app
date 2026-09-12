@@ -59,6 +59,17 @@ public final class AppConfig {
         return value;
     }
 
+    private static int optionalRange(String key, int defaultValue, int min, int max) {
+        String value = optional(key, Integer.toString(defaultValue));
+        try {
+            int parsed = Integer.parseInt(value);
+            if (parsed < min || parsed > max) throw new IllegalStateException("Config key '" + key + "' must be between " + min + " and " + max + ".");
+            return parsed;
+        } catch (NumberFormatException e) {
+            throw new IllegalStateException("Config key '" + key + "' must be an integer.", e);
+        }
+    }
+
     private static boolean optionalBoolean(String key, boolean defaultValue) {
         String value = optional(key, Boolean.toString(defaultValue));
         if (!value.equalsIgnoreCase("true") && !value.equalsIgnoreCase("false")) {
@@ -79,12 +90,15 @@ public final class AppConfig {
         return value;
     }
     public static int getDbConnectionTimeoutMs() { return requireRange("db.pool.connectionTimeoutMs", 1000, 120000); }
+    public static int getDbSocketTimeoutMs() { return optionalRange("db.socketTimeoutMs", 60000, 1000, 300000); }
     public static boolean isDbUseSsl() { return optionalBoolean("db.useSsl", true); }
     public static boolean isDbAllowPublicKeyRetrieval() { return optionalBoolean("db.allowPublicKeyRetrieval", false); }
     public static String getJdbcUrl() {
         return "jdbc:mysql://" + getDbHost() + ":" + getDbPort() + "/" + getDbName()
                 + "?useSSL=" + isDbUseSsl()
                 + "&allowPublicKeyRetrieval=" + isDbAllowPublicKeyRetrieval()
+                + "&connectTimeout=" + getDbConnectionTimeoutMs()
+                + "&socketTimeout=" + getDbSocketTimeoutMs()
                 + "&serverTimezone=UTC&characterEncoding=utf8mb4&useUnicode=true";
     }
     public static int getServerPort() { return requirePort("server.port"); }
