@@ -38,6 +38,27 @@ jobs:
             exit 1
           fi
 
+      - name: Verify Docker base images use explicit versions
+        run: |
+          if awk '
+            toupper($1) == "FROM" {
+              image = $2
+              if (image !~ /@sha256:/ && image !~ /:[^:[:space:]]+$/) {
+                print "Docker base image has no explicit tag: " image
+                bad = 1
+              }
+              if (image ~ /:latest$/) {
+                print "Docker base image must not use :latest: " image
+                bad = 1
+              }
+            }
+            END { exit bad }
+          ' Dockerfile; then
+            :
+          else
+            exit 1
+          fi
+
       - name: Verify tracked secret material is absent
         run: |
           forbidden=$(git ls-files | grep -E '(^|/)(\.env|config\.properties|[^/]+\.(p12|jks|key|pem))$' | grep -v '^src/test/resources/config\.properties$' || true)
@@ -464,6 +485,7 @@ jobs:
               raise SystemExit(f"login failed: {login.get('payload')!r}")
           if not isinstance(login.get("payload"), dict) or not login["payload"].get("sessionToken"):
               raise SystemExit("login response did not include a session token")
+          PY
 
       - name: Stop Docker Compose stack
         if: always()
