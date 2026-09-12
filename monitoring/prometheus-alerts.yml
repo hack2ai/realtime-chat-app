@@ -20,6 +20,15 @@ groups:
           summary: "ChatApp is rejecting many connections"
           description: "More than 25 connections were rejected in the last 5 minutes."
 
+      - alert: ChatAppAuthenticationFailuresHigh
+        expr: increase(chatapp_authentication_failures_total[5m]) > 20
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "ChatApp is seeing elevated authentication failures"
+          description: "More than 20 authentication failures were observed in the last 5 minutes."
+
       - alert: ChatAppHandlerQueueBacklog
         expr: chatapp_handler_pool_queue_depth > 50
         for: 5m
@@ -29,6 +38,15 @@ groups:
           summary: "ChatApp handler queue is backed up"
           description: "The client-handler executor has maintained a queue depth above 50 for 5 minutes."
 
+      - alert: ChatAppDatabasePoolExhaustion
+        expr: chatapp_db_pool_max_connections > 0 and chatapp_db_pool_idle_connections == 0 and chatapp_db_pool_connections >= chatapp_db_pool_max_connections
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "ChatApp database connection pool is exhausted"
+          description: "All configured database connections have been in use with no idle connections for 5 minutes."
+
       - alert: ChatAppJvmMemoryPressure
         expr: chatapp_jvm_memory_max_bytes > 0 and (chatapp_jvm_memory_used_bytes / chatapp_jvm_memory_max_bytes) > 0.85
         for: 5m
@@ -37,6 +55,15 @@ groups:
         annotations:
           summary: "ChatApp JVM memory pressure is high"
           description: "JVM heap usage has remained above 85% of the configured maximum for 5 minutes."
+
+      - alert: ChatAppInternalErrorsHigh
+        expr: increase(chatapp_internal_errors_total[5m]) > 5
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "ChatApp is seeing internal errors"
+          description: "More than 5 internal request-handler errors were observed in the last 5 minutes."
 
       - alert: ChatAppNoActiveConnections
         expr: chatapp_connected_users == 0 and chatapp_jvm_uptime_seconds > 900
