@@ -1,70 +1,133 @@
 package com.chatapp.server;
 
+import com.chatapp.config.AppConfig;
 import com.chatapp.database.ConnectionPool;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.chatapp.service.RequestRateLimiter;
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpServer;
 
 import java.io.IOException;
-import java.io.OutputStream;
 import java.lang.management.ManagementFactory;
-import java.lang.management.RuntimeMXBean;
-import java.lang.management.ThreadMXBean;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
-import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.util.Objects;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
-/** Lightweight Prometheus-style metrics HTTP endpoint. */
+/** Optional read-only HTTP endpoint for Prometheus-style operational metrics. */
 public final class MetricsHttpServer {
-    private static final Logger logger = LoggerFactory.getLogger(MetricsHttpServer.class);
+    private static final RequestRateLimiter METRICS_RATE_LIMITER =
+            new RequestRateLimiter(60, java.time.Duration.ofMinutes(1), 10_000);
+    private static final int METRICS_CORE_THREADS = 2;
+    private static final int METRICS_MAX_THREADS = 16;
+    private static final int METRICS_QUEUE_CAPACITY = 64;
+    private static final String AUTHORIZATION_HEADER = "Authorization";
     private static final String BEARER_PREFIX = "Bearer ";
 
     private final ServerMetrics metrics;
     private final ChatServer server;
-    private final com.sun.net.httpserver.HttpServer httpServer;
-    private final ExecutorService executor;
+    private HttpServer httpServer;
+    private ExecutorService executor;
 
-    public MetricsHttpServer(ServerMetrics metrics, ChatServer server) throws IOException {
-        this.metrics = Objects.requireNonNull(metrics, "metrics");
-        this.server = Objects.requireNonNull(server, "server");
-        this.httpServer = com.sun.net.httpserver.HttpServer.create(
-                new InetSocketAddress(com.chatapp.config.AppConfig.getMetricsBindAddress(), com.chatapp.config.AppConfig.getMetricsPort()),
-                0);
-        this.httpServer.createContext("/metrics", exchange -> {
-            if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
-                exchange.sendResponseHeaders(405, -1);
-                exchange.close();
+    public MetricsHttpServer(ServerMetrics metrics, ChatServer server) {
+        this.metrics = metrics;
+        this.server = server;
+    }
+
+    public synchronized void start() throws IOException {
+        if (httpServer != null) return;
+        if (!AppConfig.isMetricsEnabled()) return;
+
+        InetAddress address = InetAddress.getByName(AppConfig.getMetricsBindAddress());
+        boolean remoteExposure = !address.isLoopbackAddress();
+        String authToken = AppConfig.getMetricsAuthToken();
+        if (!isRemoteExposureAllowed(remoteExposure, AppConfig.isMetricsRemoteAllowed(), authToken)) {
+            if (remoteExposure && !AppConfig.isMetricsRemoteAllowed()) {
+                throw new IOException("Remote metrics exposure is disabled. Enable metrics.allowRemote=true when intentionally exposing the metrics endpoint.");
+            }
+            throw new IOException("Remote metrics exposure requires metrics.authToken to be configured.");
+        }
+
+        HttpServer candidate = null;
+        ThreadPoolExecutor candidateExecutor = null;
+        try {
+            candidate = HttpServer.create(new InetSocketAddress(address, AppConfig.getMetricsPort()), 0);
+            candidateExecutor = new ThreadPoolExecutor(
+                    METRICS_CORE_THREADS,
+                    METRICS_MAX_THREADS,
+                    30L,
+                    TimeUnit.SECONDS,
+                    new ArrayBlockingQueue<>(METRICS_QUEUE_CAPACITY),
+                    Thread.ofVirtual().name("chat-metrics-").factory(),
+                    new ThreadPoolExecutor.AbortPolicy());
+            candidateExecutor.allowCoreThreadTimeOut(true);
+            candidate.createContext("/metrics", this::handleMetrics);
+            candidate.setExecutor(candidateExecutor);
+            candidate.start();
+            httpServer = candidate;
+            executor = candidateExecutor;
+        } catch (IOException | RuntimeException | Error e) {
+            if (candidate != null) {
+                candidate.stop(0);
+            }
+            if (candidateExecutor != null) {
+                candidateExecutor.shutdownNow();
+            }
+            throw e;
+        }
+    }
+
+    public synchronized void stop() {
+        if (httpServer == null) return;
+        httpServer.stop(0);
+        httpServer = null;
+        if (executor != null) {
+            executor.shutdownNow();
+            executor = null;
+        }
+    }
+
+    private void handleMetrics(HttpExchange exchange) throws IOException {
+        try (exchange) {
+            exchange.getResponseHeaders().set("X-Content-Type-Options", "nosniff");
+            exchange.getResponseHeaders().set("Content-Security-Policy", "default-src 'none'");
+            exchange.getResponseHeaders().set("X-Frame-Options", "DENY");
+            exchange.getResponseHeaders().set("Referrer-Policy", "no-referrer");
+            if (!"/metrics".equals(exchange.getRequestURI().getPath())) {
+                exchange.sendResponseHeaders(404, -1);
                 return;
             }
-            String token = com.chatapp.config.AppConfig.getMetricsAuthToken();
-            if (com.chatapp.config.AppConfig.isMetricsRemoteAllowed()
-                    && !isAuthorized(exchange.getRequestHeaders().getFirst("Authorization"), token)) {
+            if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+                exchange.getResponseHeaders().set("Allow", "GET");
+                exchange.sendResponseHeaders(405, -1);
+                return;
+            }
+
+            String key = exchange.getRemoteAddress().getAddress() == null
+                    ? "metrics:unknown"
+                    : "metrics:" + exchange.getRemoteAddress().getAddress().getHostAddress();
+            if (!METRICS_RATE_LIMITER.allow(key)) {
+                exchange.getResponseHeaders().set("Retry-After", "60");
+                exchange.sendResponseHeaders(429, -1);
+                return;
+            }
+
+            String configuredToken = AppConfig.getMetricsAuthToken();
+            if (!configuredToken.isBlank() && !isAuthorized(exchange.getRequestHeaders().getFirst(AUTHORIZATION_HEADER), configuredToken)) {
                 exchange.getResponseHeaders().set("WWW-Authenticate", "Bearer");
                 exchange.sendResponseHeaders(401, -1);
-                exchange.close();
                 return;
             }
-            byte[] body = renderMetrics().getBytes(StandardCharsets.UTF_8);
+
+            byte[] payload = renderMetrics().getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().set("Content-Type", "text/plain; version=0.0.4; charset=utf-8");
-            exchange.sendResponseHeaders(200, body.length);
-            try (OutputStream output = exchange.getResponseBody()) {
-                output.write(body);
-            }
-        });
-        this.executor = Executors.newVirtualThreadPerTaskExecutor();
-        this.httpServer.setExecutor(executor);
-    }
-
-    public void start() {
-        httpServer.start();
-    }
-
-    public void stop() {
-        httpServer.stop(0);
-        executor.close();
+            exchange.getResponseHeaders().set("Cache-Control", "no-store");
+            exchange.sendResponseHeaders(200, payload.length);
+            exchange.getResponseBody().write(payload);
+        }
     }
 
     static boolean isRemoteExposureAllowed(boolean remoteExposure, boolean remoteAllowed, String authToken) {
@@ -84,9 +147,8 @@ public final class MetricsHttpServer {
     private String renderMetrics() {
         ServerMetrics.Snapshot snapshot = metrics.snapshot();
         Runtime runtime = Runtime.getRuntime();
-        RuntimeMXBean runtimeBean = ManagementFactory.getRuntimeMXBean();
-        ThreadMXBean threadBean = ManagementFactory.getThreadMXBean();
-
+        long uptimeMillis = ManagementFactory.getRuntimeMXBean().getUptime();
+        long liveThreads = ManagementFactory.getThreadMXBean().getThreadCount();
         long dbTotalConnections = 0;
         long dbIdleConnections = 0;
         long dbMaxConnections = 0;
@@ -96,9 +158,9 @@ public final class MetricsHttpServer {
             dbIdleConnections = connectionPool.getIdleConnections();
             dbMaxConnections = connectionPool.getMaxSize();
         } catch (RuntimeException e) {
-            logger.warn("Database metrics unavailable ({}).", e.getClass().getSimpleName());
+            org.slf4j.LoggerFactory.getLogger(MetricsHttpServer.class)
+                    .warn("Database metrics unavailable ({}).", e.getClass().getSimpleName());
         }
-
         StringBuilder output = new StringBuilder(3600);
         appendGauge(output, "chatapp_connected_users", "Currently connected authenticated users.", server.connectedUserCount());
         appendGauge(output, "chatapp_active_handlers", "Currently active client handlers.", server.activeHandlerCount());
@@ -119,8 +181,8 @@ public final class MetricsHttpServer {
         appendGauge(output, "chatapp_jvm_memory_used_bytes", "JVM heap memory currently used.", runtime.totalMemory() - runtime.freeMemory());
         appendGauge(output, "chatapp_jvm_memory_committed_bytes", "JVM heap memory currently committed.", runtime.totalMemory());
         appendGauge(output, "chatapp_jvm_memory_max_bytes", "Maximum JVM heap memory available.", runtime.maxMemory());
-        appendGauge(output, "chatapp_jvm_uptime_seconds", "JVM uptime in seconds.", runtimeBean.getUptime() / 1000);
-        appendGauge(output, "chatapp_jvm_threads_live", "Currently live JVM threads.", threadBean.getThreadCount());
+        appendGauge(output, "chatapp_jvm_uptime_seconds", "JVM uptime in seconds.", uptimeMillis / 1000);
+        appendGauge(output, "chatapp_jvm_threads_live", "Currently live JVM threads.", liveThreads);
         return output.toString();
     }
 
