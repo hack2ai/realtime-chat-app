@@ -10,3 +10,45 @@ services:
       CHATAPP_METRICS_AUTHTOKEN: ${CHATAPP_METRICS_AUTH_TOKEN:?set CHATAPP_METRICS_AUTH_TOKEN}
     ports:
       - "127.0.0.1:9100:9100"
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    restart: unless-stopped
+    networks:
+      - backend
+    read_only: true
+    pids_limit: 128
+    mem_limit: 512m
+    memswap_limit: 512m
+    cpus: 1.0
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    depends_on:
+      server:
+        condition: service_healthy
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    secrets:
+      - metrics_auth_token
+    ports:
+      - "127.0.0.1:9090:9090"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+secrets:
+  metrics_auth_token:
+    environment: CHATAPP_METRICS_AUTH_TOKEN
+
+volumes:
+  prometheus-data:
