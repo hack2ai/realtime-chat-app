@@ -1,10 +1,10 @@
-FROM maven:3.9.11-eclipse-temurin-21 AS build
+FROM maven:3.9.15-eclipse-temurin-26 AS build
 WORKDIR /workspace
 COPY pom.xml .
 COPY src ./src
 RUN mvn --batch-mode --no-transfer-progress -DskipTests package
 
-FROM eclipse-temurin:21-jre
+FROM eclipse-temurin:25-jre
 WORKDIR /app
 LABEL org.opencontainers.image.source="https://github.com/hack2ai/realtime-chat-app" \
       org.opencontainers.image.description="Secure Java 21 real-time chat server" \
