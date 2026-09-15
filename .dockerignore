@@ -11,6 +11,9 @@ Thumbs.db
 
 # Local configuration and secrets
 **/config.properties
+**/.env
+**/.env.*
+**/secrets/**
 **/*.p12
 **/*.pfx
 **/*.jks
