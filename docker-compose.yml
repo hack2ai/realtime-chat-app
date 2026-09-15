@@ -41,6 +41,7 @@ services:
     networks:
       - backend
     init: true
+    user: "10001"
     read_only: true
     cpus: 1.0
     mem_limit: 768m
