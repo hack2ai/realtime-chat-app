@@ -9,6 +9,14 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -136,6 +144,46 @@ class MessageCodecTest {
 
         assertThrows(IOException.class, () ->
                 codec.write(new DataOutputStream(new ByteArrayOutputStream()), envelope));
+    }
+
+    @Test
+    void concurrentWritesProduceIntactFrames() throws Exception {
+        final int writerCount = 20;
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        DataOutputStream out = new DataOutputStream(bytes);
+        ExecutorService executor = Executors.newFixedThreadPool(writerCount);
+
+        try {
+            List<Future<?>> futures = new ArrayList<>(writerCount);
+            for (int i = 0; i < writerCount; i++) {
+                final int writerId = i;
+                futures.add(executor.submit(() -> {
+                    codec.write(out, codec.wrap(MessageType.C2S_PRIVATE_MESSAGE,
+                            new Payload("user-" + writerId, "message-" + writerId)));
+                    return null;
+                }));
+            }
+
+            for (Future<?> future : futures) {
+                future.get();
+            }
+        } finally {
+            executor.shutdown();
+            assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS));
+        }
+
+        DataInputStream in = new DataInputStream(new ByteArrayInputStream(bytes.toByteArray()));
+        Set<String> usernames = new HashSet<>();
+        for (int i = 0; i < writerCount; i++) {
+            Envelope decoded = codec.read(in);
+            Payload payload = codec.unwrap(decoded, Payload.class);
+            assertNotNull(payload);
+            assertEquals(MessageType.C2S_PRIVATE_MESSAGE, decoded.getType());
+            usernames.add(payload.username());
+        }
+
+        assertEquals(writerCount, usernames.size());
+        assertEquals(-1, in.read());
     }
 
     @Test
