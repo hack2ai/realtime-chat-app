@@ -7,3 +7,11 @@
 /docker-compose.yml @hack2ai
 /pom.xml @hack2ai
 /SECURITY.md @hack2ai
+
+# Require owner review for high-impact runtime and persistence code.
+/src/main/java/com/chatapp/auth/ @hack2ai
+/src/main/java/com/chatapp/database/ @hack2ai
+/src/main/java/com/chatapp/server/ @hack2ai
+/src/main/java/com/chatapp/service/ @hack2ai
+/src/main/java/com/chatapp/socket/ @hack2ai
+/src/main/resources/sql/ @hack2ai
