@@ -153,7 +153,7 @@ jobs:
 
       - name: Verify attachment directory permissions
         run: |
-          docker run --rm --entrypoint sh realtime-chat-app:${{ github.sha }} -c 'test "$(id -u)" = "10001" && test -w /app/data/attachments && ! test -w /app/chatapp-server.jar'
+          docker run --rm --entrypoint sh realtime-chat-app:${{ github.sha }} -c 'test "$(id -u)" = "10001" && test "$(stat -c %a /app/data/attachments)" = "700" && test -w /app/data/attachments && ! test -w /app/chatapp-server.jar'
 
       - name: Verify server image contains no setuid/setgid executables
         run: |
