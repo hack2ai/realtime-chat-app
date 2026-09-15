@@ -1,0 +1,31 @@
+name: Docker Policy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-policy-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Reject floating Docker base-image tags
+        run: |
+          violations=$(grep -En '^[[:space:]]*FROM[[:space:]]+[^[:space:]@]+:(latest|stable|rolling)([[:space:]]|$)|^[[:space:]]*FROM[[:space:]]+[^[:space:]@:]+([[:space:]]|$)' Dockerfile || true)
+          if [ -n "$violations" ]; then
+            echo "Dockerfile contains an unversioned or floating base-image tag:"
+            printf '%s\n' "$violations"
+            exit 1
+          fi
