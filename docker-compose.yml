@@ -4,6 +4,8 @@ services:
     restart: unless-stopped
     networks:
       - backend
+    security_opt:
+      - no-new-privileges:true
     environment:
       MYSQL_ROOT_PASSWORD: ${CHATAPP_MYSQL_ROOT_PASSWORD:?set CHATAPP_MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: chatapp_db
