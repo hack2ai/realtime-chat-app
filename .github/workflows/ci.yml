@@ -177,6 +177,7 @@ jobs:
             db_status=$(docker compose ps -q db | xargs -r docker inspect -f '{{.State.Health.Status}}' 2>/dev/null || true)
             server_status=$(docker compose ps -q server | xargs -r docker inspect -f '{{.State.Health.Status}}' 2>/dev/null || true)
             if [ "$db_status" = "healthy" ] && [ "$server_status" = "healthy" ]; then
+              test "$(docker compose exec -T db id -u)" != "0"
               touch_marker="/app/data/attachments/.ci-write-test"
               docker compose exec -T server sh -c "touch '$touch_marker' && rm -f '$touch_marker'"
               ! docker compose exec -T server sh -c 'touch /app/.ci-read-only-test'
