@@ -15,6 +15,7 @@ import com.chatapp.socket.protocol.MessageCodec;
 import com.chatapp.socket.protocol.MessageType;
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.SSLSocketFactory;
+import javax.net.ssl.SSLParameters;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
@@ -71,6 +72,9 @@ public final class ChatClientConnection implements AutoCloseable {
             SSLSocketFactory factory = TlsContextFactory.createClientContext().getSocketFactory();
             SSLSocket sslSocket = (SSLSocket) factory.createSocket();
             sslSocket.connect(new InetSocketAddress(host, port), 5000);
+            SSLParameters parameters = sslSocket.getSSLParameters();
+            parameters.setEndpointIdentificationAlgorithm("HTTPS");
+            sslSocket.setSSLParameters(parameters);
             sslSocket.setEnabledProtocols(new String[]{"TLSv1.3", "TLSv1.2"});
             sslSocket.startHandshake();
             return sslSocket;
