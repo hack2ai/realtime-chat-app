@@ -8,9 +8,9 @@
 
 ## Status
 
-**Phase 6 — production hardening and deployment readiness.**
+**Phase 7 — production verification and supply-chain hardening.**
 
-The application provides secure authentication, real-time private messaging, presence and typing events, delivery/read states, paginated history, group chat, private file sharing, message search, MySQL persistence, a responsive JavaFX desktop client, automated dependency updates, container packaging, CI/CD checks, and configurable TLS transport.
+The application provides secure authentication, real-time private messaging, presence and typing events, delivery/read states, paginated history, group chat, private file sharing, message search, MySQL persistence, a responsive JavaFX desktop client, automated dependency updates, container packaging, CI/CD checks, configurable TLS transport, container hardening validation, deployment smoke tests, and build provenance attestations.
 
 ## Highlights
 
@@ -35,6 +35,10 @@ The application provides secure authentication, real-time private messaging, pre
 - JUnit protocol tests and GitHub Actions CI
 - Docker image and Docker Compose deployment support
 - Weekly Dependabot updates for Maven dependencies, GitHub Actions, and Docker
+- Immutable GitHub Actions references for CI/CD supply-chain protection
+- Automated Compose deployment smoke tests with PING protocol verification
+- Container metadata, non-root execution, filesystem, entrypoint, port, and healthcheck regression checks
+- Build provenance attestations for server artifacts and release container images
 
 ## Architecture
 
@@ -125,6 +129,12 @@ Current defensive controls include:
 - secrets can be supplied through environment variables or JVM system properties
 - runtime attachment data is excluded from Git
 - optional TLS for the application TCP transport
+- non-root container execution with dropped Linux capabilities and no-new-privileges in Compose
+- read-only server container filesystem with bounded temporary storage and process/file-descriptor limits
+- bounded and rotated container logs
+- immutable GitHub Actions references
+- dependency review and CodeQL checks
+- build provenance attestations for published artifacts and release images
 
 **Important:** this is a portfolio/learning project, not a security-audited production service. A production deployment still needs certificate lifecycle management, secret rotation, hardened database permissions, monitoring, threat modeling, malware/content scanning for uploads, and security testing.
 
@@ -236,7 +246,7 @@ The server container runs as a non-root user. The Compose database is intended f
 
 ### Automated releases
 
-Pushing a semantic version tag such as `v1.1.0` triggers the release workflow. It verifies the Maven build, publishes the runnable server JAR and SHA-256 checksum to a GitHub Release, and builds and pushes the tagged and `latest` server image to GHCR.
+Pushing a semantic version tag such as `v1.1.0` triggers the release workflow. It verifies the Maven build and that the tag matches the project version, validates the runnable server JAR, publishes the JAR and SHA-256 checksum to a GitHub Release, attests the JAR and release container build provenance, and builds and pushes the versioned, `latest`, and commit-SHA server images to GHCR.
 
 ## Protocol
 
@@ -305,7 +315,8 @@ realtime-chat-app/
 - [x] Phase 4 — JavaFX desktop client
 - [x] Phase 5 — file sharing and message search
 - [x] Phase 6 — notifications, deployment packaging, CI/CD hardening, rate limiting, dependency automation, and configurable TLS
-- [ ] Phase 7 — production observability, managed storage, certificate lifecycle automation, and external security testing
+- [x] Phase 7 — production verification, container hardening, CI/CD supply-chain protection, deployment smoke tests, and build provenance attestations
+- [ ] Phase 8 — production observability, managed storage, certificate lifecycle automation, and external security testing
 
 ## Development
 
@@ -315,7 +326,7 @@ Run the complete verification suite before submitting changes:
 mvn verify
 ```
 
-GitHub Actions runs the same Maven verification on pushes and pull requests targeting `main`. CodeQL analysis and container builds are also automated, and tagged releases publish versioned server packages.
+GitHub Actions runs Maven verification on pushes and pull requests targeting `main`, validates the runnable server artifact, checks Compose hardening, builds and smoke-tests the containerized stack, runs CodeQL and dependency review, and verifies release artifacts and container metadata. Published server artifacts and release images carry build provenance attestations.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for project conventions.
 
