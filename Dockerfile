@@ -14,7 +14,10 @@ LABEL org.opencontainers.image.source="https://github.com/hack2ai/realtime-chat-
       org.opencontainers.image.version="$APP_VERSION" \
       org.opencontainers.image.revision="$VCS_REF"
 COPY --from=build /workspace/target/chatapp-server.jar /app/chatapp-server.jar
-RUN mkdir -p /app/data/attachments && useradd --system --create-home --uid 10001 chatapp && chown -R chatapp:chatapp /app
+RUN useradd --system --create-home --uid 10001 chatapp \
+    && mkdir -p /app/data/attachments \
+    && chown -R chatapp:chatapp /app/data/attachments \
+    && chmod 0555 /app/chatapp-server.jar
 USER chatapp
 EXPOSE 5050
 HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=5 CMD test -f /tmp/chatapp.ready || exit 1
