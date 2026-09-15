@@ -79,12 +79,15 @@ jobs:
             --tag "${IMAGE_NAME}:latest" \
             --tag "${IMAGE_NAME}:${IMAGE_SHA_TAG}" .
 
-      - name: Verify release image hardening
+      - name: Verify release image metadata and hardening
         env:
           IMAGE_NAME: ghcr.io/${{ github.repository }}
           RELEASE_VERSION: ${{ github.ref_name }}
         run: |
           IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{index .Config.Labels "org.opencontainers.image.source"}}')" = "https://github.com/hack2ai/realtime-chat-app"
+          test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{index .Config.Labels "org.opencontainers.image.description"}}')" = "Secure Java 21 real-time chat server"
+          test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{index .Config.Labels "org.opencontainers.image.licenses"}}')" = "MIT"
           test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{.Config.User}}')" = "chatapp"
           test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{json .Config.Entrypoint}}')" = '["java","-jar","/app/chatapp-server.jar"]'
           test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{json .Config.ExposedPorts}}')" = '{"5050/tcp":{}}'
