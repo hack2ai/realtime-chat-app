@@ -3,14 +3,36 @@ package com.chatapp.security;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import javax.net.ssl.SSLContext;
 import java.nio.file.Path;
 
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TlsContextFactoryTest {
     @TempDir
     Path tempDir;
+
+    @Test
+    void clientContextUsesDefaultJvmTrustStoreWhenNoCustomTrustStoreIsConfigured() {
+        String pathProperty = "chatapp.client.tls.trustStorePath";
+        String passwordProperty = "chatapp.client.tls.trustStorePassword";
+        String previousPath = System.getProperty(pathProperty);
+        String previousPassword = System.getProperty(passwordProperty);
+        try {
+            System.setProperty(pathProperty, "");
+            System.clearProperty(passwordProperty);
+
+            SSLContext context = TlsContextFactory.createClientContext();
+
+            assertNotNull(context);
+            assertNotNull(context.getSocketFactory());
+        } finally {
+            restoreProperty(pathProperty, previousPath);
+            restoreProperty(passwordProperty, previousPassword);
+        }
+    }
 
     @Test
     void serverContextFailsClosedWhenKeyStoreIsMissing() {
