@@ -145,6 +145,10 @@ jobs:
         run: |
           docker run --rm --entrypoint sh realtime-chat-app:${{ github.sha }} -c 'test "$(id -u)" = "10001" && test -w /app/data/attachments && ! test -w /app/chatapp-server.jar'
 
+      - name: Verify server image contains no setuid/setgid executables
+        run: |
+          docker run --rm --entrypoint sh realtime-chat-app:${{ github.sha }} -c 'test -z "$(find / -xdev -type f -perm /6000 -print 2>/dev/null)"'
+
       - name: Verify server image Java runtime
         run: docker run --rm --entrypoint java realtime-chat-app:${{ github.sha }} -version
 
