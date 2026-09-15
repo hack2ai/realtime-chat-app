@@ -8,10 +8,12 @@
 /pom.xml @hack2ai
 /SECURITY.md @hack2ai
 
-# Require owner review for high-impact runtime and persistence code.
+# Require owner review for high-impact runtime, configuration, and persistence code.
 /src/main/java/com/chatapp/auth/ @hack2ai
+/src/main/java/com/chatapp/config/ @hack2ai
 /src/main/java/com/chatapp/database/ @hack2ai
 /src/main/java/com/chatapp/server/ @hack2ai
 /src/main/java/com/chatapp/service/ @hack2ai
 /src/main/java/com/chatapp/socket/ @hack2ai
 /src/main/resources/sql/ @hack2ai
+/src/main/resources/config.properties.example @hack2ai
