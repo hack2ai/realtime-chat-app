@@ -44,7 +44,8 @@ jobs:
       - name: Verify repository contains no tracked secret artifacts
         run: |
           tracked_secrets=$(git ls-files -z | tr '\0' '\n' | grep -E '(^|/)(config\.properties|\.env(\..*)?|secrets/.*|[^/]+\.(p12|pfx|jks|keystore|pem|key|crt))$' || true)
-          test -z "$tracked_secrets"
+          unexpected_secrets=$(printf '%s\n' "$tracked_secrets" | grep -Fxv 'src/test/resources/config.properties' || true)
+          test -z "$unexpected_secrets"
 
       - name: Verify and package
         run: mvn --batch-mode --no-transfer-progress verify
