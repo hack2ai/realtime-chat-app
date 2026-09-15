@@ -36,6 +36,14 @@ jobs:
       - name: Verify and package
         run: mvn --batch-mode --no-transfer-progress verify
 
+      - name: Verify release version matches project
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          PROJECT_VERSION=$(mvn --batch-mode --no-transfer-progress -q -DforceStdout help:evaluate -Dexpression=project.version)
+          TEST_VERSION="${RELEASE_VERSION#v}"
+          test "$PROJECT_VERSION" = "$TEST_VERSION"
+
       - name: Verify runnable server package
         run: |
           test -s target/chatapp-server.jar
