@@ -71,5 +71,6 @@ CREATE TABLE IF NOT EXISTS group_messages (
     id BIGINT PRIMARY KEY AUTO_INCREMENT, group_id INT NOT NULL, sender_id INT NOT NULL,
     message TEXT NOT NULL, sent_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (group_id) REFERENCES chat_groups(id) ON DELETE CASCADE,
+    FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
     INDEX idx_gmsg_group_time (group_id, sent_at)
 ) ENGINE=InnoDB;
