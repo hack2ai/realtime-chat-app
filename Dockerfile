@@ -17,6 +17,7 @@ COPY --from=build /workspace/target/chatapp-server.jar /app/chatapp-server.jar
 RUN useradd --system --create-home --uid 10001 chatapp \
     && mkdir -p /app/data/attachments \
     && chown -R chatapp:chatapp /app/data/attachments \
+    && chmod 0700 /app/data/attachments \
     && chmod 0555 /app/chatapp-server.jar
 USER chatapp
 EXPOSE 5050
