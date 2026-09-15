@@ -36,6 +36,7 @@ The application provides secure authentication, real-time private messaging, pre
 - Docker image and Docker Compose deployment support
 - Weekly Dependabot updates for Maven dependencies, GitHub Actions, and Docker
 - Immutable GitHub Actions references for CI/CD supply-chain protection
+- OpenSSF Scorecard supply-chain security scanning
 - Automated Compose deployment smoke tests with PING protocol verification
 - Container metadata, non-root execution, filesystem, entrypoint, port, and healthcheck regression checks
 - Build provenance attestations for server artifacts and release container images
@@ -133,7 +134,7 @@ Current defensive controls include:
 - read-only server container filesystem with bounded temporary storage and process/file-descriptor limits
 - bounded and rotated container logs
 - immutable GitHub Actions references
-- dependency review and CodeQL checks
+- dependency review, CodeQL, and OpenSSF Scorecard checks
 - build provenance attestations for published artifacts and release images
 
 **Important:** this is a portfolio/learning project, not a security-audited production service. A production deployment still needs certificate lifecycle management, secret rotation, hardened database permissions, monitoring, threat modeling, malware/content scanning for uploads, and security testing.
@@ -280,6 +281,7 @@ realtime-chat-app/
 ├── .github/workflows/ci.yml
 ├── .github/workflows/codeql.yml
 ├── .github/workflows/release.yml
+├── .github/workflows/scorecard.yml
 ├── .github/dependabot.yml
 ├── .dockerignore
 ├── Dockerfile
@@ -326,7 +328,7 @@ Run the complete verification suite before submitting changes:
 mvn verify
 ```
 
-GitHub Actions runs Maven verification on pushes and pull requests targeting `main`, validates the runnable server artifact, checks Compose hardening, builds and smoke-tests the containerized stack, runs CodeQL and dependency review, and verifies release artifacts and container metadata. Published server artifacts and release images carry build provenance attestations.
+GitHub Actions runs Maven verification on pushes and pull requests targeting `main`, validates the runnable server artifact, checks Compose hardening, builds and smoke-tests the containerized stack, runs CodeQL, dependency review, and OpenSSF Scorecard, and verifies release artifacts and container metadata. Published server artifacts and release images carry build provenance attestations.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for project conventions.
 
