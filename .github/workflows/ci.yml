@@ -97,6 +97,12 @@ jobs:
       - name: Build server container image
         run: docker build --pull --tag realtime-chat-app:${{ github.sha }} .
 
+      - name: Verify server image metadata
+        run: |
+          test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{index .Config.Labels "org.opencontainers.image.source"}}')" = "https://github.com/hack2ai/realtime-chat-app"
+          test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{index .Config.Labels "org.opencontainers.image.description"}}')" = "Secure Java 21 real-time chat server"
+          test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{index .Config.Labels "org.opencontainers.image.licenses"}}')" = "MIT"
+
       - name: Verify server image runs as non-root
         run: |
           test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{.Config.User}}')" = "chatapp"
