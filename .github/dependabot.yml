@@ -8,9 +8,12 @@ updates:
     labels:
       - dependencies
     groups:
-      maven-dependencies:
+      maven-minor-patch:
         patterns:
           - "*"
+        update-types:
+          - "minor"
+          - "patch"
 
   - package-ecosystem: github-actions
     directory: "/"
@@ -20,9 +23,12 @@ updates:
     labels:
       - dependencies
     groups:
-      github-actions:
+      github-actions-minor-patch:
         patterns:
           - "*"
+        update-types:
+          - "minor"
+          - "patch"
 
   - package-ecosystem: docker
     directory: "/"
@@ -32,6 +38,9 @@ updates:
     labels:
       - dependencies
     groups:
-      docker-images:
+      docker-images-minor-patch:
         patterns:
           - "*"
+        update-types:
+          - "minor"
+          - "patch"
