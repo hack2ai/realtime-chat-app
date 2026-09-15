@@ -14,4 +14,4 @@ RUN mkdir -p /app/data/attachments && useradd --system --create-home --uid 10001
 USER chatapp
 EXPOSE 5050
 HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=5 CMD test -f /tmp/chatapp.ready || exit 1
-ENTRYPOINT ["java", "-jar", "/app/chatapp-server.jar"]
+ENTRYPOINT ["java", "-XX:+ExitOnOutOfMemoryError", "-jar", "/app/chatapp-server.jar"]
