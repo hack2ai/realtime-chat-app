@@ -4,6 +4,7 @@ services:
     restart: unless-stopped
     networks:
       - backend
+    init: true
     security_opt:
       - no-new-privileges:true
     cpus: 2.0
