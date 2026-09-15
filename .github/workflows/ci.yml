@@ -81,6 +81,10 @@ jobs:
           docker compose config --format json > /tmp/chatapp-compose.json
           test "$(jq -r '.services.db.cpus' /tmp/chatapp-compose.json)" = "2"
           test "$(jq -r '.services.db.mem_limit' /tmp/chatapp-compose.json)" = "1073741824"
+          test "$(jq -r '.services.db.pids_limit' /tmp/chatapp-compose.json)" = "512"
+          test "$(jq -r '.services.db.stop_grace_period' /tmp/chatapp-compose.json)" = "30s"
+          test "$(jq -r '.services.db.ulimits.nofile.soft' /tmp/chatapp-compose.json)" = "4096"
+          test "$(jq -r '.services.db.ulimits.nofile.hard' /tmp/chatapp-compose.json)" = "8192"
           test "$(jq -r '.services.server.cpus' /tmp/chatapp-compose.json)" = "1"
           test "$(jq -r '.services.server.mem_limit' /tmp/chatapp-compose.json)" = "805306368"
           test "$(jq -r '.services.server.read_only' /tmp/chatapp-compose.json)" = "true"
