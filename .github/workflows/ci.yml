@@ -122,6 +122,14 @@ jobs:
         run: |
           test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{json .Config.Healthcheck.Test}}')" = '[\"CMD-SHELL\",\"test -f /tmp/chatapp.ready || exit 1\"]'
 
+      - name: Verify server image contains no application secrets
+        run: |
+          image_env=$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{json .Config.Env}}')
+          if printf '%s' "$image_env" | grep -Eq 'CHATAPP_(DB_PASSWORD|MYSQL_ROOT_PASSWORD|AUTH_.*(PASSWORD|SECRET|TOKEN))'; then
+            echo "application secret-like environment variable found in image metadata"
+            exit 1
+          fi
+
       - name: Verify attachment directory permissions
         run: |
           docker run --rm --entrypoint sh realtime-chat-app:${{ github.sha }} -c 'test "$(id -u)" = "10001" && test -w /app/data/attachments && ! test -w /app/chatapp-server.jar'
