@@ -29,3 +29,11 @@ jobs:
             printf '%s\n' "$violations"
             exit 1
           fi
+
+      - name: Verify Dockerfile runtime hardening
+        run: |
+          grep -Fxq 'USER chatapp' Dockerfile
+          grep -Eq '^HEALTHCHECK[[:space:]]+' Dockerfile
+          grep -Fxq 'ENTRYPOINT ["java", "-XX:+ExitOnOutOfMemoryError", "-jar", "/app/chatapp-server.jar"]' Dockerfile
+          grep -Fq 'chmod 0700 /app/data/attachments' Dockerfile
+          grep -Fq 'chmod 0555 /app/chatapp-server.jar' Dockerfile
