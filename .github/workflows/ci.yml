@@ -76,6 +76,7 @@ jobs:
           test "$(jq -r '.services.server.read_only' /tmp/chatapp-compose.json)" = "true"
           test "$(jq -r '.services.server.init' /tmp/chatapp-compose.json)" = "true"
           test "$(jq -r '.services.server.security_opt[0]' /tmp/chatapp-compose.json)" = "no-new-privileges:true"
+          test "$(jq -r '.services.db.security_opt[0]' /tmp/chatapp-compose.json)" = "no-new-privileges:true"
           test "$(jq -r '.services.server.cap_drop | join(\",\")' /tmp/chatapp-compose.json)" = "ALL"
           test "$(jq -r '.services.server.pids_limit' /tmp/chatapp-compose.json)" = "256"
           test "$(jq -r '.services.server.ulimits.nofile.soft' /tmp/chatapp-compose.json)" = "4096"
