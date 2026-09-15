@@ -143,11 +143,16 @@ jobs:
         env:
           IMAGE_NAME: ghcr.io/${{ github.repository }}
           RELEASE_VERSION: ${{ github.ref_name }}
+          IMAGE_SHA_TAG: sha-${{ github.sha }}
           PUBLISHED_DIGEST: ${{ steps.push-release-container.outputs.digest }}
         run: |
           IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
           REMOTE_DIGEST=$(docker buildx imagetools inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{.Manifest.Digest}}')
+          LATEST_DIGEST=$(docker buildx imagetools inspect "${IMAGE_NAME}:latest" --format '{{.Manifest.Digest}}')
+          SHA_TAG_DIGEST=$(docker buildx imagetools inspect "${IMAGE_NAME}:${IMAGE_SHA_TAG}" --format '{{.Manifest.Digest}}')
           test "$REMOTE_DIGEST" = "$PUBLISHED_DIGEST"
+          test "$LATEST_DIGEST" = "$PUBLISHED_DIGEST"
+          test "$SHA_TAG_DIGEST" = "$PUBLISHED_DIGEST"
 
       - name: Attest release container
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
