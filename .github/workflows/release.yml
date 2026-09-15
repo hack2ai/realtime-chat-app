@@ -171,3 +171,17 @@ jobs:
             "chatapp-server-${RELEASE_VERSION}.jar.sha256" \
             --title "$RELEASE_VERSION" \
             --generate-notes
+
+      - name: Verify published release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          mkdir -p /tmp/release-assets
+          gh release download "$RELEASE_VERSION" \
+            --pattern "chatapp-server-${RELEASE_VERSION}.jar" \
+            --pattern "chatapp-server-${RELEASE_VERSION}.jar.sha256" \
+            --dir /tmp/release-assets \
+            --clobber
+          cd /tmp/release-assets
+          sha256sum --check "chatapp-server-${RELEASE_VERSION}.jar.sha256"
