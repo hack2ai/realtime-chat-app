@@ -15,11 +15,6 @@ jobs:
   release:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    permissions:
-      contents: write
-      packages: write
-      attestations: write
-      id-token: write
 
     steps:
       - name: Checkout
@@ -159,6 +154,14 @@ jobs:
         run: |
           IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
           docker run --rm --entrypoint sh "${IMAGE_NAME}:${RELEASE_VERSION}" -c 'test "$(id -u)" = "10001" && test "$(stat -c %a /app/data/attachments)" = "700" && test -w /app/data/attachments && ! test -w /app/chatapp-server.jar'
+
+      - name: Verify release image contains no private-key artifacts
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          docker run --rm --entrypoint sh "${IMAGE_NAME}:${RELEASE_VERSION}" -c 'test -z "$(find /app -xdev -type f \( -name "*.p12" -o -name "*.pfx" -o -name "*.jks" -o -name "*.keystore" -o -name "*.pem" -o -name "*.key" -o -name "*.crt" \) -print 2>/dev/null)"'
 
       - name: Verify release image has no setuid/setgid executables
         env:
