@@ -6,9 +6,13 @@ RUN mvn --batch-mode --no-transfer-progress -DskipTests package
 
 FROM eclipse-temurin:21-jre
 WORKDIR /app
+ARG APP_VERSION=unknown
+ARG VCS_REF=unknown
 LABEL org.opencontainers.image.source="https://github.com/hack2ai/realtime-chat-app" \
       org.opencontainers.image.description="Secure Java 21 real-time chat server" \
-      org.opencontainers.image.licenses="MIT"
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.version="$APP_VERSION" \
+      org.opencontainers.image.revision="$VCS_REF"
 COPY --from=build /workspace/target/chatapp-server.jar /app/chatapp-server.jar
 RUN mkdir -p /app/data/attachments && useradd --system --create-home --uid 10001 chatapp && chown -R chatapp:chatapp /app
 USER chatapp
