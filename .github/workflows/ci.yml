@@ -52,6 +52,11 @@ jobs:
       - name: Read project version
         run: echo "PROJECT_VERSION=$(mvn --batch-mode --no-transfer-progress -q -DforceStdout help:evaluate -Dexpression=project.version)" >> "$GITHUB_ENV"
 
+      - name: Generate software bill of materials
+        run: |
+          mvn --batch-mode --no-transfer-progress org.cyclonedx:cyclonedx-maven-plugin:2.9.1:makeAggregateBom -DoutputFormat=json -DoutputName=chatapp-sbom
+          test -s target/chatapp-sbom.json
+
       - name: Generate and verify server checksum
         run: |
           sha256sum target/chatapp-server.jar > target/chatapp-server.jar.sha256
@@ -64,6 +69,7 @@ jobs:
           path: |
             target/chatapp-server.jar
             target/chatapp-server.jar.sha256
+            target/chatapp-sbom.json
           if-no-files-found: error
           retention-days: 14
 
