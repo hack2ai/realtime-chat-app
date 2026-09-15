@@ -1,0 +1,52 @@
+name: Database Policy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: database-policy-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Start database
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: |
+          set -e
+          cleanup() {
+            docker compose down --volumes --remove-orphans
+          }
+          trap cleanup EXIT
+          docker compose up -d db
+          for attempt in $(seq 1 60); do
+            status=$(docker compose ps -q db | xargs -r docker inspect -f '{{.State.Health.Status}}' 2>/dev/null || true)
+            if [ "$status" = "healthy" ]; then
+              break
+            fi
+            sleep 2
+          done
+          test "$(docker compose ps -q db | xargs -r docker inspect -f '{{.State.Health.Status}}')" = "healthy"
+
+          grants=$(docker compose exec -T db sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -u root -NBe "SHOW GRANTS FOR '\''chatapp_user'\''@'\''%'\''"')
+          printf '%s\n' "$grants"
+          printf '%s\n' "$grants" | grep -Fq 'GRANT SELECT, INSERT, UPDATE, DELETE ON `chatapp_db`.* TO `chatapp_user`@`%`'
+          if printf '%s\n' "$grants" | grep -Eq '(^|, )(CREATE|ALTER|DROP|INDEX|REFERENCES|TRIGGER|EVENT|GRANT OPTION)(,| ON |$)|WITH GRANT OPTION'; then
+            echo "chatapp_user has schema or privilege-management capabilities"
+            exit 1
+          fi
