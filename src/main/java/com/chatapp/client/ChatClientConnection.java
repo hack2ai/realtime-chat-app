@@ -147,7 +147,21 @@ public final class ChatClientConnection implements AutoCloseable {
                 safeEvent(codec.wrap(MessageType.S2C_ERROR, new AuthFailedResponse("Client protocol error.")));
             }
         } finally {
-            boolean wasRunning = running; running = false; failPendingAuth(new IOException("Connection closed.")); if (wasRunning) notifyConnectionState(false);
+            Socket closedSocket;
+            boolean wasRunning;
+            synchronized (this) {
+                wasRunning = running;
+                running = false;
+                closedSocket = socket;
+                socket = null;
+                in = null;
+                out = null;
+            }
+            failPendingAuth(new IOException("Connection closed."));
+            if (closedSocket != null) {
+                try { closedSocket.close(); } catch (IOException ignored) {}
+            }
+            if (wasRunning) notifyConnectionState(false);
         }
     }
     private void safeEvent(Envelope envelope) { try { eventListener.accept(envelope); } catch (RuntimeException ignored) {} }
