@@ -14,6 +14,8 @@ class AppConfigTlsTest {
     private static final String CLIENT_TLS_ENABLED = "chatapp.client.tls.enabled";
     private static final String TRUST_STORE_PATH = "chatapp.client.tls.trustStorePath";
     private static final String TRUST_STORE_PASSWORD = "chatapp.client.tls.trustStorePassword";
+    private static final String DB_SSL_MODE = "chatapp.db.sslMode";
+    private static final String DB_USE_SSL = "chatapp.db.useSsl";
     private static final String BCRYPT_STRENGTH = "chatapp.auth.bcrypt.strength";
     private static final String SESSION_EXPIRY_HOURS = "chatapp.auth.session.expiryHours";
     private static final String SOCKET_READ_TIMEOUT_MS = "chatapp.server.socketReadTimeoutMs";
@@ -68,6 +70,44 @@ class AppConfigTlsTest {
     }
 
     @Test
+    void databaseTlsDefaultsToVerifiedIdentity() {
+        System.setProperty(DB_USE_SSL, "true");
+        assertEquals("VERIFY_IDENTITY", AppConfig.getDbSslMode());
+    }
+
+    @Test
+    void databaseTlsCanBeExplicitlyDisabledForTrustedLocalDevelopment() {
+        System.setProperty(DB_SSL_MODE, "DISABLED");
+        assertEquals("DISABLED", AppConfig.getDbSslMode());
+    }
+
+    @Test
+    void databaseTlsModeAcceptsSupportedValues() {
+        for (String mode : new String[]{"DISABLED", "PREFERRED", "REQUIRED", "VERIFY_CA", "VERIFY_IDENTITY"}) {
+            System.setProperty(DB_SSL_MODE, mode);
+            assertEquals(mode, AppConfig.getDbSslMode());
+        }
+    }
+
+    @Test
+    void invalidDatabaseTlsModeIsRejected() {
+        System.setProperty(DB_SSL_MODE, "VERIFY_HOSTNAME");
+
+        assertThrows(IllegalStateException.class, AppConfig::getDbSslMode);
+    }
+
+    @Test
+    void jdbcUrlUsesExplicitDatabaseTlsMode() {
+        System.setProperty(DB_SSL_MODE, "VERIFY_IDENTITY");
+        String url = AppConfig.getJdbcUrl();
+
+        assertTrue(url.contains("sslMode=VERIFY_IDENTITY"));
+        assertTrue(url.contains("allowPublicKeyRetrieval=false"));
+        assertTrue(url.contains("connectTimeout=5000"));
+        assertTrue(url.contains("socketTimeout=60000"));
+    }
+
+    @Test
     void bcryptStrengthRejectsValuesOutsideSupportedRange() {
         System.setProperty(BCRYPT_STRENGTH, "9");
         assertThrows(IllegalStateException.class, AppConfig::getBcryptStrength);
@@ -108,6 +148,8 @@ class AppConfigTlsTest {
         System.clearProperty(CLIENT_TLS_ENABLED);
         System.clearProperty(TRUST_STORE_PATH);
         System.clearProperty(TRUST_STORE_PASSWORD);
+        System.clearProperty(DB_SSL_MODE);
+        System.clearProperty(DB_USE_SSL);
         System.clearProperty(BCRYPT_STRENGTH);
         System.clearProperty(SESSION_EXPIRY_HOURS);
         System.clearProperty(SOCKET_READ_TIMEOUT_MS);
