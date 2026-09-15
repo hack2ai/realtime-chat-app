@@ -5,11 +5,7 @@ on:
     tags:
       - 'v*.*.*'
 
-permissions:
-  contents: write
-  packages: write
-  attestations: write
-  id-token: write
+permissions: {}
 
 concurrency:
   group: release-${{ github.ref }}
@@ -19,6 +15,11 @@ jobs:
   release:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: write
+      packages: write
+      attestations: write
+      id-token: write
 
     steps:
       - name: Checkout
