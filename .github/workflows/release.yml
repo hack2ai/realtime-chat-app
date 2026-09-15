@@ -56,6 +56,32 @@ jobs:
           mvn --batch-mode --no-transfer-progress org.cyclonedx:cyclonedx-maven-plugin:2.9.1:makeAggregateBom -DoutputFormat=json -DoutputName=chatapp-sbom
           test -s target/chatapp-sbom.json
 
+      - name: Verify release SBOM
+        env:
+          PROJECT_VERSION: ${{ env.PROJECT_VERSION }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          sbom = json.loads(Path("target/chatapp-sbom.json").read_text(encoding="utf-8"))
+          metadata = sbom.get("metadata", {})
+          component = metadata.get("component", {})
+          if sbom.get("bomFormat") != "CycloneDX":
+              raise SystemExit("SBOM is not a CycloneDX document")
+          if not sbom.get("specVersion"):
+              raise SystemExit("SBOM is missing specVersion")
+          if component.get("name") != "realtime-chat-app":
+              raise SystemExit(f"unexpected SBOM component name: {component.get('name')!r}")
+          if component.get("version") != os.environ["PROJECT_VERSION"]:
+              raise SystemExit(f"unexpected SBOM project version: {component.get('version')!r}")
+          if not metadata.get("timestamp"):
+              raise SystemExit("SBOM is missing metadata timestamp")
+          if not sbom.get("components"):
+              raise SystemExit("SBOM contains no dependency components")
+          PY
+
       - name: Verify runnable server package
         run: |
           test -s target/chatapp-server.jar
