@@ -13,8 +13,11 @@ db.pool.maxSize=10
 db.pool.connectionTimeoutMs=5000
 # Bound JDBC network read timeout in milliseconds.
 db.socketTimeoutMs=60000
-# TLS is enabled by default. Disable only for trusted local development.
+# Deprecated compatibility flag; db.sslMode takes precedence when configured.
 db.useSsl=true
+# MySQL Connector/J TLS mode. VERIFY_IDENTITY validates the server certificate and hostname.
+# Use DISABLED only for trusted local development or an isolated local Compose database.
+db.sslMode=VERIFY_IDENTITY
 # Keep false unless the MySQL server explicitly requires RSA public-key retrieval.
 db.allowPublicKeyRetrieval=false
 
