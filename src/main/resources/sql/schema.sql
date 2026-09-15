@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS private_attachments (
     size_bytes BIGINT UNSIGNED NOT NULL,
     sha256 CHAR(64) NOT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CHECK (size_bytes <= 5242880),
     FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (receiver_id) REFERENCES users(id) ON DELETE CASCADE,
     INDEX idx_attachment_sender (sender_id, created_at),
@@ -70,6 +71,5 @@ CREATE TABLE IF NOT EXISTS group_messages (
     id BIGINT PRIMARY KEY AUTO_INCREMENT, group_id INT NOT NULL, sender_id INT NOT NULL,
     message TEXT NOT NULL, sent_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (group_id) REFERENCES chat_groups(id) ON DELETE CASCADE,
-    FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
     INDEX idx_gmsg_group_time (group_id, sent_at)
 ) ENGINE=InnoDB;
