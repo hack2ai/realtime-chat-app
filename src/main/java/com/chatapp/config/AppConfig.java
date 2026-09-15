@@ -92,10 +92,18 @@ public final class AppConfig {
     public static int getDbConnectionTimeoutMs() { return requireRange("db.pool.connectionTimeoutMs", 1000, 120000); }
     public static int getDbSocketTimeoutMs() { return optionalRange("db.socketTimeoutMs", 60000, 1000, 300000); }
     public static boolean isDbUseSsl() { return optionalBoolean("db.useSsl", true); }
+    public static String getDbSslMode() {
+        String configured = optional("db.sslMode", "").toUpperCase(Locale.ROOT);
+        String mode = configured.isBlank() ? (isDbUseSsl() ? "VERIFY_IDENTITY" : "DISABLED") : configured;
+        return switch (mode) {
+            case "DISABLED", "PREFERRED", "REQUIRED", "VERIFY_CA", "VERIFY_IDENTITY" -> mode;
+            default -> throw new IllegalStateException("Config key 'db.sslMode' has unsupported value: " + mode);
+        };
+    }
     public static boolean isDbAllowPublicKeyRetrieval() { return optionalBoolean("db.allowPublicKeyRetrieval", false); }
     public static String getJdbcUrl() {
         return "jdbc:mysql://" + getDbHost() + ":" + getDbPort() + "/" + getDbName()
-                + "?useSSL=" + isDbUseSsl()
+                + "?sslMode=" + getDbSslMode()
                 + "&allowPublicKeyRetrieval=" + isDbAllowPublicKeyRetrieval()
                 + "&connectTimeout=" + getDbConnectionTimeoutMs()
                 + "&socketTimeout=" + getDbSocketTimeoutMs()
