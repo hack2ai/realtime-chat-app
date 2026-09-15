@@ -14,6 +14,9 @@ class AppConfigTlsTest {
     private static final String CLIENT_TLS_ENABLED = "chatapp.client.tls.enabled";
     private static final String TRUST_STORE_PATH = "chatapp.client.tls.trustStorePath";
     private static final String TRUST_STORE_PASSWORD = "chatapp.client.tls.trustStorePassword";
+    private static final String BCRYPT_STRENGTH = "chatapp.auth.bcrypt.strength";
+    private static final String SESSION_EXPIRY_HOURS = "chatapp.auth.session.expiryHours";
+    private static final String SOCKET_READ_TIMEOUT_MS = "chatapp.server.socketReadTimeoutMs";
 
     @BeforeEach
     void clearOverrides() {
@@ -57,10 +60,56 @@ class AppConfigTlsTest {
         assertEquals("test-secret", AppConfig.getTlsTrustStorePassword());
     }
 
+    @Test
+    void invalidClientTlsFlagIsRejected() {
+        System.setProperty(CLIENT_TLS_ENABLED, "enabled");
+
+        assertThrows(IllegalStateException.class, AppConfig::isClientTlsEnabled);
+    }
+
+    @Test
+    void bcryptStrengthRejectsValuesOutsideSupportedRange() {
+        System.setProperty(BCRYPT_STRENGTH, "9");
+        assertThrows(IllegalStateException.class, AppConfig::getBcryptStrength);
+
+        System.setProperty(BCRYPT_STRENGTH, "32");
+        assertThrows(IllegalStateException.class, AppConfig::getBcryptStrength);
+
+        System.setProperty(BCRYPT_STRENGTH, "12");
+        assertEquals(12, AppConfig.getBcryptStrength());
+    }
+
+    @Test
+    void sessionExpiryRejectsValuesOutsideSupportedRange() {
+        System.setProperty(SESSION_EXPIRY_HOURS, "0");
+        assertThrows(IllegalStateException.class, AppConfig::getSessionExpiryHours);
+
+        System.setProperty(SESSION_EXPIRY_HOURS, "8761");
+        assertThrows(IllegalStateException.class, AppConfig::getSessionExpiryHours);
+
+        System.setProperty(SESSION_EXPIRY_HOURS, "24");
+        assertEquals(24, AppConfig.getSessionExpiryHours());
+    }
+
+    @Test
+    void socketReadTimeoutRejectsValuesOutsideSupportedRange() {
+        System.setProperty(SOCKET_READ_TIMEOUT_MS, "-1");
+        assertThrows(IllegalStateException.class, AppConfig::getSocketReadTimeoutMs);
+
+        System.setProperty(SOCKET_READ_TIMEOUT_MS, "300001");
+        assertThrows(IllegalStateException.class, AppConfig::getSocketReadTimeoutMs);
+
+        System.setProperty(SOCKET_READ_TIMEOUT_MS, "120000");
+        assertEquals(120000, AppConfig.getSocketReadTimeoutMs());
+    }
+
     private static void clearProperties() {
         System.clearProperty(TLS_ENABLED);
         System.clearProperty(CLIENT_TLS_ENABLED);
         System.clearProperty(TRUST_STORE_PATH);
         System.clearProperty(TRUST_STORE_PASSWORD);
+        System.clearProperty(BCRYPT_STRENGTH);
+        System.clearProperty(SESSION_EXPIRY_HOURS);
+        System.clearProperty(SOCKET_READ_TIMEOUT_MS);
     }
 }
