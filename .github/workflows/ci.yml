@@ -58,9 +58,12 @@ jobs:
           test -s target/chatapp-sbom.json
 
       - name: Verify software bill of materials
+        env:
+          PROJECT_VERSION: ${{ env.PROJECT_VERSION }}
         run: |
           python3 - <<'PY'
           import json
+          import os
           from pathlib import Path
 
           sbom = json.loads(Path("target/chatapp-sbom.json").read_text(encoding="utf-8"))
@@ -72,7 +75,7 @@ jobs:
               raise SystemExit("SBOM is missing specVersion")
           if component.get("name") != "realtime-chat-app":
               raise SystemExit(f"unexpected SBOM component name: {component.get('name')!r}")
-          if component.get("version") != "${PROJECT_VERSION}":
+          if component.get("version") != os.environ["PROJECT_VERSION"]:
               raise SystemExit(f"unexpected SBOM project version: {component.get('version')!r}")
           if not metadata.get("timestamp"):
               raise SystemExit("SBOM is missing metadata timestamp")
