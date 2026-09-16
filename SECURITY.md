@@ -22,7 +22,7 @@ Tagged releases publish the runnable server JAR together with a SHA-256 checksum
 Before deploying a downloaded JAR, verify the published checksum from the same GitHub Release:
 
 ```bash
-sha256sum --check chatapp-server-v1.1.0.jar.sha256
+sha256sum --check chatapp-server-<version>.jar.sha256
 ```
 
 For a higher-assurance deployment, verify the release provenance attestation through GitHub's artifact attestation tooling and review the published SBOM for unexpected dependencies before promotion.
