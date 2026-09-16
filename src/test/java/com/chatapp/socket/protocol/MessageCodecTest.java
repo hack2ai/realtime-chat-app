@@ -137,6 +137,23 @@ class MessageCodecTest {
     }
 
     @Test
+    void writeUsesUtf8ByteLengthForFrameLimit() throws Exception {
+        Envelope template = codec.wrap(MessageType.C2S_PRIVATE_MESSAGE, new Payload("alice", ""));
+        int fixedJsonBytes = codec.getGson().toJson(template).getBytes(StandardCharsets.UTF_8).length;
+        int repetitions = ((MAX_FRAME_BYTES - fixedJsonBytes) / 2) + 1;
+
+        Envelope envelope = codec.wrap(MessageType.C2S_PRIVATE_MESSAGE,
+                new Payload("alice", "é".repeat(repetitions)));
+        byte[] jsonBytes = codec.getGson().toJson(envelope).getBytes(StandardCharsets.UTF_8);
+
+        assertTrue(jsonBytes.length > MAX_FRAME_BYTES);
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        assertThrows(IOException.class, () ->
+                codec.write(new DataOutputStream(bytes), envelope));
+        assertEquals(0, bytes.size());
+    }
+
+    @Test
     void writeRejectsOversizedFrameWithoutWritingPartialData() {
         String oversizedPayload = "x".repeat(8 * 1024 * 1024);
         Envelope envelope = codec.wrap(MessageType.C2S_PRIVATE_MESSAGE,
