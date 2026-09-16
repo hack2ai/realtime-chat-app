@@ -21,5 +21,6 @@ RUN useradd --system --create-home --uid 10001 chatapp \
     && chmod 0555 /app/chatapp-server.jar
 USER chatapp
 EXPOSE 5050
+STOPSIGNAL SIGTERM
 HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=5 CMD test -f /tmp/chatapp.ready || exit 1
 ENTRYPOINT ["java", "-XX:+ExitOnOutOfMemoryError", "-jar", "/app/chatapp-server.jar"]
