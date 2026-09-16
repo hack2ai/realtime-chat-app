@@ -247,7 +247,7 @@ The server container runs as a non-root user. The Compose database is intended f
 
 ### Automated releases
 
-Pushing a semantic version tag such as `v1.1.0` triggers the release workflow. It verifies the Maven build and that the tag matches the project version, validates the runnable server JAR, publishes the JAR and SHA-256 checksum to a GitHub Release, attests the JAR and release container build provenance, and builds and pushes the versioned, `latest`, and commit-SHA server images to GHCR.
+Pushing a semantic version tag such as `v1.1.0` triggers the release workflow. It verifies the Maven build and that the tag matches the project version, validates the runnable server JAR, publishes the JAR, SHA-256 checksum, and CycloneDX SBOM to a GitHub Release, attests the JAR, SBOM, and release container build provenance, and builds and pushes the versioned, `latest`, and commit-SHA server images to GHCR.
 
 ## Protocol
 
@@ -280,6 +280,10 @@ Notifications      S2C_NOTIFICATION
 realtime-chat-app/
 ├── .github/workflows/ci.yml
 ├── .github/workflows/codeql.yml
+├── .github/workflows/container-scan.yml
+├── .github/workflows/database-policy.yml
+├── .github/workflows/dependency-review.yml
+├── .github/workflows/docker-policy.yml
 ├── .github/workflows/release.yml
 ├── .github/workflows/scorecard.yml
 ├── .github/dependabot.yml
@@ -328,7 +332,7 @@ Run the complete verification suite before submitting changes:
 mvn verify
 ```
 
-GitHub Actions runs Maven verification on pushes and pull requests targeting `main`, validates the runnable server artifact, checks Compose hardening, builds and smoke-tests the containerized stack, runs CodeQL, dependency review, and OpenSSF Scorecard, and verifies release artifacts and container metadata. Published server artifacts and release images carry build provenance attestations.
+GitHub Actions runs Maven verification on pushes and pull requests targeting `main`, validates the runnable server artifact, generates and verifies a CycloneDX SBOM, checks Compose hardening, builds and smoke-tests the containerized stack, runs CodeQL, dependency review, container scanning, database and Docker policy checks, and OpenSSF Scorecard, and verifies release artifacts and container metadata. Published server artifacts and release images carry build provenance attestations.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for project conventions.
 
