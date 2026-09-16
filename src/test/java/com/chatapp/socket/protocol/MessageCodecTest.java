@@ -137,13 +137,15 @@ class MessageCodecTest {
     }
 
     @Test
-    void writeRejectsOversizedFrame() {
+    void writeRejectsOversizedFrameWithoutWritingPartialData() {
         String oversizedPayload = "x".repeat(8 * 1024 * 1024);
         Envelope envelope = codec.wrap(MessageType.C2S_PRIVATE_MESSAGE,
                 new Payload("alice", oversizedPayload));
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
 
         assertThrows(IOException.class, () ->
-                codec.write(new DataOutputStream(new ByteArrayOutputStream()), envelope));
+                codec.write(new DataOutputStream(bytes), envelope));
+        assertEquals(0, bytes.size());
     }
 
     @Test
