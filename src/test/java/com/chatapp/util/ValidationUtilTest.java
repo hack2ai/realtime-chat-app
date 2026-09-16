@@ -18,6 +18,14 @@ class ValidationUtilTest {
     }
 
     @Test
+    void rejectsMissingIdentityFields() {
+        assertThrows(ValidationException.class, () -> ValidationUtil.validateUsername(null));
+        assertThrows(ValidationException.class, () -> ValidationUtil.validateUsername("   "));
+        assertThrows(ValidationException.class, () -> ValidationUtil.validateEmail(null));
+        assertThrows(ValidationException.class, () -> ValidationUtil.validateEmail("   "));
+    }
+
+    @Test
     void rejectsUnicodeLookalikeUsername() {
         assertThrows(ValidationException.class, () -> ValidationUtil.validateUsername("usеr123"));
     }
@@ -26,6 +34,13 @@ class ValidationUtilTest {
     void rejectsPasswordWithoutLetterAndDigit() {
         assertThrows(ValidationException.class, () -> ValidationUtil.validatePassword("12345678"));
         assertThrows(ValidationException.class, () -> ValidationUtil.validatePassword("abcdefgh"));
+    }
+
+    @Test
+    void validatesPasswordConfirmation() {
+        assertDoesNotThrow(() -> ValidationUtil.validatePasswordsMatch("Secret123", "Secret123"));
+        assertThrows(ValidationException.class, () -> ValidationUtil.validatePasswordsMatch("Secret123", "Secret124"));
+        assertThrows(ValidationException.class, () -> ValidationUtil.validatePasswordsMatch(null, "Secret123"));
     }
 
     @Test
