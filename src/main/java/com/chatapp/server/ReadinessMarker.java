@@ -3,6 +3,7 @@ package com.chatapp.server;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 
 /** Manages the process-local readiness marker used by container health checks. */
 final class ReadinessMarker {
@@ -18,6 +19,11 @@ final class ReadinessMarker {
         if (parent != null) Files.createDirectories(parent);
         Files.deleteIfExists(path);
         Files.createFile(path);
+        heartbeat();
+    }
+
+    void heartbeat() throws IOException {
+        Files.setLastModifiedTime(path, FileTime.fromMillis(System.currentTimeMillis()));
     }
 
     void clear() {
