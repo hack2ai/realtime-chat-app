@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  security-events: write
 
 concurrency:
   group: container-scan-${{ github.workflow }}-${{ github.ref }}
@@ -45,8 +46,15 @@ jobs:
         with:
           scan-type: image
           image-ref: realtime-chat-app:scan-${{ github.sha }}
-          format: table
+          format: sarif
+          output: trivy-results.sarif
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: '1'
           vuln-type: os,library
+
+      - name: Upload container scan findings
+        if: always()
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
+        with:
+          sarif_file: trivy-results.sarif
