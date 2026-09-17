@@ -26,6 +26,24 @@ class ValidationUtilTest {
     }
 
     @Test
+    void enforcesUsernameBoundariesAndCharacterSet() {
+        assertDoesNotThrow(() -> ValidationUtil.validateUsername("abc"));
+        assertDoesNotThrow(() -> ValidationUtil.validateUsername("a".repeat(30)));
+        assertThrows(ValidationException.class, () -> ValidationUtil.validateUsername("ab"));
+        assertThrows(ValidationException.class, () -> ValidationUtil.validateUsername("a".repeat(31)));
+        assertThrows(ValidationException.class, () -> ValidationUtil.validateUsername("chat-user"));
+    }
+
+    @Test
+    void rejectsMalformedEmailAddresses() {
+        assertThrows(ValidationException.class, () -> ValidationUtil.validateEmail("user"));
+        assertThrows(ValidationException.class, () -> ValidationUtil.validateEmail("user@");
+        assertThrows(ValidationException.class, () -> ValidationUtil.validateEmail("@example.com"));
+        assertThrows(ValidationException.class, () -> ValidationUtil.validateEmail("user@example"));
+        assertThrows(ValidationException.class, () -> ValidationUtil.validateEmail("user example@example.com"));
+    }
+
+    @Test
     void rejectsUnicodeLookalikeUsername() {
         assertThrows(ValidationException.class, () -> ValidationUtil.validateUsername("usеr123"));
     }
