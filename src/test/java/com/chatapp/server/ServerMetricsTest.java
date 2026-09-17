@@ -3,6 +3,7 @@ package com.chatapp.server;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ServerMetricsTest {
     @Test
@@ -21,8 +22,8 @@ class ServerMetricsTest {
         assertEquals(2, metrics.acceptedConnections());
         assertEquals(1, metrics.rateLimitedConnections());
         assertEquals(1, metrics.capacityRejectedConnections());
-        assertEquals(
-                "active=0, acceptedTotal=2, rateLimitedTotal=1, capacityRejectedTotal=1",
-                metrics.summary());
+        assertTrue(metrics.uptimeSeconds() >= 0);
+        assertTrue(metrics.summary().matches(
+                "active=0, acceptedTotal=2, rateLimitedTotal=1, capacityRejectedTotal=1, uptimeSeconds=\\d+"));
     }
 }
