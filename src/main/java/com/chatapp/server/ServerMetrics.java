@@ -48,11 +48,22 @@ public final class ServerMetrics {
         return TimeUnit.NANOSECONDS.toSeconds(Math.max(0L, System.nanoTime() - startedAtNanos));
     }
 
+    public long usedHeapBytes() {
+        Runtime runtime = Runtime.getRuntime();
+        return Math.max(0L, runtime.totalMemory() - runtime.freeMemory());
+    }
+
+    public long maxHeapBytes() {
+        return Math.max(0L, Runtime.getRuntime().maxMemory());
+    }
+
     public String summary() {
         return "active=" + activeConnections()
                 + ", acceptedTotal=" + acceptedConnections()
                 + ", rateLimitedTotal=" + rateLimitedConnections()
                 + ", capacityRejectedTotal=" + capacityRejectedConnections()
-                + ", uptimeSeconds=" + uptimeSeconds();
+                + ", uptimeSeconds=" + uptimeSeconds()
+                + ", usedHeapBytes=" + usedHeapBytes()
+                + ", maxHeapBytes=" + maxHeapBytes();
     }
 }
