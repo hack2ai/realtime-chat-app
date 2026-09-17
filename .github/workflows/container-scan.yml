@@ -53,8 +53,28 @@ jobs:
           exit-code: '1'
           vuln-type: os,library
 
+      - name: Generate container SBOM
+        if: always()
+        uses: aquasecurity/trivy-action@d2a0b60797ff03db6132bd4e2b293f9b37081297 # immutable commit; Trivy v0.74.0 update
+        with:
+          scan-type: image
+          image-ref: realtime-chat-app:scan-${{ github.sha }}
+          format: cyclonedx
+          output: trivy-image.sbom.json
+          exit-code: '0'
+          vuln-type: os,library
+
       - name: Upload container scan findings
         if: always()
         uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
         with:
           sarif_file: trivy-results.sarif
+
+      - name: Upload container SBOM
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: container-sbom-${{ github.sha }}
+          path: trivy-image.sbom.json
+          if-no-files-found: error
+          retention-days: 14
