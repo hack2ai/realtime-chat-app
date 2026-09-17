@@ -47,8 +47,7 @@ public class ChatServer {
     private final ConcurrentHashMap<Integer, ClientHandler> connectedClients = new ConcurrentHashMap<>();
     private final Set<ClientHandler> activeHandlers = ConcurrentHashMap.newKeySet();
     private final ThreadPoolExecutor clientThreadPool;
-    private final ScheduledExecutorService metricsScheduler =
-            Executors.newSingleThreadScheduledExecutor(Thread.ofVirtual().name("chat-server-metrics", 0).factory());
+    private volatile ScheduledExecutorService metricsScheduler = createMetricsScheduler();
     private final Thread shutdownHook = new Thread(this::stop, "chat-server-shutdown");
     private volatile boolean shutdownHookRegistered;
     private volatile boolean running;
@@ -91,7 +90,15 @@ public class ChatServer {
         }
     }
 
-    private void startMetricsLogging() {
+    private static ScheduledExecutorService createMetricsScheduler() {
+        return Executors.newSingleThreadScheduledExecutor(
+                Thread.ofVirtual().name("chat-server-metrics", 0).factory());
+    }
+
+    private synchronized void startMetricsLogging() {
+        if (metricsScheduler.isShutdown() || metricsScheduler.isTerminated()) {
+            metricsScheduler = createMetricsScheduler();
+        }
         metricsScheduler.scheduleAtFixedRate(
                 () -> logger.info("Server metrics: {}", serverMetrics.summary()),
                 1,
