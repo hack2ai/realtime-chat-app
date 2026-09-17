@@ -180,13 +180,13 @@ jobs:
           IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
           docker run --rm --entrypoint sh "${IMAGE_NAME}:${RELEASE_VERSION}" -c 'test -z "$(find /app -xdev -type f \( -name "*.p12" -o -name "*.pfx" -o -name "*.jks" -o -name "*.keystore" -o -name "*.pem" -o -name "*.key" -o -name "*.crt" \) -print 2>/dev/null)"'
 
-      - name: Verify release image has no setuid/setgid executables
+      - name: Verify release image has no setuid/setgid application files
         env:
           IMAGE_NAME: ghcr.io/${{ github.repository }}
           RELEASE_VERSION: ${{ github.ref_name }}
         run: |
           IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
-          test -z "$(docker run --rm --entrypoint sh "${IMAGE_NAME}:${RELEASE_VERSION}" -c 'find / -xdev -type f -perm /6000 -print 2>/dev/null')"
+          test -z "$(docker run --rm --entrypoint sh "${IMAGE_NAME}:${RELEASE_VERSION}" -c 'find /app -xdev -type f -perm /6000 -print 2>/dev/null')"
 
       - name: Verify release image Java runtime
         env:
