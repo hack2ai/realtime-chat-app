@@ -37,7 +37,7 @@ class ValidationUtilTest {
     @Test
     void rejectsMalformedEmailAddresses() {
         assertThrows(ValidationException.class, () -> ValidationUtil.validateEmail("user"));
-        assertThrows(ValidationException.class, () -> ValidationUtil.validateEmail("user@");
+        assertThrows(ValidationException.class, () -> ValidationUtil.validateEmail("user@"));
         assertThrows(ValidationException.class, () -> ValidationUtil.validateEmail("@example.com"));
         assertThrows(ValidationException.class, () -> ValidationUtil.validateEmail("user@example"));
         assertThrows(ValidationException.class, () -> ValidationUtil.validateEmail("user example@example.com"));
