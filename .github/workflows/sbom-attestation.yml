@@ -1,0 +1,37 @@
+name: SBOM Attestation
+
+on:
+  push:
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: sbom-attestation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  attest-sbom:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      attestations: write
+      id-token: write
+    steps:
+      - name: Download CI package
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: chatapp-server-${{ github.sha }}
+          path: release-assets
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.run_id }}
+
+      - name: Verify SBOM exists
+        run: test -s release-assets/target/chatapp-sbom.json
+
+      - name: Attest SBOM
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-path: release-assets/target/chatapp-sbom.json
