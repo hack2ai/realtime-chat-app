@@ -85,6 +85,18 @@ class MessageCodecTest {
     }
 
     @Test
+    void readRejectsMalformedUtf8() throws Exception {
+        byte[] payload = {'{', '"', 't', 'y', 'p', 'e', '"', ':', '"', (byte) 0xC3, '"', '}'};
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        DataOutputStream out = new DataOutputStream(bytes);
+        out.writeInt(payload.length);
+        out.write(payload);
+
+        assertThrows(IOException.class, () ->
+                codec.read(new DataInputStream(new ByteArrayInputStream(bytes.toByteArray()))));
+    }
+
+    @Test
     void readRejectsMalformedJson() throws Exception {
         byte[] payload = "{not-json".getBytes(StandardCharsets.UTF_8);
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
