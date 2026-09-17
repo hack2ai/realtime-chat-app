@@ -30,6 +30,11 @@ jobs:
             exit 1
           fi
 
+      - name: Enforce supported Java major version
+        run: |
+          grep -Eq '^FROM[[:space:]]+maven:[^[:space:]-]+-eclipse-temurin-21([[:space:]]|$)' Dockerfile
+          grep -Eq '^FROM[[:space:]]+eclipse-temurin:21([[:alnum:]._-]*)?([[:space:]]|$)' Dockerfile
+
       - name: Verify Dockerfile runtime hardening
         run: |
           grep -Fxq 'USER chatapp' Dockerfile
