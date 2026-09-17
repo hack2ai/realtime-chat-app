@@ -78,7 +78,7 @@ services:
       CHATAPP_AUTH_SESSION_EXPIRYHOURS: 24
       CHATAPP_ATTACHMENTS_STORAGEPATH: /app/data/attachments
     healthcheck:
-      test: ["CMD-SHELL", "test -f /tmp/chatapp.ready"]
+      test: ["CMD-SHELL", "test -f /tmp/chatapp.ready && kill -0 1"]
       interval: 10s
       timeout: 3s
       retries: 5
