@@ -100,10 +100,24 @@ public class ChatServer {
             metricsScheduler = createMetricsScheduler();
         }
         metricsScheduler.scheduleAtFixedRate(
+                this::heartbeatReadinessMarker,
+                0,
+                5,
+                TimeUnit.SECONDS);
+        metricsScheduler.scheduleAtFixedRate(
                 () -> logger.info("Server metrics: {}", serverMetrics.summary()),
                 1,
                 1,
                 TimeUnit.MINUTES);
+    }
+
+    private void heartbeatReadinessMarker() {
+        if (!running) return;
+        try {
+            READINESS_MARKER.heartbeat();
+        } catch (IOException e) {
+            logger.warn("Unable to refresh server readiness heartbeat ({}).", e.getClass().getSimpleName());
+        }
     }
 
     private void verifyDatabaseReady() throws IOException {
