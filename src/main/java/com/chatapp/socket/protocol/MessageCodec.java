@@ -9,6 +9,10 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.EOFException;
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 
@@ -61,7 +65,7 @@ public final class MessageCodec {
         byte[] bytes = new byte[length];
         in.readFully(bytes);
         try {
-            Envelope envelope = gson.fromJson(new String(bytes, StandardCharsets.UTF_8), Envelope.class);
+            Envelope envelope = gson.fromJson(decodeUtf8(bytes), Envelope.class);
             if (envelope == null || envelope.getType() == null) {
                 throw new IOException("Message envelope must contain a message type.");
             }
@@ -70,6 +74,18 @@ public final class MessageCodec {
             throw e;
         } catch (RuntimeException e) {
             throw new IOException("Invalid JSON message.", e);
+        }
+    }
+
+    private static String decodeUtf8(byte[] bytes) throws IOException {
+        try {
+            CharBuffer chars = StandardCharsets.UTF_8.newDecoder()
+                    .onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT)
+                    .decode(ByteBuffer.wrap(bytes));
+            return chars.toString();
+        } catch (CharacterCodingException e) {
+            throw new IOException("Invalid UTF-8 message.", e);
         }
     }
 
