@@ -1,0 +1,41 @@
+name: Container Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '45 3 * * 0'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: container-security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    name: Scan container and IaC configuration
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Verify workflow action pinning
+        run: |
+          violations=$(grep -RhoE 'uses:[[:space:]]+[^@[:space:]]+@[^[:space:]#]+' .github/workflows | awk -F@ '$2 !~ /^[0-9a-fA-F]{40}$/')
+          test -z "$violations"
+
+      - name: Scan configuration and repository secrets
+        uses: aquasecurity/trivy-action@d2a0b60797ff03db6132bd4e2b293f9b37081297 # immutable commit; Trivy v0.74.0 update
+        with:
+          scan-type: config
+          scan-ref: .
+          scanners: misconfig,secret
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+          format: table
