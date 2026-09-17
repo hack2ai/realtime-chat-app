@@ -1,9 +1,11 @@
 package com.chatapp.server;
 
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 /** Lightweight, dependency-free server metrics for operational logs. */
 public final class ServerMetrics {
+    private final long startedAtNanos = System.nanoTime();
     private final AtomicLong activeConnections = new AtomicLong();
     private final AtomicLong acceptedConnections = new AtomicLong();
     private final AtomicLong rateLimitedConnections = new AtomicLong();
@@ -42,10 +44,15 @@ public final class ServerMetrics {
         return capacityRejectedConnections.get();
     }
 
+    public long uptimeSeconds() {
+        return TimeUnit.NANOSECONDS.toSeconds(Math.max(0L, System.nanoTime() - startedAtNanos));
+    }
+
     public String summary() {
         return "active=" + activeConnections()
                 + ", acceptedTotal=" + acceptedConnections()
                 + ", rateLimitedTotal=" + rateLimitedConnections()
-                + ", capacityRejectedTotal=" + capacityRejectedConnections();
+                + ", capacityRejectedTotal=" + capacityRejectedConnections()
+                + ", uptimeSeconds=" + uptimeSeconds();
     }
 }
