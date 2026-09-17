@@ -226,6 +226,18 @@ jobs:
               touch_marker="/app/data/attachments/.ci-write-test"
               docker compose exec -T server sh -c "touch '$touch_marker' && rm -f '$touch_marker'"
               ! docker compose exec -T server sh -c 'touch /app/.ci-read-only-test'
+
+              db_password="$CHATAPP_DB_PASSWORD"
+              docker compose exec -T -e MYSQL_PWD="$db_password" db mysql -u chatapp_user chatapp_db -e 'SELECT 1;' >/dev/null
+              if docker compose exec -T -e MYSQL_PWD="$db_password" db mysql -u chatapp_user chatapp_db -e 'CREATE TABLE ci_forbidden_ddl (id INT);' >/dev/null 2>&1; then
+                echo "chatapp_user unexpectedly has CREATE privilege"
+                exit 1
+              fi
+              if docker compose exec -T -e MYSQL_PWD="$db_password" db mysql -u chatapp_user -e 'GRANT ALL PRIVILEGES ON chatapp_db.* TO \"chatapp_user\"@\"%\";' >/dev/null 2>&1; then
+                echo "chatapp_user unexpectedly has GRANT privilege"
+                exit 1
+              fi
+
               timeout 5 bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/5050'
               python3 - <<'PY'
 import json
