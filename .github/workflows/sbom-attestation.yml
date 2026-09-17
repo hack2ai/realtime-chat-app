@@ -1,17 +1,19 @@
 name: SBOM Attestation
 
 on:
-  push:
-    branches: [main]
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
 
 permissions: {}
 
 concurrency:
-  group: sbom-attestation-${{ github.ref }}
+  group: sbom-attestation-${{ github.event.workflow_run.head_sha }}
   cancel-in-progress: true
 
 jobs:
   attest-sbom:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -22,11 +24,11 @@ jobs:
       - name: Download CI package
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: chatapp-server-${{ github.sha }}
+          name: chatapp-server-${{ github.event.workflow_run.head_sha }}
           path: release-assets
           github-token: ${{ github.token }}
           repository: ${{ github.repository }}
-          run-id: ${{ github.run_id }}
+          run-id: ${{ github.event.workflow_run.id }}
 
       - name: Verify SBOM exists
         run: test -s release-assets/target/chatapp-sbom.json
