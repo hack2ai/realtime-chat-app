@@ -4,6 +4,10 @@ import com.chatapp.exception.ValidationException;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
 import java.util.Locale;
@@ -106,11 +110,19 @@ public final class AttachmentValidator {
 
     private static void requireJson(byte[] value) throws ValidationException {
         try {
-            String json = new String(value, StandardCharsets.UTF_8);
+            String json = decodeUtf8Strict(value);
             com.google.gson.JsonParser.parseString(json);
-        } catch (RuntimeException e) {
+        } catch (CharacterCodingException | RuntimeException e) {
             throw new ValidationException("File content is not valid JSON.");
         }
+    }
+
+    private static String decodeUtf8Strict(byte[] value) throws CharacterCodingException {
+        CharBuffer decoded = StandardCharsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+                .decode(ByteBuffer.wrap(value));
+        return decoded.toString();
     }
 
     private static void requireWebp(byte[] value) throws ValidationException {
