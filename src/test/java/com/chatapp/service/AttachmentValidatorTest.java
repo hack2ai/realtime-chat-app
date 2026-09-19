@@ -39,7 +39,7 @@ class AttachmentValidatorTest {
 
     @Test
     void acceptsValidPdfSignature() throws Exception {
-        AttachmentValidator.validateContent("application/pdf", "%PDF-1.7\\n".getBytes(StandardCharsets.US_ASCII));
+        AttachmentValidator.validateContent("application/pdf", "%PDF-1.7\n".getBytes(StandardCharsets.US_ASCII));
     }
 
     @Test
@@ -73,7 +73,7 @@ class AttachmentValidatorTest {
 
     @Test
     void acceptsValidJson() throws Exception {
-        AttachmentValidator.validateContent("application/json", "{\\"message\\":\\"hello\\",\\"ok\\":true}".getBytes(StandardCharsets.UTF_8));
+        AttachmentValidator.validateContent("application/json", "{\"message\":\"hello\",\"ok\":true}".getBytes(StandardCharsets.UTF_8));
     }
 
     @Test
