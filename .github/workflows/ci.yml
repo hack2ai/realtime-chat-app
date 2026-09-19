@@ -159,6 +159,12 @@ jobs:
       - name: Build server container image
         run: docker build --pull --build-arg APP_VERSION="$PROJECT_VERSION" --build-arg VCS_REF="${{ github.sha }}" --tag realtime-chat-app:${{ github.sha }} .
 
+      - name: Verify Docker build stage runs as non-root
+        run: |
+          docker build --pull --target build --tag realtime-chat-app-build:${{ github.sha }} .
+          test "$(docker image inspect realtime-chat-app-build:${{ github.sha }} --format '{{.Config.User}}')" = "builder"
+          test "$(docker run --rm --entrypoint sh realtime-chat-app-build:${{ github.sha }} -c 'id -u')" = "10000"
+
       - name: Scan server container image
         uses: aquasecurity/trivy-action@d2a0b60797ff03db6132bd4e2b293f9b37081297 # immutable commit; Trivy v0.74.0 update
         with:
