@@ -40,6 +40,7 @@ jobs:
         with:
           languages: java
           build-mode: manual
+          queries: security-extended
 
       - name: Build
         run: mvn --batch-mode --no-transfer-progress -DskipTests compile
