@@ -1,7 +1,10 @@
 FROM maven:3.9.11-eclipse-temurin-21 AS build
+RUN useradd --create-home --uid 10000 builder
 WORKDIR /workspace
-COPY pom.xml .
-COPY src ./src
+COPY --chown=builder:builder pom.xml .
+COPY --chown=builder:builder src ./src
+USER builder
+ENV MAVEN_CONFIG=/home/builder/.m2
 RUN mvn --batch-mode --no-transfer-progress -DskipTests package
 
 FROM eclipse-temurin:21-jre
