@@ -123,10 +123,6 @@ jobs:
         with:
           subject-path: chatapp-server-${{ github.ref_name }}.sbom.json
 
-      - name: Login to GitHub Container Registry
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
 
       - name: Build release container
         env:
@@ -223,6 +219,10 @@ jobs:
           IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
           docker run --rm --entrypoint sh "${IMAGE_NAME}:${RELEASE_VERSION}" -c 'test ! -e /workspace && test ! -e /root/.m2 && ! command -v mvn >/dev/null 2>&1'
 
+      - name: Login to GitHub Container Registry
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
       - name: Push release container
         id: push-release-container
         env:
