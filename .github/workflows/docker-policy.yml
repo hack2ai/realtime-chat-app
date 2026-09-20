@@ -42,3 +42,21 @@ jobs:
           grep -Fxq 'ENTRYPOINT ["java", "-XX:+ExitOnOutOfMemoryError", "-jar", "/app/chatapp-server.jar"]' Dockerfile
           grep -Fq 'chmod 0700 /app/data/attachments' Dockerfile
           grep -Fq 'chmod 0555 /app/chatapp-server.jar' Dockerfile
+
+      - name: Verify Compose resource limits
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: |
+          docker compose config --format json | jq -e '
+            .services.db.cpus == 2 and
+            .services.db.mem_limit == 1073741824 and
+            .services.db.pids_limit == 512 and
+            .services.db.ulimits.nofile.soft == 4096 and
+            .services.db.ulimits.nofile.hard == 8192 and
+            .services.server.cpus == 1 and
+            .services.server.mem_limit == 805306368 and
+            .services.server.pids_limit == 256 and
+            .services.server.ulimits.nofile.soft == 4096 and
+            .services.server.ulimits.nofile.hard == 8192
+          ' >/dev/null
