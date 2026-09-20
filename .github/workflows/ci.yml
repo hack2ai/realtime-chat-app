@@ -46,7 +46,7 @@ jobs:
       - name: Verify runnable server package
         run: |
           test -s target/chatapp-server.jar
-          unzip -p target/chatapp-server.jar META-INF/MANIFEST.MF | tr -d '' | grep -Fxq "Main-Class: com.chatapp.server.ChatServer"
+          unzip -p target/chatapp-server.jar META-INF/MANIFEST.MF | tr -d '\r' | grep -Fxq "Main-Class: com.chatapp.server.ChatServer"
 
       - name: Generate software bill of materials
         run: |
@@ -140,6 +140,22 @@ jobs:
       - name: Verify server image filesystem permissions
         run: |
           docker run --rm --entrypoint sh "realtime-chat-app:${{ github.sha }}" -c 'test "$(id -u)" = "10001" && test "$(stat -c %a /app/data/attachments)" = "700" && test -w /app/data/attachments && ! test -w /app && ! test -w /app/chatapp-server.jar'
+
+      - name: Verify server image contains no private-key artifacts
+        run: |
+          test -z "$(docker run --rm --entrypoint sh "realtime-chat-app:${{ github.sha }}" -c 'find /app -xdev -type f \( -name "*.p12" -o -name "*.pfx" -o -name "*.jks" -o -name "*.keystore" -o -name "*.pem" -o -name "*.key" -o -name "*.crt" \) -print 2>/dev/null')"
+
+      - name: Verify server image has no setuid/setgid application files
+        run: |
+          test -z "$(docker run --rm --entrypoint sh "realtime-chat-app:${{ github.sha }}" -c 'find /app -xdev -type f -perm /6000 -print 2>/dev/null')"
+
+      - name: Verify server image has no secret-like environment variables
+        run: |
+          image_env=$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{json .Config.Env}}')
+          if printf '%s' "$image_env" | grep -Eq 'CHATAPP_(DB_PASSWORD|MYSQL_ROOT_PASSWORD|AUTH_.*(PASSWORD|SECRET|TOKEN))'; then
+            echo "application secret-like environment variable found in image metadata"
+            exit 1
+          fi
 
       - name: Verify server image Java runtime
         run: |
