@@ -11,9 +11,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AppConfigTlsTest {
     private static final String TLS_ENABLED = "chatapp.tls.enabled";
+    private static final String TLS_KEY_STORE_PASSWORD = "chatapp.tls.keyStorePassword";
     private static final String CLIENT_TLS_ENABLED = "chatapp.client.tls.enabled";
     private static final String TRUST_STORE_PATH = "chatapp.client.tls.trustStorePath";
     private static final String TRUST_STORE_PASSWORD = "chatapp.client.tls.trustStorePassword";
+    private static final String DB_PASSWORD = "chatapp.db.password";
     private static final String DB_SSL_MODE = "chatapp.db.sslMode";
     private static final String DB_USE_SSL = "chatapp.db.useSsl";
     private static final String BCRYPT_STRENGTH = "chatapp.auth.bcrypt.strength";
@@ -108,6 +110,34 @@ class AppConfigTlsTest {
     }
 
     @Test
+    void placeholderDatabasePasswordIsRejected() {
+        System.setProperty(DB_PASSWORD, "CHANGE_ME");
+
+        assertThrows(IllegalStateException.class, AppConfig::getDbPassword);
+    }
+
+    @Test
+    void configuredDatabasePasswordIsAccepted() {
+        System.setProperty(DB_PASSWORD, "test-secret");
+
+        assertEquals("test-secret", AppConfig.getDbPassword());
+    }
+
+    @Test
+    void placeholderTlsKeyStorePasswordIsRejected() {
+        System.setProperty(TLS_KEY_STORE_PASSWORD, "CHANGE_ME");
+
+        assertThrows(IllegalStateException.class, AppConfig::getTlsKeyStorePassword);
+    }
+
+    @Test
+    void configuredTlsKeyStorePasswordIsAccepted() {
+        System.setProperty(TLS_KEY_STORE_PASSWORD, "test-secret");
+
+        assertEquals("test-secret", AppConfig.getTlsKeyStorePassword());
+    }
+
+    @Test
     void bcryptStrengthRejectsValuesOutsideSupportedRange() {
         System.setProperty(BCRYPT_STRENGTH, "9");
         assertThrows(IllegalStateException.class, AppConfig::getBcryptStrength);
@@ -145,9 +175,11 @@ class AppConfigTlsTest {
 
     private static void clearProperties() {
         System.clearProperty(TLS_ENABLED);
+        System.clearProperty(TLS_KEY_STORE_PASSWORD);
         System.clearProperty(CLIENT_TLS_ENABLED);
         System.clearProperty(TRUST_STORE_PATH);
         System.clearProperty(TRUST_STORE_PASSWORD);
+        System.clearProperty(DB_PASSWORD);
         System.clearProperty(DB_SSL_MODE);
         System.clearProperty(DB_USE_SSL);
         System.clearProperty(BCRYPT_STRENGTH);
