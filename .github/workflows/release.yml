@@ -100,7 +100,9 @@ jobs:
           cp target/chatapp-server.jar "chatapp-server-${RELEASE_VERSION}.jar"
           cp target/chatapp-sbom.json "chatapp-server-${RELEASE_VERSION}.sbom.json"
           sha256sum "chatapp-server-${RELEASE_VERSION}.jar" > "chatapp-server-${RELEASE_VERSION}.jar.sha256"
+          sha256sum "chatapp-server-${RELEASE_VERSION}.sbom.json" > "chatapp-server-${RELEASE_VERSION}.sbom.json.sha256"
           sha256sum --check "chatapp-server-${RELEASE_VERSION}.jar.sha256"
+          sha256sum --check "chatapp-server-${RELEASE_VERSION}.sbom.json.sha256"
 
       - name: Attest release server artifact
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
@@ -250,6 +252,7 @@ jobs:
             "chatapp-server-${RELEASE_VERSION}.jar" \
             "chatapp-server-${RELEASE_VERSION}.jar.sha256" \
             "chatapp-server-${RELEASE_VERSION}.sbom.json" \
+            "chatapp-server-${RELEASE_VERSION}.sbom.json.sha256" \
             --title "$RELEASE_VERSION" \
             --generate-notes
 
@@ -263,8 +266,9 @@ jobs:
             --pattern "chatapp-server-${RELEASE_VERSION}.jar" \
             --pattern "chatapp-server-${RELEASE_VERSION}.jar.sha256" \
             --pattern "chatapp-server-${RELEASE_VERSION}.sbom.json" \
+            --pattern "chatapp-server-${RELEASE_VERSION}.sbom.json.sha256" \
             --dir /tmp/release-assets \
             --clobber
           cd /tmp/release-assets
           sha256sum --check "chatapp-server-${RELEASE_VERSION}.jar.sha256"
-          test -s "chatapp-server-${RELEASE_VERSION}.sbom.json"
+          sha256sum --check "chatapp-server-${RELEASE_VERSION}.sbom.json.sha256"
