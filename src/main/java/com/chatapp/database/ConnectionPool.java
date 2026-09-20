@@ -32,8 +32,25 @@ public final class ConnectionPool {
         this.connectionTimeoutMs = AppConfig.getDbConnectionTimeoutMs();
         this.availableConnections = new ArrayBlockingQueue<>(maxSize);
         int minIdle = AppConfig.getDbPoolMinIdle();
-        for (int i = 0; i < minIdle; i++) availableConnections.offer(createConnection());
+        try {
+            for (int i = 0; i < minIdle; i++) {
+                availableConnections.offer(createConnection());
+            }
+        } catch (RuntimeException e) {
+            rollbackInitialization();
+            throw e;
+        }
         logger.info("Connection pool initialized with {} idle connections (max size {})", minIdle, maxSize);
+    }
+
+    private void rollbackInitialization() {
+        Connection conn;
+        while ((conn = availableConnections.poll()) != null) {
+            closeQuietly(conn);
+        }
+        trackedConnections.clear();
+        totalCreated.set(0);
+        logger.warn("Database connection pool initialization failed; rolled back partial connections.");
     }
 
     public static ConnectionPool getInstance() {
