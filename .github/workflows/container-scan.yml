@@ -41,13 +41,24 @@ jobs:
           docker run --rm --entrypoint sh realtime-chat-app:scan-${{ github.sha }} -c 'test "$(id -u)" = "10001" && test "$(stat -c %a /app/data/attachments)" = "700" && test -w /app/data/attachments && ! test -w /app && ! test -w /app/chatapp-server.jar'
           test -z "$(docker run --rm --entrypoint sh realtime-chat-app:scan-${{ github.sha }} -c 'find /app -xdev -type f -perm /6000 -print 2>/dev/null')"
 
-      - name: Scan server container image
+      - name: Generate Trivy SARIF report
         uses: aquasecurity/trivy-action@d2a0b60797ff03db6132bd4e2b293f9b37081297 # immutable commit; Trivy v0.74.0 update
         with:
           scan-type: image
           image-ref: realtime-chat-app:scan-${{ github.sha }}
           format: sarif
           output: trivy-results.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '0'
+          vuln-type: os,library
+
+      - name: Enforce HIGH/CRITICAL vulnerability gate
+        uses: aquasecurity/trivy-action@d2a0b60797ff03db6132bd4e2b293f9b37081297 # immutable commit; Trivy v0.74.0 update
+        with:
+          scan-type: image
+          image-ref: realtime-chat-app:scan-${{ github.sha }}
+          format: table
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: '1'
