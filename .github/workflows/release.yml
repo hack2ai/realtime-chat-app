@@ -168,7 +168,7 @@ jobs:
           test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{json .Config.Entrypoint}}')" = '["java","-XX:+ExitOnOutOfMemoryError","-jar","/app/chatapp-server.jar"]'
           test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{json .Config.ExposedPorts}}')" = '{"5050/tcp":{}}'
           test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{.Config.StopSignal}}')" = "SIGTERM"
-          test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{json .Config.Healthcheck.Test}}')" = '["CMD-SHELL","test -f /tmp/chatapp.ready || exit 1"]'
+          test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{json .Config.Healthcheck.Test}}')" = '["CMD","java","-cp","/app/chatapp-server.jar","com.chatapp.server.ServerHealthCheck"]'
           image_env=$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{json .Config.Env}}')
           if printf '%s' "$image_env" | grep -Eq 'CHATAPP_(DB_PASSWORD|MYSQL_ROOT_PASSWORD|AUTH_.*(PASSWORD|SECRET|TOKEN))'; then
             echo "application secret-like environment variable found in release image metadata"
