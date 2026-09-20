@@ -147,6 +147,43 @@ jobs:
           exit-code: '1'
           vuln-type: os,library
 
+      - name: Generate container image SBOM
+        uses: aquasecurity/trivy-action@d2a0b60797ff03db6132bd4e2b293f9b37081297 # immutable commit; Trivy v0.74.0
+        with:
+          scan-type: image
+          image-ref: realtime-chat-app:${{ github.sha }}
+          format: cyclonedx
+          output: target/chatapp-container-sbom.json
+          exit-code: '0'
+          vuln-type: os,library
+
+      - name: Verify container image SBOM
+        run: |
+          test -s target/chatapp-container-sbom.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          sbom = json.loads(Path("target/chatapp-container-sbom.json").read_text(encoding="utf-8"))
+          if sbom.get("bomFormat") != "CycloneDX":
+              raise SystemExit("container SBOM is not CycloneDX")
+          if not sbom.get("specVersion"):
+              raise SystemExit("container SBOM is missing specVersion")
+          if not sbom.get("components"):
+              raise SystemExit("container SBOM contains no components")
+          PY
+          sha256sum target/chatapp-container-sbom.json > target/chatapp-container-sbom.json.sha256
+          sha256sum --check target/chatapp-container-sbom.json.sha256
+
+      - name: Upload container SBOM
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: chatapp-container-${{ github.sha }}
+          path: |
+            target/chatapp-container-sbom.json
+            target/chatapp-container-sbom.json.sha256
+          if-no-files-found: error
+          retention-days: 14
       - name: Verify server image metadata
         env:
           PROJECT_VERSION: ${{ env.PROJECT_VERSION }}
