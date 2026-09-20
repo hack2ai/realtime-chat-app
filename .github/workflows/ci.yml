@@ -104,6 +104,28 @@ jobs:
           CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
           CHATAPP_DB_PASSWORD: ci-app-password
         run: docker compose config --quiet
+      - name: Verify Docker Compose hardening
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: |
+          docker compose config --format json | jq -e '
+            .services.server.read_only == true and
+            .services.server.init == true and
+            .services.server.user == "10001" and
+            .services.server.pids_limit == 256 and
+            .services.server.security_opt == ["no-new-privileges:true"] and
+            .services.server.cap_drop == ["ALL"] and
+            .services.server.logging.options["max-size"] == "10m" and
+            .services.server.logging.options["max-file"] == "3" and
+            .services.db.init == true and
+            .services.db.pids_limit == 512 and
+            .services.db.security_opt == ["no-new-privileges:true"] and
+            .services.db.logging.options["max-size"] == "10m" and
+            .services.db.logging.options["max-file"] == "3" and
+            .networks.backend.internal == true
+          ' >/dev/null
+
 
       - name: Build server container image
         env:
