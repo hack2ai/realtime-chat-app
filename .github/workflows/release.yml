@@ -123,7 +123,6 @@ jobs:
         with:
           subject-path: chatapp-server-${{ github.ref_name }}.sbom.json
 
-
       - name: Build release container
         env:
           IMAGE_NAME: ghcr.io/${{ github.repository }}
@@ -149,17 +148,49 @@ jobs:
           exit-code: '1'
           vuln-type: os,library
 
+      - name: Generate release container SBOM
+        uses: aquasecurity/trivy-action@d2a0b60797ff03db6132bd4e2b293f9b37081297 # immutable commit; Trivy v0.74.0
+        with:
+          scan-type: image
+          image-ref: ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+          format: cyclonedx
+          output: "chatapp-container-${{ github.ref_name }}.sbom.json"
+          exit-code: '0'
+          vuln-type: os,library
+
+      - name: Verify release container SBOM
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          test -s "chatapp-container-${RELEASE_VERSION}.sbom.json"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          path = Path(f"chatapp-container-{os.environ['RELEASE_VERSION']}.sbom.json")
+          sbom = json.loads(path.read_text(encoding="utf-8"))
+          if sbom.get("bomFormat") != "CycloneDX":
+              raise SystemExit("release container SBOM is not CycloneDX")
+          if not sbom.get("specVersion"):
+              raise SystemExit("release container SBOM is missing specVersion")
+          if not sbom.get("components"):
+              raise SystemExit("release container SBOM contains no components")
+          PY
+          sha256sum "chatapp-container-${RELEASE_VERSION}.sbom.json" > "chatapp-container-${RELEASE_VERSION}.sbom.json.sha256"
+          sha256sum --check "chatapp-container-${RELEASE_VERSION}.sbom.json.sha256"
+
       - name: Verify release image metadata and hardening
         env:
           IMAGE_NAME: ghcr.io/${{ github.repository }}
           RELEASE_VERSION: ${{ github.ref_name }}
         run: |
           IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
-          test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{index .Config.Labels \"org.opencontainers.image.source\"}}')" = "https://github.com/hack2ai/realtime-chat-app"
-          test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{index .Config.Labels \"org.opencontainers.image.description\"}}')" = "Secure Java 21 real-time chat server"
-          test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{index .Config.Labels \"org.opencontainers.image.licenses\"}}')" = "MIT"
-          test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{index .Config.Labels \"org.opencontainers.image.version\"}}')" = "$PROJECT_VERSION"
-          test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{index .Config.Labels \"org.opencontainers.image.revision\"}}')" = "${{ github.sha }}"
+          test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{index .Config.Labels "org.opencontainers.image.source"}}')" = "https://github.com/hack2ai/realtime-chat-app"
+          test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{index .Config.Labels "org.opencontainers.image.description"}}')" = "Secure Java 21 real-time chat server"
+          test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{index .Config.Labels "org.opencontainers.image.licenses"}}')" = "MIT"
+          test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{index .Config.Labels "org.opencontainers.image.version"}}')" = "$PROJECT_VERSION"
+          test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "${{ github.sha }}"
           test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{.Config.User}}')" = "chatapp"
           test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{json .Config.Entrypoint}}')" = '["java","-XX:+ExitOnOutOfMemoryError","-jar","/app/chatapp-server.jar"]'
           test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{json .Config.ExposedPorts}}')" = '{"5050/tcp":{}}'
@@ -260,6 +291,11 @@ jobs:
           subject-digest: ${{ steps.push-release-container.outputs.digest }}
           push-to-registry: true
 
+      - name: Attest release container SBOM
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-path: chatapp-container-${{ github.ref_name }}.sbom.json
+
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -270,6 +306,8 @@ jobs:
             "chatapp-server-${RELEASE_VERSION}.jar.sha256" \
             "chatapp-server-${RELEASE_VERSION}.sbom.json" \
             "chatapp-server-${RELEASE_VERSION}.sbom.json.sha256" \
+            "chatapp-container-${RELEASE_VERSION}.sbom.json" \
+            "chatapp-container-${RELEASE_VERSION}.sbom.json.sha256" \
             --title "$RELEASE_VERSION" \
             --generate-notes
 
@@ -284,8 +322,11 @@ jobs:
             --pattern "chatapp-server-${RELEASE_VERSION}.jar.sha256" \
             --pattern "chatapp-server-${RELEASE_VERSION}.sbom.json" \
             --pattern "chatapp-server-${RELEASE_VERSION}.sbom.json.sha256" \
+            --pattern "chatapp-container-${RELEASE_VERSION}.sbom.json" \
+            --pattern "chatapp-container-${RELEASE_VERSION}.sbom.json.sha256" \
             --dir /tmp/release-assets \
             --clobber
           cd /tmp/release-assets
           sha256sum --check "chatapp-server-${RELEASE_VERSION}.jar.sha256"
           sha256sum --check "chatapp-server-${RELEASE_VERSION}.sbom.json.sha256"
+          sha256sum --check "chatapp-container-${RELEASE_VERSION}.sbom.json.sha256"
