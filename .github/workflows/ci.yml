@@ -110,6 +110,10 @@ jobs:
         run: |
           test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{json .Config.Entrypoint}}')" = '["java","-XX:+ExitOnOutOfMemoryError","-jar","/app/chatapp-server.jar"]'
 
+      - name: Verify server image filesystem permissions
+        run: |
+          docker run --rm --entrypoint sh "realtime-chat-app:${{ github.sha }}" -c 'test "$(id -u)" = "10001" && test "$(stat -c %a /app/data/attachments)" = "700" && test -w /app/data/attachments && ! test -w /app && ! test -w /app/chatapp-server.jar'
+
   attest:
     if: github.event_name == 'push'
     needs: build-and-test
@@ -134,4 +138,4 @@ jobs:
       - name: Attest server SBOM
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
-          subject-path: release-assets/chatapp-sbom.json
+          subject-path: release-assets/chatapp-server-sbom.json
