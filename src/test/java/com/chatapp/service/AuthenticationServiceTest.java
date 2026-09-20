@@ -232,6 +232,18 @@ class AuthenticationServiceTest {
         assertThrows(AuthenticationException.class, () -> service.validateSession(null));
     }
 
+    @Test
+    void oversizedSessionTokenIsRejected() {
+        AuthenticationService service = new AuthenticationService(new InMemoryUserDAO(null));
+
+        String oversizedToken = "a".repeat(129);
+
+        AuthenticationException error = assertThrows(AuthenticationException.class,
+                () -> service.validateSession(oversizedToken));
+
+        assertEquals("Session is invalid or has expired. Please log in again.", error.getMessage());
+    }
+
     private static User userWithHash(String username, String hash) {
         User user = new User(username, username + "@example.com", hash);
         user.setId(42);
