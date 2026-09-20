@@ -121,6 +121,7 @@
                                 <requireReleaseDeps>
                                     <message>Release builds must use released dependency versions; remove any SNAPSHOT or other unreleased dependency.</message>
                                 </requireReleaseDeps>
+                                <requirePluginVersions/>
                                 <dependencyConvergence/>
                             </rules>
                         </configuration>
