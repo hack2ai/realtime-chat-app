@@ -157,6 +157,10 @@ jobs:
         run: |
           test -z "$(docker run --rm --entrypoint sh "realtime-chat-app:${{ github.sha }}" -c 'find /app -xdev -type f \( -name "*.p12" -o -name "*.pfx" -o -name "*.jks" -o -name "*.keystore" -o -name "*.pem" -o -name "*.key" -o -name "*.crt" \) -print 2>/dev/null')"
 
+      - name: Verify server image excludes build toolchain
+        run: |
+          docker run --rm --entrypoint sh "realtime-chat-app:${{ github.sha }}" -c 'test ! -e /workspace && test ! -e /root/.m2 && ! command -v mvn >/dev/null 2>&1'
+
       - name: Verify server image has no setuid/setgid application files
         run: |
           test -z "$(docker run --rm --entrypoint sh "realtime-chat-app:${{ github.sha }}" -c 'find /app -xdev -type f -perm /6000 -print 2>/dev/null')"
