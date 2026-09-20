@@ -260,6 +260,21 @@ jobs:
           docker compose ps
           exit 1
 
+      - name: Verify database runtime grants
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: |
+          grants="$(docker compose exec -T db sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -h 127.0.0.1 -u root -NBe "SHOW GRANTS FOR '\''chatapp_user'\''@'\''%''';"')"
+          printf '%s\n' "$grants"
+          test "$(printf '%s\n' "$grants" | grep -c '^GRANT ')" -eq 2
+          printf '%s\n' "$grants" | grep -Fq 'GRANT USAGE ON *.* TO'
+          printf '%s\n' "$grants" | grep -Fq 'GRANT SELECT, INSERT, UPDATE, DELETE ON `chatapp_db`.* TO'
+          if printf '%s\n' "$grants" | grep -Eq 'GRANT OPTION|CREATE|ALTER|DROP|FILE|PROCESS|SHUTDOWN|SUPER|RELOAD|REPLICATION|TRIGGER|EVENT'; then
+            echo "database runtime account has unexpected privileges"
+            exit 1
+          fi
+
       - name: Stop Docker Compose smoke test
         if: always()
         env:
