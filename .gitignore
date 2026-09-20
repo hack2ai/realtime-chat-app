@@ -9,6 +9,10 @@ target/
 
 # Local configuration / secrets
 src/main/resources/config.properties
+.env
+.env.*
+!.env.example
+secrets/
 
 # Runtime attachment data — never commit user files
 /data/
@@ -19,6 +23,8 @@ src/main/resources/config.properties
 *.jks
 *.keystore
 *.key
+*.pem
+*.crt
 
 # IDEs
 .idea/
@@ -43,4 +49,3 @@ desktop.ini
 logs/
 *.bak
 *.tmp
-.env
