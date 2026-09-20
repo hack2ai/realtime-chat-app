@@ -31,9 +31,9 @@ jobs:
           run-id: ${{ github.event.workflow_run.id }}
 
       - name: Verify SBOM exists
-        run: test -s release-assets/target/chatapp-sbom.json
+        run: test -s release-assets/chatapp-sbom.json
 
       - name: Attest SBOM
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
-          subject-path: release-assets/target/chatapp-sbom.json
+          subject-path: release-assets/chatapp-sbom.json
