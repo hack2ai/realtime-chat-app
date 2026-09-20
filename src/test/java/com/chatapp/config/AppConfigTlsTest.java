@@ -103,7 +103,7 @@ class AppConfigTlsTest {
 
         assertTrue(url.contains("sslMode=VERIFY_IDENTITY"));
         assertTrue(url.contains("allowPublicKeyRetrieval=false"));
-        assertTrue(url.contains("connectTimeout=5000"));
+        assertTrue(url.contains("connectTimeout=1000"));
         assertTrue(url.contains("socketTimeout=60000"));
     }
 
