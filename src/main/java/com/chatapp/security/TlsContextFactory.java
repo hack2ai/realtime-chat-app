@@ -34,7 +34,7 @@ public final class TlsContextFactory {
                 try (InputStream in = Files.newInputStream(path)) {
                     keyStore.load(in, password);
                 }
-                warnIfCertificateExpiring(keyStore);
+                validateServerCertificates(keyStore);
                 KeyManagerFactory keyManagers = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
                 keyManagers.init(keyStore, password);
                 SSLContext context = SSLContext.getInstance(TLS_PROTOCOL);
@@ -48,13 +48,18 @@ public final class TlsContextFactory {
         }
     }
 
-    private static void warnIfCertificateExpiring(KeyStore keyStore) throws Exception {
+    private static void validateServerCertificates(KeyStore keyStore) throws Exception {
+        Instant now = Instant.now();
         Instant earliestExpiry = null;
+        boolean foundServerCertificate = false;
         Enumeration<String> aliases = keyStore.aliases();
         while (aliases.hasMoreElements()) {
             String alias = aliases.nextElement();
+            if (!keyStore.isKeyEntry(alias)) continue;
             java.security.cert.Certificate certificate = keyStore.getCertificate(alias);
             if (certificate instanceof X509Certificate x509Certificate) {
+                foundServerCertificate = true;
+                x509Certificate.checkValidity();
                 Instant expiry = x509Certificate.getNotAfter().toInstant();
                 if (earliestExpiry == null || expiry.isBefore(earliestExpiry)) {
                     earliestExpiry = expiry;
@@ -62,13 +67,13 @@ public final class TlsContextFactory {
             }
         }
 
-        if (earliestExpiry == null) return;
+        if (!foundServerCertificate || earliestExpiry == null) {
+            throw new IllegalStateException("TLS server keystore contains no X.509 key-entry certificate.");
+        }
 
-        long daysRemaining = Duration.between(Instant.now(), earliestExpiry).toDays();
-        if (daysRemaining < 0) {
-            logger.error("TLS server certificate is expired by {} days.", Math.abs(daysRemaining));
-        } else if (daysRemaining <= CERTIFICATE_EXPIRY_WARNING_DAYS) {
-            logger.warn("TLS server certificate expires in {} days.", daysRemaining);
+        long daysRemaining = Duration.between(now, earliestExpiry).toDays();
+        if (daysRemaining <= CERTIFICATE_EXPIRY_WARNING_DAYS) {
+            logger.warn("TLS server certificate expires in {} days.", Math.max(0, daysRemaining));
         }
     }
 
