@@ -39,6 +39,15 @@ jobs:
           violations=$(grep -RhoE 'uses:[[:space:]]+[^@[:space:]]+@[^[:space:]#]+' .github/workflows | awk -F@ '$2 !~ /^[0-9a-fA-F]{40}$/')
           test -z "$violations"
 
+      - name: Verify semantic version tag
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          if [[ ! "$RELEASE_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tag must match vMAJOR.MINOR.PATCH: $RELEASE_VERSION"
+            exit 1
+          fi
+
       - name: Verify repository contains no tracked secret artifacts
         run: |
           tracked_secrets=$(git ls-files -z | tr '\0' '\n' | grep -E '(^|/)(config\.properties|\.env(\..*)?|secrets/.*|[^/]+\.(p12|pfx|jks|keystore|pem|key|crt))$' || true)
