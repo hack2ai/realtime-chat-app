@@ -110,6 +110,37 @@ class AuthenticationServiceTest {
     }
 
     @Test
+    void expiredSessionIsRejectedAndRemoved() throws Exception {
+        User user = userWithHash("alice", new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder(10).encode("correct-password"));
+        AuthenticationService service = new AuthenticationService(new InMemoryUserDAO(user));
+
+        AuthenticationService.LoginResult result = service.login("alice", "correct-password");
+
+        Field sessionsField = AuthenticationService.class.getDeclaredField("activeSessions");
+        sessionsField.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> sessions = (Map<String, Object>) sessionsField.get(service);
+        assertEquals(1, sessions.size());
+
+        String tokenDigest = sessions.keySet().iterator().next();
+        Class<?> sessionType = Class.forName("com.chatapp.service.AuthenticationService$Session");
+        java.lang.reflect.Constructor<?> constructor =
+                sessionType.getDeclaredConstructor(int.class, LocalDateTime.class);
+        constructor.setAccessible(true);
+        Object expiredSession = constructor.newInstance(user.getId(), LocalDateTime.now().minusSeconds(1));
+        sessions.put(tokenDigest, expiredSession);
+
+        AuthenticationException error = assertThrows(AuthenticationException.class,
+                () -> service.validateSession(result.sessionToken()));
+
+        assertEquals("Session is invalid or has expired. Please log in again.", error.getMessage());
+        assertFalse(sessions.containsKey(tokenDigest), "expired sessions must be removed from the active session store");
+
+        AuthenticationService.LoginResult replacement = service.login("alice", "correct-password");
+        assertEquals(user.getId(), service.validateSession(replacement.sessionToken()));
+    }
+
+    @Test
     void sessionStoreContainsOnlyTokenDigests() throws Exception {
         User user = userWithHash("alice", new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder(10).encode("correct-password"));
         AuthenticationService service = new AuthenticationService(new InMemoryUserDAO(user));
