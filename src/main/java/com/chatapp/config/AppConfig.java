@@ -9,6 +9,7 @@ import java.util.Properties;
 public final class AppConfig {
     private static final String CONFIG_FILE = "config.properties";
     private static final String ENV_PREFIX = "CHATAPP_";
+    private static final String PLACEHOLDER_SECRET = "CHANGE_ME";
     private static final Properties PROPERTIES = new Properties();
 
     static {
@@ -27,6 +28,14 @@ public final class AppConfig {
         if (value == null || value.isBlank()) value = PROPERTIES.getProperty(key);
         if (value == null || value.isBlank()) throw new IllegalStateException("Missing required config key: " + key);
         return value.trim();
+    }
+
+    private static String requireSecret(String key) {
+        String value = require(key);
+        if (PLACEHOLDER_SECRET.equalsIgnoreCase(value)) {
+            throw new IllegalStateException("Config key '" + key + "' must not use the default placeholder secret.");
+        }
+        return value;
     }
 
     private static String optional(String key, String defaultValue) {
@@ -82,7 +91,7 @@ public final class AppConfig {
     public static int getDbPort() { return requirePort("db.port"); }
     public static String getDbName() { return require("db.name"); }
     public static String getDbUser() { return require("db.user"); }
-    public static String getDbPassword() { return require("db.password"); }
+    public static String getDbPassword() { return requireSecret("db.password"); }
     public static int getDbPoolMinIdle() { return requirePositiveInt("db.pool.minIdle"); }
     public static int getDbPoolMaxSize() {
         int value = requirePositiveInt("db.pool.maxSize");
@@ -115,7 +124,7 @@ public final class AppConfig {
     public static int getSocketReadTimeoutMs() { return requireRange("server.socketReadTimeoutMs", 0, 300000); }
     public static boolean isTlsEnabled() { return optionalBoolean("tls.enabled", false); }
     public static String getTlsKeyStorePath() { return require("tls.keyStorePath"); }
-    public static String getTlsKeyStorePassword() { return require("tls.keyStorePassword"); }
+    public static String getTlsKeyStorePassword() { return requireSecret("tls.keyStorePassword"); }
     public static boolean isClientTlsEnabled() { return optionalBoolean("client.tls.enabled", false); }
     public static String getTlsTrustStorePath() { return optional("client.tls.trustStorePath", ""); }
     public static String getTlsTrustStorePassword() { return optional("client.tls.trustStorePassword", ""); }
