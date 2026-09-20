@@ -46,6 +46,13 @@ jobs:
       - name: Verify and package
         run: mvn --batch-mode --no-transfer-progress verify
 
+      - name: Verify reproducible server package
+        run: |
+          cp target/chatapp-server.jar /tmp/chatapp-server-first.jar
+          mvn --batch-mode --no-transfer-progress -DskipTests package
+          sha256sum /tmp/chatapp-server-first.jar target/chatapp-server.jar
+          cmp -s /tmp/chatapp-server-first.jar target/chatapp-server.jar
+
       - name: Read project version
         run: echo "PROJECT_VERSION=$(mvn --batch-mode --no-transfer-progress -q -DforceStdout help:evaluate -Dexpression=project.version)" >> "$GITHUB_ENV"
 
