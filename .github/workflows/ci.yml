@@ -46,7 +46,7 @@ jobs:
       - name: Verify runnable server package
         run: |
           test -s target/chatapp-server.jar
-          unzip -p target/chatapp-server.jar META-INF/MANIFEST.MF | grep -Fxq "Main-Class: com.chatapp.server.ChatServer"
+          unzip -p target/chatapp-server.jar META-INF/MANIFEST.MF | tr -d '\r' | grep -Fxq "Main-Class: com.chatapp.server.ChatServer"
 
       - name: Generate software bill of materials
         run: |
