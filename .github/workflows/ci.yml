@@ -40,10 +40,13 @@ jobs:
       - name: Verify and package
         run: mvn --batch-mode --no-transfer-progress verify
 
+      - name: Read project version
+        run: echo "PROJECT_VERSION=$(mvn --batch-mode --no-transfer-progress -q -DforceStdout help:evaluate -Dexpression=project.version)" >> "$GITHUB_ENV"
+
       - name: Verify runnable server package
         run: |
           test -s target/chatapp-server.jar
-          unzip -p target/chatapp-server.jar META-INF/MANIFEST.MF | grep -Eq '^Main-Class: com\.chatapp\.server[[:space:]]*$' ||             unzip -p target/chatapp-server.jar META-INF/MANIFEST.MF | grep -Eq '^Main-Class: com\.chatapp\.server\.ChatServer[[:space:]]*$'
+          unzip -p target/chatapp-server.jar META-INF/MANIFEST.MF | grep -Fxq "Main-Class: com.chatapp.server.ChatServer"
 
       - name: Generate software bill of materials
         run: |
@@ -51,9 +54,12 @@ jobs:
           test -s target/chatapp-sbom.json
 
       - name: Verify software bill of materials
+        env:
+          PROJECT_VERSION: ${{ env.PROJECT_VERSION }}
         run: |
           python3 - <<'PY'
           import json
+          import os
           from pathlib import Path
 
           sbom = json.loads(Path("target/chatapp-sbom.json").read_text(encoding="utf-8"))
@@ -62,7 +68,7 @@ jobs:
               raise SystemExit("SBOM is not CycloneDX")
           if component.get("name") != "realtime-chat-app":
               raise SystemExit("SBOM component name mismatch")
-          if component.get("version") != "1.1.0":
+          if component.get("version") != os.environ["PROJECT_VERSION"]:
               raise SystemExit("SBOM project version mismatch")
           if not sbom.get("components"):
               raise SystemExit("SBOM contains no dependency components")
@@ -123,9 +129,9 @@ jobs:
       - name: Attest server package
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
-          subject-path: release-assets/target/chatapp-server.jar
+          subject-path: release-assets/chatapp-server.jar
 
       - name: Attest server SBOM
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
-          subject-path: release-assets/target/chatapp-sbom.json
+          subject-path: release-assets/chatapp-sbom.json
