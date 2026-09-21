@@ -124,7 +124,7 @@ jobs:
           docker compose config --format json | jq -e '
             .services.server.read_only == true and
             .services.server.init == true and
-            .services.server.user == "10001" and
+            (.services.server.user | tostring) == "10001" and
             .services.server.cpus == 1.0 and
             ((.services.server.mem_limit == "768m") or (.services.server.mem_limit == 805306368)) and
             .services.server.pids_limit == 256 and
@@ -151,7 +151,7 @@ jobs:
         env:
           PROJECT_VERSION: ${{ env.PROJECT_VERSION }}
         run: |
-          docker build --pull             --build-arg APP_VERSION="$PROJECT_VERSION"             --build-arg VCS_REF="${{ github.sha }}"             --tag realtime-chat-app:${{ github.sha }} .
+          docker build --pull --build-arg APP_VERSION="$PROJECT_VERSION" --build-arg VCS_REF="${{ github.sha }}" --tag realtime-chat-app:${{ github.sha }} .
 
       - name: Scan server container image
         uses: aquasecurity/trivy-action@d2a0b60797ff03db6132bd4e2b293f9b37081297 # immutable commit; Trivy v0.74.0
