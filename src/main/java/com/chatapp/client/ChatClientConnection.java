@@ -26,7 +26,7 @@ import java.util.concurrent.CompletionException;
 import java.util.function.Consumer;
 
 /** Thread-safe asynchronous transport for the chat application's wire protocol. */
-public final class ChatClientConnection {
+public final class ChatClientConnection implements AutoCloseable {
     private final MessageCodec codec = new MessageCodec();
     private final Consumer<Envelope> eventListener;
     private final Consumer<Boolean> connectionListener;
