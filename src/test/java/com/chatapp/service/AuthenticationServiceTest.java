@@ -12,6 +12,9 @@ import java.sql.SQLIntegrityConstraintViolationException;
 import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -164,6 +167,88 @@ class AuthenticationServiceTest {
         assertNotEquals(first.sessionToken(), replacement.sessionToken());
         assertEquals(user.getId(), service.validateSession(replacement.sessionToken()));
         assertEquals(1, sessions.size(), "the expired session must be replaced rather than retained");
+    }
+
+    @Test
+    void expiredSessionCannotOverwriteReplacementLoginStatus() throws Exception {
+        String previousStrength = System.getProperty("chatapp.auth.bcrypt.strength");
+        System.setProperty("chatapp.auth.bcrypt.strength", "10");
+        try {
+            User user = userWithHash("alice",
+                    new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder(10).encode("correct-password"));
+            BlockingPresenceUserDAO dao = new BlockingPresenceUserDAO(user);
+            AuthenticationService service = new AuthenticationService(dao);
+
+            AuthenticationService.LoginResult first = service.login("alice", "correct-password");
+            expireActiveSession(service, user.getId());
+
+            dao.blockOfflineUpdates();
+            dao.observeOnlineUpdates();
+
+            AtomicReference<Throwable> expiryFailure = new AtomicReference<>();
+            Thread expiryThread = new Thread(() -> {
+                try {
+                    service.validateSession(first.sessionToken());
+                    expiryFailure.set(new AssertionError("expired session unexpectedly validated"));
+                } catch (AuthenticationException expected) {
+                    // Expected.
+                } catch (Throwable failure) {
+                    expiryFailure.set(failure);
+                }
+            });
+            expiryThread.start();
+
+            assertTrue(dao.awaitOfflineUpdate(2, TimeUnit.SECONDS),
+                    "expired-session cleanup must reach the offline status update");
+
+            AtomicReference<AuthenticationService.LoginResult> replacement = new AtomicReference<>();
+            AtomicReference<Throwable> loginFailure = new AtomicReference<>();
+            Thread loginThread = new Thread(() -> {
+                try {
+                    replacement.set(service.login("alice", "correct-password"));
+                } catch (Throwable failure) {
+                    loginFailure.set(failure);
+                }
+            });
+            loginThread.start();
+
+            assertFalse(dao.awaitOnlineUpdate(2, TimeUnit.SECONDS),
+                    "replacement login must wait for expiry cleanup of the same account");
+
+            dao.releaseOfflineUpdate();
+            expiryThread.join(5000);
+            loginThread.join(5000);
+
+            assertFalse(expiryThread.isAlive(), "expiry validation thread must finish");
+            assertFalse(loginThread.isAlive(), "replacement login thread must finish");
+            assertNull(expiryFailure.get());
+            assertNull(loginFailure.get());
+            assertNotNull(replacement.get());
+            assertEquals(user.getId(), service.validateSession(replacement.get().sessionToken()));
+            assertEquals(User.Status.ONLINE, user.getStatus(),
+                    "the replacement login must leave persisted presence online");
+        } finally {
+            if (previousStrength == null) {
+                System.clearProperty("chatapp.auth.bcrypt.strength");
+            } else {
+                System.setProperty("chatapp.auth.bcrypt.strength", previousStrength);
+            }
+        }
+    }
+
+    private static void expireActiveSession(AuthenticationService service, int userId) throws Exception {
+        Field sessionsField = AuthenticationService.class.getDeclaredField("activeSessions");
+        sessionsField.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> sessions = (Map<String, Object>) sessionsField.get(service);
+
+        String tokenDigest = sessions.keySet().stream().findFirst()
+                .orElseThrow(() -> new AssertionError("expected active session"));
+        Class<?> sessionType = Class.forName("com.chatapp.service.AuthenticationService$Session");
+        java.lang.reflect.Constructor<?> constructor =
+                sessionType.getDeclaredConstructor(int.class, LocalDateTime.class);
+        constructor.setAccessible(true);
+        sessions.put(tokenDigest, constructor.newInstance(userId, LocalDateTime.now().minusSeconds(1)));
     }
 
     @Test
@@ -400,6 +485,57 @@ class AuthenticationServiceTest {
         @Override
         public Optional<User> findByUsernameOrEmail(String identifier) {
             return Optional.empty();
+        }
+    }
+
+    private static final class BlockingPresenceUserDAO extends InMemoryUserDAO {
+        private final CountDownLatch offlineUpdateEntered = new CountDownLatch(1);
+        private final CountDownLatch allowOfflineUpdate = new CountDownLatch(1);
+        private final CountDownLatch onlineUpdateEntered = new CountDownLatch(1);
+        private volatile boolean blockOffline;
+        private volatile boolean observeOnline;
+
+        private BlockingPresenceUserDAO(User user) {
+            super(user);
+        }
+
+        private void blockOfflineUpdates() {
+            blockOffline = true;
+        }
+
+        private void observeOnlineUpdates() {
+            observeOnline = true;
+        }
+
+        private void releaseOfflineUpdate() {
+            allowOfflineUpdate.countDown();
+        }
+
+        private boolean awaitOfflineUpdate(long timeout, TimeUnit unit) throws InterruptedException {
+            return offlineUpdateEntered.await(timeout, unit);
+        }
+
+        private boolean awaitOnlineUpdate(long timeout, TimeUnit unit) throws InterruptedException {
+            return onlineUpdateEntered.await(timeout, unit);
+        }
+
+        @Override
+        public void updateStatus(int userId, User.Status status) {
+            if (status == User.Status.OFFLINE && blockOffline) {
+                offlineUpdateEntered.countDown();
+                try {
+                    if (!allowOfflineUpdate.await(5, TimeUnit.SECONDS)) {
+                        throw new IllegalStateException("timed out waiting to release offline update");
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException("interrupted while waiting to release offline update", e);
+                }
+            }
+            if (status == User.Status.ONLINE && observeOnline) {
+                onlineUpdateEntered.countDown();
+            }
+            super.updateStatus(userId, status);
         }
     }
 
