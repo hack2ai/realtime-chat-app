@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -54,6 +55,25 @@ class ServerHealthCheckTest {
     void rejectsDirectoryAtReadinessMarkerPath() throws Exception {
         Path marker = tempDir.resolve("ready.marker");
         Files.createDirectory(marker);
+
+        assertFalse(ServerHealthCheck.isHealthy(marker, System.currentTimeMillis(), 30_000));
+    }
+
+    @Test
+    void rejectsSymlinkAtReadinessMarkerPath() throws Exception {
+        Path target = tempDir.resolve("target");
+        Path marker = tempDir.resolve("ready.marker");
+        Files.createFile(target);
+        boolean created = false;
+        try {
+            Files.createSymbolicLink(marker, target.getFileName());
+            created = true;
+        } catch (UnsupportedOperationException | SecurityException e) {
+            // Symlink creation is optional on restricted development environments.
+        } catch (java.io.IOException e) {
+            // Some platforms require elevated permissions for symlink creation.
+        }
+        Assumptions.assumeTrue(created, "symbolic links are not available in this environment");
 
         assertFalse(ServerHealthCheck.isHealthy(marker, System.currentTimeMillis(), 30_000));
     }
