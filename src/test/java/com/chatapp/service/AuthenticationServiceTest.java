@@ -141,6 +141,32 @@ class AuthenticationServiceTest {
     }
 
     @Test
+    void expiredSessionDoesNotBlockReplacementLogin() throws Exception {
+        User user = userWithHash("alice", new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder(10).encode("correct-password"));
+        AuthenticationService service = new AuthenticationService(new InMemoryUserDAO(user));
+
+        AuthenticationService.LoginResult first = service.login("alice", "correct-password");
+
+        Field sessionsField = AuthenticationService.class.getDeclaredField("activeSessions");
+        sessionsField.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> sessions = (Map<String, Object>) sessionsField.get(service);
+        String tokenDigest = sessions.keySet().iterator().next();
+
+        Class<?> sessionType = Class.forName("com.chatapp.service.AuthenticationService$Session");
+        java.lang.reflect.Constructor<?> constructor =
+                sessionType.getDeclaredConstructor(int.class, LocalDateTime.class);
+        constructor.setAccessible(true);
+        sessions.put(tokenDigest, constructor.newInstance(user.getId(), LocalDateTime.now().minusSeconds(1)));
+
+        AuthenticationService.LoginResult replacement = service.login("alice", "correct-password");
+
+        assertNotEquals(first.sessionToken(), replacement.sessionToken());
+        assertEquals(user.getId(), service.validateSession(replacement.sessionToken()));
+        assertEquals(1, sessions.size(), "the expired session must be replaced rather than retained");
+    }
+
+    @Test
     void sessionStoreContainsOnlyTokenDigests() throws Exception {
         User user = userWithHash("alice", new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder(10).encode("correct-password"));
         AuthenticationService service = new AuthenticationService(new InMemoryUserDAO(user));
