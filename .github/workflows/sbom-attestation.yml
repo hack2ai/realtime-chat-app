@@ -30,8 +30,12 @@ jobs:
           repository: ${{ github.repository }}
           run-id: ${{ github.event.workflow_run.id }}
 
-      - name: Verify SBOM exists
-        run: test -s release-assets/chatapp-sbom.json
+      - name: Verify SBOM checksum
+        run: |
+          test -s release-assets/chatapp-sbom.json
+          test -s release-assets/chatapp-sbom.json.sha256
+          cd release-assets
+          sha256sum --check chatapp-sbom.json.sha256
 
       - name: Attest SBOM
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
