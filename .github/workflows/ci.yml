@@ -310,6 +310,11 @@ jobs:
           name: chatapp-server-${{ github.sha }}
           path: release-assets
 
+      - name: Verify downloaded build artifacts
+        run: |
+          cd release-assets
+          sha256sum --check chatapp-server-${{ github.sha }}.jar.sha256
+          sha256sum --check chatapp-sbom.json.sha256
       - name: Attest server package
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
