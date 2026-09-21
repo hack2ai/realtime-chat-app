@@ -4,7 +4,9 @@ import com.chatapp.config.AppConfig;
 import com.chatapp.database.ConnectionPool;
 import com.chatapp.security.TlsContextFactory;
 import com.chatapp.service.AuthenticationService;
+import com.chatapp.service.AttachmentService;
 import com.chatapp.service.GroupService;
+import com.chatapp.service.MessageSearchService;
 import com.chatapp.service.ChatService;
 import com.chatapp.service.RequestRateLimiter;
 import com.chatapp.socket.protocol.MessageType;
@@ -43,6 +45,8 @@ public class ChatServer {
     private final AuthenticationService authService;
     private final ChatService chatService = new ChatService();
     private final GroupService groupService = new GroupService();
+    private final MessageSearchService messageSearchService = new MessageSearchService();
+    private final AttachmentService attachmentService = new AttachmentService();
     private final ServerMetrics serverMetrics = new ServerMetrics();
     private final ConcurrentHashMap<Integer, ClientHandler> connectedClients = new ConcurrentHashMap<>();
     private final Set<ClientHandler> activeHandlers = ConcurrentHashMap.newKeySet();
@@ -185,7 +189,8 @@ public class ChatServer {
                     closeQuietly(clientSocket);
                     continue;
                 }
-                ClientHandler handler = new ClientHandler(clientSocket, this, authService, chatService, groupService);
+                ClientHandler handler = new ClientHandler(clientSocket, this, authService, chatService, groupService,
+                        messageSearchService, attachmentService);
                 activeHandlers.add(handler);
                 serverMetrics.connectionAccepted();
                 try {
