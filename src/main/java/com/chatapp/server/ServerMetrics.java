@@ -7,13 +7,15 @@ import java.util.concurrent.atomic.AtomicLong;
 public final class ServerMetrics {
     private final long startedAtNanos = System.nanoTime();
     private final AtomicLong activeConnections = new AtomicLong();
+    private final AtomicLong peakActiveConnections = new AtomicLong();
     private final AtomicLong acceptedConnections = new AtomicLong();
     private final AtomicLong rateLimitedConnections = new AtomicLong();
     private final AtomicLong capacityRejectedConnections = new AtomicLong();
 
     public void connectionAccepted() {
         acceptedConnections.incrementAndGet();
-        activeConnections.incrementAndGet();
+        long active = activeConnections.incrementAndGet();
+        peakActiveConnections.updateAndGet(current -> Math.max(current, active));
     }
 
     public void connectionClosed() {
@@ -30,6 +32,10 @@ public final class ServerMetrics {
 
     public long activeConnections() {
         return activeConnections.get();
+    }
+
+    public long peakActiveConnections() {
+        return peakActiveConnections.get();
     }
 
     public long acceptedConnections() {
@@ -59,6 +65,7 @@ public final class ServerMetrics {
 
     public String summary() {
         return "active=" + activeConnections()
+                + ", peakActive=" + peakActiveConnections()
                 + ", acceptedTotal=" + acceptedConnections()
                 + ", rateLimitedTotal=" + rateLimitedConnections()
                 + ", capacityRejectedTotal=" + capacityRejectedConnections()
