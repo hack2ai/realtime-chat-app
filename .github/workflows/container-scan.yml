@@ -37,9 +37,9 @@ jobs:
       - name: Verify server image hardening
         run: |
           test "$(docker image inspect realtime-chat-app:scan-${{ github.sha }} --format '{{.Config.User}}')" = "chatapp"
-          test "$(docker image inspect realtime-chat-app:scan-${{ github.sha }} --format '{{json .Config.Entrypoint}}')" = '["java","-XX:+ExitOnOutOfMemoryError","-jar","/app/chatapp-server.jar"]'
+          test "$(docker image inspect realtime-chat-app:scan-${{ github.sha }} --format '{{json .Config.Entrypoint}}')" = '[\"java\",\"-XX:+ExitOnOutOfMemoryError\",\"-jar\",\"/app/chatapp-server.jar\"]'
           test "$(docker image inspect realtime-chat-app:scan-${{ github.sha }} --format '{{.Config.StopSignal}}')" = "SIGTERM"
-          test "$(docker image inspect realtime-chat-app:scan-${{ github.sha }} --format '{{json .Config.Healthcheck.Test}}')" = '["CMD","java","-cp","/app/chatapp-server.jar","com.chatapp.server.ServerHealthCheck"]'
+          test "$(docker image inspect realtime-chat-app:scan-${{ github.sha }} --format '{{json .Config.Healthcheck.Test}}')" = '[\"CMD\",\"java\",\"-cp\",\"/app/chatapp-server.jar\",\"com.chatapp.server.ServerHealthCheck\"]'
           docker run --rm --entrypoint sh realtime-chat-app:scan-${{ github.sha }} -c 'test "$(id -u)" = "10001" && test "$(stat -c %a /app/data/attachments)" = "700" && test -w /app/data/attachments && ! test -w /app && ! test -w /app/chatapp-server.jar'
           test -z "$(docker run --rm --entrypoint sh realtime-chat-app:scan-${{ github.sha }} -c 'find /app -xdev -type f -perm /6000 -print 2>/dev/null')"
 
@@ -77,6 +77,25 @@ jobs:
           exit-code: '0'
           vuln-type: os,library
 
+      - name: Verify container SBOM
+        if: always()
+        run: |
+          test -s trivy-image.sbom.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          sbom = json.loads(Path("trivy-image.sbom.json").read_text(encoding="utf-8"))
+          if sbom.get("bomFormat") != "CycloneDX":
+              raise SystemExit("container SBOM is not CycloneDX")
+          if not sbom.get("specVersion"):
+              raise SystemExit("container SBOM is missing specVersion")
+          if not sbom.get("components"):
+              raise SystemExit("container SBOM contains no components")
+          PY
+          sha256sum trivy-image.sbom.json > trivy-image.sbom.json.sha256
+          sha256sum --check trivy-image.sbom.json.sha256
+
       - name: Upload container scan findings
         if: ${{ always() && hashFiles('trivy-results.sarif') != '' }}
         uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
@@ -88,6 +107,8 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: container-sbom-${{ github.sha }}
-          path: trivy-image.sbom.json
+          path: |
+            trivy-image.sbom.json
+            trivy-image.sbom.json.sha256
           if-no-files-found: error
           retention-days: 14
