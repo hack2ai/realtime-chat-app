@@ -91,6 +91,13 @@ jobs:
       - name: Verify and package
         run: mvn --batch-mode --no-transfer-progress --strict-checksums verify
 
+      - name: Verify reproducible server package
+        run: |
+          cp target/chatapp-server.jar /tmp/chatapp-server-first.jar
+          mvn --batch-mode --no-transfer-progress --strict-checksums -DskipTests package
+          sha256sum /tmp/chatapp-server-first.jar target/chatapp-server.jar
+          cmp -s /tmp/chatapp-server-first.jar target/chatapp-server.jar
+
       - name: Verify release version matches project
         env:
           RELEASE_VERSION: ${{ github.ref_name }}
