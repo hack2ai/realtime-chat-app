@@ -14,10 +14,12 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 /** Handles registration, login, and server-side session lifecycle. */
 public class AuthenticationService {
@@ -28,6 +30,7 @@ public class AuthenticationService {
     private static final int MAX_LOGIN_IDENTIFIER_LENGTH = 254;
     private static final int MAX_BCRYPT_PASSWORD_BYTES = 72;
     private static final int MAX_SESSION_TOKEN_LENGTH = 128;
+    private static final long SESSION_CLEANUP_INTERVAL_NANOS = Duration.ofMinutes(5).toNanos();
 
     private final UserDAO userDAO;
     private final BCryptPasswordEncoder passwordEncoder;
@@ -35,6 +38,8 @@ public class AuthenticationService {
     /** Stores only SHA-256 digests of bearer tokens, never the raw tokens. */
     private final Map<String, Session> activeSessions = new ConcurrentHashMap<>();
     private final Map<Integer, String> activeTokenByUser = new ConcurrentHashMap<>();
+    /** Rate-limits expiry scans without creating a background maintenance thread. */
+    private final AtomicLong nextSessionCleanupAtNanos = new AtomicLong(0L);
 
     public AuthenticationService() {
         this.userDAO = new UserDAO();
@@ -121,6 +126,7 @@ public class AuthenticationService {
             throw new AuthenticationException(GENERIC_LOGIN_FAILURE);
         }
 
+        maybeCleanupExpiredSessions();
         releaseExpiredSession(user.getId(), LocalDateTime.now());
 
         String token = generateSessionToken();
@@ -163,6 +169,7 @@ public class AuthenticationService {
         if (sessionToken == null || sessionToken.isBlank() || sessionToken.length() > MAX_SESSION_TOKEN_LENGTH) {
             throw invalidSession();
         }
+        maybeCleanupExpiredSessions();
         String tokenDigest = digestToken(sessionToken);
         Session session = activeSessions.get(tokenDigest);
         if (session == null) throw invalidSession();
@@ -171,6 +178,22 @@ public class AuthenticationService {
             throw invalidSession();
         }
         return session.userId;
+    }
+
+    private void maybeCleanupExpiredSessions() {
+        long nowNanos = System.nanoTime();
+        long nextCleanup = nextSessionCleanupAtNanos.get();
+        if (nowNanos < nextCleanup
+                || !nextSessionCleanupAtNanos.compareAndSet(nextCleanup, nowNanos + SESSION_CLEANUP_INTERVAL_NANOS)) {
+            return;
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        activeSessions.forEach((tokenDigest, session) -> {
+            if (!now.isBefore(session.expiresAt)) {
+                expireSession(tokenDigest, session);
+            }
+        });
     }
 
     private void releaseExpiredSession(int userId, LocalDateTime now) {
