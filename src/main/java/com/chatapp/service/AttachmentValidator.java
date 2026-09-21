@@ -43,7 +43,7 @@ public final class AttachmentValidator {
         String name = fileName.strip().replace('\\', '/');
         int slash = name.lastIndexOf('/');
         if (slash >= 0) name = name.substring(slash + 1);
-        name = name.replaceAll("[\\\\p{Cntrl}]", "_");
+        name = name.replaceAll("[\\p{Cntrl}]", "_");
         if (name.isBlank() || ".".equals(name) || "..".equals(name)) throw new ValidationException("Invalid file name.");
         if (isBlockedExtension(name)) throw new ValidationException("Executable attachment types are not allowed.");
         return name.length() > MAX_NAME_LENGTH ? name.substring(0, MAX_NAME_LENGTH) : name;
