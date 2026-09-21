@@ -316,6 +316,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_VERSION: ${{ github.ref_name }}
         run: |
+          sha256sum \
+            "chatapp-server-${RELEASE_VERSION}.jar" \
+            "chatapp-server-${RELEASE_VERSION}.sbom.json" \
+            "chatapp-container-${RELEASE_VERSION}.sbom.json" \
+            > /tmp/expected-release-checksums
           mkdir -p /tmp/release-assets
           gh release download "$RELEASE_VERSION" \
             --pattern "chatapp-server-${RELEASE_VERSION}.jar" \
@@ -330,3 +335,4 @@ jobs:
           sha256sum --check "chatapp-server-${RELEASE_VERSION}.jar.sha256"
           sha256sum --check "chatapp-server-${RELEASE_VERSION}.sbom.json.sha256"
           sha256sum --check "chatapp-container-${RELEASE_VERSION}.sbom.json.sha256"
+          sha256sum --check /tmp/expected-release-checksums
