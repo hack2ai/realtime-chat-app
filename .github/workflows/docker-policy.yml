@@ -34,8 +34,13 @@ jobs:
 
       - name: Enforce supported Java major version
         run: |
-          grep -Eq '^FROM[[:space:]]+maven:[^[:space:]-]+-eclipse-temurin-21([[:space:]]|$)' Dockerfile
-          grep -Eq '^FROM[[:space:]]+eclipse-temurin:21([[:alnum:]._-]*)?([[:space:]]|$)' Dockerfile
+          grep -Eq '^FROM[[:space:]]+maven:3\\.9\\.[0-9]+-eclipse-temurin-21-noble([[:space:]]|$)' Dockerfile
+          grep -Eq '^FROM[[:space:]]+eclipse-temurin:21\\.[0-9]+_[0-9]+-jre-noble([[:space:]]|$)' Dockerfile
+
+      - name: Verify Compose database image uses a patch-level tag
+        run: |
+          docker_image=$(sed -n 's/^[[:space:]]*image:[[:space:]]*//p' docker-compose.yml | head -n 1)
+          test "$docker_image" = "mysql:8.4.11"
 
       - name: Verify Dockerfile runtime hardening
         run: |
