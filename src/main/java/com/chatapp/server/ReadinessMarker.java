@@ -2,7 +2,10 @@ package com.chatapp.server;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.attribute.BasicFileAttributeView;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.FileTime;
 
 /** Manages the process-local readiness marker used by container health checks. */
@@ -23,7 +26,11 @@ final class ReadinessMarker {
     }
 
     void heartbeat() throws IOException {
-        Files.setLastModifiedTime(path, FileTime.fromMillis(System.currentTimeMillis()));
+        BasicFileAttributeView view = Files.getFileAttributeView(path, BasicFileAttributeView.class, LinkOption.NOFOLLOW_LINKS);
+        if (view == null) throw new IOException("Readiness marker attribute view is unavailable.");
+        BasicFileAttributes attributes = view.readAttributes();
+        if (!attributes.isRegularFile()) throw new IOException("Readiness marker must be a regular file.");
+        view.setTimes(FileTime.fromMillis(System.currentTimeMillis()), null, null);
     }
 
     void clear() {
