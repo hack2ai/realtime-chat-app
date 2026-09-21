@@ -202,6 +202,27 @@ class AppConfigTlsTest {
     }
 
     @Test
+    void databasePoolRejectsValuesOutsideSupportedBounds() {
+        System.setProperty(DB_POOL_MIN_IDLE, "0");
+        assertThrows(IllegalStateException.class, AppConfig::getDbPoolMinIdle);
+
+        System.setProperty(DB_POOL_MIN_IDLE, "51");
+        assertThrows(IllegalStateException.class, AppConfig::getDbPoolMinIdle);
+
+        System.setProperty(DB_POOL_MIN_IDLE, "5");
+        assertEquals(5, AppConfig.getDbPoolMinIdle());
+
+        System.setProperty(DB_POOL_MAX_SIZE, "0");
+        assertThrows(IllegalStateException.class, AppConfig::getDbPoolMaxSize);
+
+        System.setProperty(DB_POOL_MAX_SIZE, "101");
+        assertThrows(IllegalStateException.class, AppConfig::getDbPoolMaxSize);
+
+        System.setProperty(DB_POOL_MAX_SIZE, "100");
+        assertEquals(100, AppConfig.getDbPoolMaxSize());
+    }
+
+    @Test
     void databasePoolRejectsMaxSizeBelowMinIdle() {
         System.setProperty(DB_POOL_MIN_IDLE, "5");
         System.setProperty(DB_POOL_MAX_SIZE, "4");
