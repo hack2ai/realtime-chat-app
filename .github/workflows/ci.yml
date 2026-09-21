@@ -128,6 +128,7 @@ jobs:
             .services.server.cap_drop == ["ALL"] and
             .services.server.logging.options["max-size"] == "10m" and
             .services.server.logging.options["max-file"] == "3" and
+            .services.server.ports == ["5050:5050"] and
             .services.db.init == true and
             .services.db.cpus == 2.0 and
             ((.services.db.mem_limit == "1g") or (.services.db.mem_limit == 1073741824)) and
@@ -135,6 +136,7 @@ jobs:
             .services.db.security_opt == ["no-new-privileges:true"] and
             .services.db.logging.options["max-size"] == "10m" and
             .services.db.logging.options["max-file"] == "3" and
+            (.services.db.ports == null) and
             .networks.backend.internal == true
           ' >/dev/null
 
