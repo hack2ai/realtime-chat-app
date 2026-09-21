@@ -29,6 +29,21 @@ class OutboundMessageQueueTest {
     }
 
     @Test
+    void duplicateCompletionDoesNotOverReleaseByteBudget() throws Exception {
+        OutboundMessageQueue queue = new OutboundMessageQueue(4, 10);
+
+        assertTrue(queue.offer(new byte[8]));
+        OutboundMessageQueue.Entry entry = queue.take();
+
+        queue.complete(entry);
+        queue.complete(entry);
+
+        assertEquals(0, queue.queuedBytes());
+        assertTrue(queue.offer(new byte[10]));
+        assertFalse(queue.offer(new byte[1]));
+    }
+
+    @Test
     void rejectsFrameLargerThanByteBudget() {
         OutboundMessageQueue queue = new OutboundMessageQueue(4, 10);
 
