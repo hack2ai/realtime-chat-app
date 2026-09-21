@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
@@ -24,13 +24,6 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-
-      - name: Set up JDK 21
-        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
-        with:
-          distribution: temurin
-          java-version: '21'
-          cache: maven
 
       - name: Verify action pinning
         run: |
@@ -195,6 +188,7 @@ jobs:
             target/chatapp-container-sbom.json.sha256
           if-no-files-found: error
           retention-days: 14
+
       - name: Verify server image metadata
         env:
           PROJECT_VERSION: ${{ env.PROJECT_VERSION }}
@@ -276,7 +270,7 @@ jobs:
           CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
           CHATAPP_DB_PASSWORD: ci-app-password
         run: |
-          grants="$(docker compose exec -T db sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -h 127.0.0.1 -u root -NBe "SHOW GRANTS FOR '\''chatapp_user'\''@'\''%\'';"')"
+          grants="$(docker compose exec -T db sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -h 127.0.0.1 -u root -NBe "SHOW GRANTS FOR '\''chatapp_user'\''@'\''%''';"')"
           printf '%s\n' "$grants"
           test "$(printf '%s\n' "$grants" | grep -c '^GRANT ')" -eq 2
           printf '%s\n' "$grants" | grep -Fq 'GRANT USAGE ON *.* TO'
