@@ -1,4 +1,4 @@
-FROM maven:3.9.11-eclipse-temurin-21 AS build
+FROM maven:3.9.16-eclipse-temurin-21-noble AS build
 RUN useradd --create-home --uid 10000 builder && mkdir -p /workspace && chown builder:builder /workspace
 WORKDIR /workspace
 COPY --chown=builder:builder pom.xml .
@@ -7,7 +7,7 @@ USER builder
 ENV MAVEN_CONFIG=/home/builder/.m2
 RUN mvn --batch-mode --no-transfer-progress -DskipTests package
 
-FROM eclipse-temurin:21-jre
+FROM eclipse-temurin:21.0.12_8-jre-noble
 WORKDIR /app
 ARG APP_VERSION=unknown
 ARG VCS_REF=unknown
