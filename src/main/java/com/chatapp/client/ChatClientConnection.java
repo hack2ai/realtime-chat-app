@@ -26,7 +26,7 @@ import java.util.concurrent.CompletionException;
 import java.util.function.Consumer;
 
 /** Thread-safe asynchronous transport for the chat application's wire protocol. */
-public final class ChatClientConnection implements AutoCloseable {
+public final class ChatClientConnection {
     private final MessageCodec codec = new MessageCodec();
     private final Consumer<Envelope> eventListener;
     private final Consumer<Boolean> connectionListener;
@@ -72,15 +72,20 @@ public final class ChatClientConnection implements AutoCloseable {
             SSLSocketFactory factory = TlsContextFactory.createClientContext().getSocketFactory();
             SSLSocket sslSocket = (SSLSocket) factory.createSocket();
             sslSocket.connect(new InetSocketAddress(host, port), 5000);
-            SSLParameters parameters = sslSocket.getSSLParameters();
-            parameters.setEndpointIdentificationAlgorithm("HTTPS");
-            sslSocket.setSSLParameters(parameters);
-            sslSocket.setEnabledProtocols(new String[]{"TLSv1.3", "TLSv1.2"});
+            configureTlsSocket(sslSocket);
             sslSocket.startHandshake();
             return sslSocket;
         } catch (IllegalStateException e) {
             throw new IOException("TLS client initialization failed.", e);
         }
+    }
+
+    static void configureTlsSocket(SSLSocket sslSocket) {
+        if (sslSocket == null) throw new IllegalArgumentException("TLS socket must not be null.");
+        SSLParameters parameters = sslSocket.getSSLParameters();
+        parameters.setEndpointIdentificationAlgorithm("HTTPS");
+        sslSocket.setSSLParameters(parameters);
+        sslSocket.setEnabledProtocols(new String[]{"TLSv1.3", "TLSv1.2"});
     }
 
     public CompletableFuture<LoginSuccessResponse> login(String usernameOrEmail, String password) {
