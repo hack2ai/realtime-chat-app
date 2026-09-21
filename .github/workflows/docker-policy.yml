@@ -34,8 +34,8 @@ jobs:
 
       - name: Enforce supported Java major version
         run: |
-          grep -Eq '^FROM[[:space:]]+maven:3\\.9\\.[0-9]+-eclipse-temurin-21-noble([[:space:]]|$)' Dockerfile
-          grep -Eq '^FROM[[:space:]]+eclipse-temurin:21\\.[0-9]+_[0-9]+-jre-noble([[:space:]]|$)' Dockerfile
+          grep -Eq '^FROM[[:space:]]+maven:3\.9\.[0-9]+-eclipse-temurin-21-noble([[:space:]]|$)' Dockerfile
+          grep -Eq '^FROM[[:space:]]+eclipse-temurin:21\.[0-9]+_[0-9]+-jre-noble([[:space:]]|$)' Dockerfile
 
       - name: Verify Compose database image uses a patch-level tag
         run: |
