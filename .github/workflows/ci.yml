@@ -134,7 +134,7 @@ jobs:
             .services.server.logging.options["max-file"] == "3" and
             ((.services.server.ports | length) == 1) and
             (.services.server.ports[0].target == 5050) and
-            ((.services.server.ports[0].published | tonumber) == 5050) and
+            (((.services.server.ports[0].published | tostring | tonumber) == 5050)) and
             (.services.server.ports[0].protocol == "tcp") and
             .services.db.init == true and
             .services.db.cpus == 2.0 and
