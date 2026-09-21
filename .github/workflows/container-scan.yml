@@ -8,9 +8,7 @@ on:
   schedule:
     - cron: '45 3 * * 0'
 
-permissions:
-  contents: read
-  security-events: write
+permissions: {}
 
 concurrency:
   group: container-scan-${{ github.workflow }}-${{ github.ref }}
@@ -21,6 +19,11 @@ jobs:
     name: Scan server image
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
+      attestations: write
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -37,9 +40,9 @@ jobs:
       - name: Verify server image hardening
         run: |
           test "$(docker image inspect realtime-chat-app:scan-${{ github.sha }} --format '{{.Config.User}}')" = "chatapp"
-          test "$(docker image inspect realtime-chat-app:scan-${{ github.sha }} --format '{{json .Config.Entrypoint}}')" = '["java","-XX:+ExitOnOutOfMemoryError","-jar","/app/chatapp-server.jar"]'
+          test "$(docker image inspect realtime-chat-app:scan-${{ github.sha }} --format '{{json .Config.Entrypoint}}')" = '[\"java\",\"-XX:+ExitOnOutOfMemoryError\",\"-jar\",\"/app/chatapp-server.jar\"]'
           test "$(docker image inspect realtime-chat-app:scan-${{ github.sha }} --format '{{.Config.StopSignal}}')" = "SIGTERM"
-          test "$(docker image inspect realtime-chat-app:scan-${{ github.sha }} --format '{{json .Config.Healthcheck.Test}}')" = '["CMD","java","-cp","/app/chatapp-server.jar","com.chatapp.server.ServerHealthCheck"]'
+          test "$(docker image inspect realtime-chat-app:scan-${{ github.sha }} --format '{{json .Config.Healthcheck.Test}}')" = '[\"CMD\",\"java\",\"-cp\",\"/app/chatapp-server.jar\",\"com.chatapp.server.ServerHealthCheck\"]'
           docker run --rm --entrypoint sh realtime-chat-app:scan-${{ github.sha }} -c 'test "$(id -u)" = "10001" && test "$(stat -c %a /app/data/attachments)" = "700" && test -w /app/data/attachments && ! test -w /app && ! test -w /app/chatapp-server.jar'
           test -z "$(docker run --rm --entrypoint sh realtime-chat-app:scan-${{ github.sha }} -c 'find /app -xdev -type f -perm /6000 -print 2>/dev/null')"
 
@@ -95,6 +98,12 @@ jobs:
           PY
           sha256sum trivy-image.sbom.json > trivy-image.sbom.json.sha256
           sha256sum --check trivy-image.sbom.json.sha256
+
+      - name: Attest container SBOM
+        if: success()
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-path: trivy-image.sbom.json
 
       - name: Upload container scan findings
         if: ${{ always() && hashFiles('trivy-results.sarif') != '' }}
