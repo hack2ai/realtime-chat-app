@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
+import java.nio.file.attribute.LinkOption;
 
 /** Small dependency-free health probe used by the container healthcheck. */
 public final class ServerHealthCheck {
@@ -22,8 +23,8 @@ public final class ServerHealthCheck {
     static boolean isHealthy(Path markerPath, long nowMillis, long maxAgeMillis) {
         if (markerPath == null || maxAgeMillis < 0) return false;
         try {
-            if (!Files.isRegularFile(markerPath)) return false;
-            FileTime lastModified = Files.getLastModifiedTime(markerPath);
+            if (!Files.isRegularFile(markerPath, LinkOption.NOFOLLOW_LINKS)) return false;
+            FileTime lastModified = Files.getLastModifiedTime(markerPath, LinkOption.NOFOLLOW_LINKS);
             long ageMillis = nowMillis - lastModified.toMillis();
             return ageMillis >= 0 && ageMillis <= maxAgeMillis;
         } catch (IOException | SecurityException e) {
