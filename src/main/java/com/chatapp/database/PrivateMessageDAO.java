@@ -16,6 +16,9 @@ import java.util.OptionalInt;
 /** Persistence operations for one-to-one messages. */
 public class PrivateMessageDAO {
 
+    public record SearchRecord(long messageId, int senderId, String senderUsername,
+                               int receiverId, String message, LocalDateTime sentAt) {}
+
     public PrivateMessageEvent insert(int senderId, int receiverId, String message) {
         String sql = "INSERT INTO private_messages (sender_id, receiver_id, message) VALUES (?, ?, ?)";
         return DatabaseManager.execute(conn -> {
@@ -60,6 +63,32 @@ public class PrivateMessageDAO {
                     while (rs.next()) messages.add(map(rs));
                     Collections.reverse(messages);
                     return messages;
+                }
+            }
+        });
+    }
+
+    public List<SearchRecord> searchConversation(int userId, String escapedQuery, int limit) {
+        String sql = "SELECT pm.id, pm.sender_id, su.username AS sender_username, pm.receiver_id, pm.message, pm.sent_at "
+                + "FROM private_messages pm JOIN users su ON su.id = pm.sender_id "
+                + "WHERE (pm.sender_id = ? OR pm.receiver_id = ?) AND pm.message LIKE ? ESCAPE '\\\\' "
+                + "ORDER BY pm.id DESC LIMIT ?";
+        int safeLimit = Math.max(1, Math.min(limit, 50));
+        return DatabaseManager.execute(conn -> {
+            try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+                stmt.setInt(1, userId);
+                stmt.setInt(2, userId);
+                stmt.setString(3, "%" + escapedQuery + "%");
+                stmt.setInt(4, safeLimit);
+                try (ResultSet rs = stmt.executeQuery()) {
+                    List<SearchRecord> results = new ArrayList<>();
+                    while (rs.next()) {
+                        Timestamp sentAt = rs.getTimestamp("sent_at");
+                        results.add(new SearchRecord(rs.getLong("id"), rs.getInt("sender_id"),
+                                rs.getString("sender_username"), rs.getInt("receiver_id"),
+                                rs.getString("message"), sentAt == null ? null : sentAt.toLocalDateTime()));
+                    }
+                    return results;
                 }
             }
         });
