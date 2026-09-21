@@ -20,6 +20,7 @@ import java.util.Base64;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.ReentrantLock;
 
 /** Handles registration, login, and server-side session lifecycle. */
 public class AuthenticationService {
@@ -38,6 +39,8 @@ public class AuthenticationService {
     /** Stores only SHA-256 digests of bearer tokens, never the raw tokens. */
     private final Map<String, Session> activeSessions = new ConcurrentHashMap<>();
     private final Map<Integer, String> activeTokenByUser = new ConcurrentHashMap<>();
+    /** Serializes session/status transitions for the same user without blocking unrelated accounts. */
+    private final Map<Integer, SessionLock> sessionLocks = new ConcurrentHashMap<>();
     /** Rate-limits expiry scans without creating a background maintenance thread. */
     private final AtomicLong nextSessionCleanupAtNanos = new AtomicLong(0L);
 
@@ -127,24 +130,30 @@ public class AuthenticationService {
         }
 
         maybeCleanupExpiredSessions();
-        releaseExpiredSession(user.getId(), LocalDateTime.now());
 
-        String token = generateSessionToken();
-        String tokenDigest = digestToken(token);
-        LocalDateTime expiry = LocalDateTime.now().plusHours(AppConfig.getSessionExpiryHours());
-        Session session = new Session(user.getId(), expiry);
-        if (activeTokenByUser.putIfAbsent(user.getId(), tokenDigest) != null) {
-            throw new AuthenticationException("This account is already connected.");
-        }
-        activeSessions.put(tokenDigest, session);
+        SessionLock sessionLock = acquireSessionLock(user.getId());
         try {
-            userDAO.updateStatus(user.getId(), User.Status.ONLINE);
-        } catch (RuntimeException e) {
-            activeSessions.remove(tokenDigest, session);
-            activeTokenByUser.remove(user.getId(), tokenDigest);
-            throw e;
+            releaseExpiredSession(user.getId(), LocalDateTime.now());
+
+            String token = generateSessionToken();
+            String tokenDigest = digestToken(token);
+            LocalDateTime expiry = LocalDateTime.now().plusHours(AppConfig.getSessionExpiryHours());
+            Session session = new Session(user.getId(), expiry);
+            if (activeTokenByUser.putIfAbsent(user.getId(), tokenDigest) != null) {
+                throw new AuthenticationException("This account is already connected.");
+            }
+            activeSessions.put(tokenDigest, session);
+            try {
+                userDAO.updateStatus(user.getId(), User.Status.ONLINE);
+            } catch (RuntimeException e) {
+                activeSessions.remove(tokenDigest, session);
+                activeTokenByUser.remove(user.getId(), tokenDigest);
+                throw e;
+            }
+            return new LoginResult(user, token, expiry);
+        } finally {
+            releaseSessionLock(user.getId(), sessionLock);
         }
-        return new LoginResult(user, token, expiry);
     }
 
     private void runDummyPasswordCheck(String suppliedPassword) {
@@ -158,10 +167,18 @@ public class AuthenticationService {
     public void logout(String sessionToken) {
         if (sessionToken == null || sessionToken.length() > MAX_SESSION_TOKEN_LENGTH) return;
         String tokenDigest = digestToken(sessionToken);
-        Session session = activeSessions.remove(tokenDigest);
-        if (session != null) {
-            activeTokenByUser.remove(session.userId, tokenDigest);
-            markOfflineSafely(session.userId);
+        Session session = activeSessions.get(tokenDigest);
+        if (session == null) return;
+
+        SessionLock sessionLock = acquireSessionLock(session.userId);
+        try {
+            Session current = activeSessions.remove(tokenDigest);
+            if (current != null) {
+                activeTokenByUser.remove(current.userId, tokenDigest);
+                markOfflineSafely(current.userId);
+            }
+        } finally {
+            releaseSessionLock(session.userId, sessionLock);
         }
     }
 
@@ -173,11 +190,19 @@ public class AuthenticationService {
         String tokenDigest = digestToken(sessionToken);
         Session session = activeSessions.get(tokenDigest);
         if (session == null) throw invalidSession();
-        if (!LocalDateTime.now().isBefore(session.expiresAt)) {
-            expireSession(tokenDigest, session);
-            throw invalidSession();
+
+        SessionLock sessionLock = acquireSessionLock(session.userId);
+        try {
+            Session current = activeSessions.get(tokenDigest);
+            if (current == null || current != session) throw invalidSession();
+            if (!LocalDateTime.now().isBefore(current.expiresAt)) {
+                expireSessionLocked(tokenDigest, current);
+                throw invalidSession();
+            }
+            return current.userId;
+        } finally {
+            releaseSessionLock(session.userId, sessionLock);
         }
-        return session.userId;
     }
 
     private void maybeCleanupExpiredSessions() {
@@ -191,7 +216,12 @@ public class AuthenticationService {
         LocalDateTime now = LocalDateTime.now();
         activeSessions.forEach((tokenDigest, session) -> {
             if (!now.isBefore(session.expiresAt)) {
-                expireSession(tokenDigest, session);
+                SessionLock sessionLock = acquireSessionLock(session.userId);
+                try {
+                    expireSessionLocked(tokenDigest, session);
+                } finally {
+                    releaseSessionLock(session.userId, sessionLock);
+                }
             }
         });
     }
@@ -210,11 +240,30 @@ public class AuthenticationService {
         }
     }
 
-    private void expireSession(String tokenDigest, Session session) {
+    private void expireSessionLocked(String tokenDigest, Session session) {
         if (activeSessions.remove(tokenDigest, session)) {
             activeTokenByUser.remove(session.userId, tokenDigest);
             markOfflineSafely(session.userId);
         }
+    }
+
+    private SessionLock acquireSessionLock(int userId) {
+        SessionLock sessionLock = sessionLocks.compute(userId, (key, existing) -> {
+            SessionLock selected = existing == null ? new SessionLock() : existing;
+            selected.references++;
+            return selected;
+        });
+        sessionLock.lock.lock();
+        return sessionLock;
+    }
+
+    private void releaseSessionLock(int userId, SessionLock sessionLock) {
+        sessionLock.lock.unlock();
+        sessionLocks.computeIfPresent(userId, (key, current) -> {
+            if (current != sessionLock) return current;
+            current.references--;
+            return current.references == 0 ? null : current;
+        });
     }
 
     /**
@@ -253,6 +302,11 @@ public class AuthenticationService {
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 is unavailable.", e);
         }
+    }
+
+    private static final class SessionLock {
+        private final ReentrantLock lock = new ReentrantLock();
+        private int references;
     }
 
     private record Session(int userId, LocalDateTime expiresAt) {}
