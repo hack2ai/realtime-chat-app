@@ -13,22 +13,25 @@ import java.util.Base64;
 /** Business rules and authorization for private attachments. */
 public final class AttachmentService {
     private static final int MAX_DOWNLOADS_PER_MINUTE = 12;
-    private final AttachmentStorageService storage;
+    private final AttachmentStorage storage;
     private final AttachmentDAO dao;
     private final UserDAO userDAO;
     private final RequestRateLimiter downloadRateLimiter =
             new RequestRateLimiter(MAX_DOWNLOADS_PER_MINUTE, Duration.ofMinutes(1), 10_000);
 
     public AttachmentService() { this(new AttachmentStorageService(), new AttachmentDAO(), new UserDAO()); }
-    public AttachmentService(AttachmentStorageService storage, AttachmentDAO dao, UserDAO userDAO) {
+    public AttachmentService(AttachmentStorage storage, AttachmentDAO dao, UserDAO userDAO) {
+        if (storage == null || dao == null || userDAO == null) {
+            throw new IllegalArgumentException("Attachment service dependencies must not be null.");
+        }
         this.storage=storage; this.dao=dao; this.userDAO=userDAO;
     }
 
     public PrivateFileEvent upload(int senderId, int receiverId, String fileName, String contentType, String dataBase64, String senderUsername)
             throws ValidationException {
         requireParticipant(senderId, receiverId);
-        byte[] bytes=AttachmentStorageService.decodeBase64(dataBase64);
-        AttachmentStorageService.StoredFile stored=storage.store(fileName,contentType,bytes);
+        byte[] bytes=AttachmentStorage.decodeBase64(dataBase64);
+        AttachmentStorage.StoredFile stored=storage.store(fileName,contentType,bytes);
         try {
             AttachmentRecord record=new AttachmentRecord(stored.fileId(),senderId,receiverId,stored.fileName(),stored.contentType(),stored.sizeBytes(),stored.sha256(),LocalDateTime.now());
             dao.insert(record);
