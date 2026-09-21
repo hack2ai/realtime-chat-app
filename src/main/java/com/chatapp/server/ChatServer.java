@@ -187,11 +187,12 @@ public class ChatServer {
                 }
                 ClientHandler handler = new ClientHandler(clientSocket, this, authService, chatService, groupService);
                 activeHandlers.add(handler);
+                serverMetrics.connectionAccepted();
                 try {
                     clientThreadPool.execute(handler);
-                    serverMetrics.connectionAccepted();
                 } catch (RejectedExecutionException e) {
                     activeHandlers.remove(handler);
+                    serverMetrics.connectionClosed();
                     serverMetrics.connectionCapacityRejected();
                     logger.warn("Rejecting connection from {} because the server is at capacity", clientSocket.getRemoteSocketAddress());
                     closeQuietly(clientSocket);
