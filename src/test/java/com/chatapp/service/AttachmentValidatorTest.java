@@ -106,6 +106,33 @@ class AttachmentValidatorTest {
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", xlsx);
     }
 
+    @Test
+    void rejectsOoxmlArchiveWithTooManyEntries() throws Exception {
+        String[] names = new String[AttachmentValidatorTest.MAX_TEST_ZIP_ENTRIES];
+        names[0] = "[Content_Types].xml";
+        names[1] = "word/document.xml";
+        for (int i = 2; i < names.length; i++) {
+            names[i] = "word/entry-" + i + ".xml";
+        }
+        byte[] zip = zipWithEntries(names);
+
+        assertThrows(ValidationException.class,
+                () -> AttachmentValidator.validateContent(
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document", zip));
+    }
+
+    @Test
+    void rejectsOoxmlArchiveWithOversizedEntryName() throws Exception {
+        String longName = "word/" + "a".repeat(260) + ".xml";
+        byte[] zip = zipWithEntries("[Content_Types].xml", "word/document.xml", longName);
+
+        assertThrows(ValidationException.class,
+                () -> AttachmentValidator.validateContent(
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document", zip));
+    }
+
+    private static final int MAX_TEST_ZIP_ENTRIES = 2049;
+
     private static byte[] zipWithEntries(String... names) throws Exception {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         try (ZipOutputStream zip = new ZipOutputStream(output, StandardCharsets.UTF_8)) {
