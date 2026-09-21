@@ -3,17 +3,25 @@ package com.chatapp.server;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /** Bounded outbound frame queue with both message-count and byte-memory limits. */
 final class OutboundMessageQueue {
     static final int DEFAULT_CAPACITY = 256;
     static final int DEFAULT_MAX_QUEUED_BYTES = 16 * 1024 * 1024;
 
-    record Entry(byte[] frame) {
+    record Entry(byte[] frame, AtomicBoolean completed) {
         Entry {
             if (frame == null || frame.length == 0) {
                 throw new IllegalArgumentException("Outbound frame must not be empty.");
             }
+            if (completed == null) {
+                throw new IllegalArgumentException("Completion state must not be null.");
+            }
+        }
+
+        Entry(byte[] frame) {
+            this(frame, new AtomicBoolean());
         }
     }
 
@@ -54,7 +62,9 @@ final class OutboundMessageQueue {
 
     void complete(Entry entry) {
         if (entry == null) return;
-        byteBudget.release(entry.frame().length);
+        if (entry.completed().compareAndSet(false, true)) {
+            byteBudget.release(entry.frame().length);
+        }
     }
 
     void close() {
