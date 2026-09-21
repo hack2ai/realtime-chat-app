@@ -19,6 +19,7 @@ class ServerMetricsTest {
         metrics.connectionClosed();
 
         assertEquals(0, metrics.activeConnections());
+        assertEquals(2, metrics.peakActiveConnections());
         assertEquals(2, metrics.acceptedConnections());
         assertEquals(1, metrics.rateLimitedConnections());
         assertEquals(1, metrics.capacityRejectedConnections());
@@ -26,6 +27,6 @@ class ServerMetricsTest {
         assertTrue(metrics.usedHeapBytes() >= 0);
         assertTrue(metrics.maxHeapBytes() >= metrics.usedHeapBytes());
         assertTrue(metrics.summary().matches(
-                "active=0, acceptedTotal=2, rateLimitedTotal=1, capacityRejectedTotal=1, uptimeSeconds=\\d+, usedHeapBytes=\\d+, maxHeapBytes=\\d+"));
+                "active=0, peakActive=2, acceptedTotal=2, rateLimitedTotal=1, capacityRejectedTotal=1, uptimeSeconds=\\d+, usedHeapBytes=\\d+, maxHeapBytes=\\d+"));
     }
 }
