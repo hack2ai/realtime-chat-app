@@ -18,6 +18,10 @@ class AppConfigTlsTest {
     private static final String DB_PASSWORD = "chatapp.db.password";
     private static final String DB_SSL_MODE = "chatapp.db.sslMode";
     private static final String DB_USE_SSL = "chatapp.db.useSsl";
+    private static final String DB_POOL_MIN_IDLE = "chatapp.db.pool.minIdle";
+    private static final String DB_POOL_MAX_SIZE = "chatapp.db.pool.maxSize";
+    private static final String SERVER_PORT = "chatapp.server.port";
+    private static final String SERVER_MAX_CLIENTS = "chatapp.server.maxClients";
     private static final String BCRYPT_STRENGTH = "chatapp.auth.bcrypt.strength";
     private static final String SESSION_EXPIRY_HOURS = "chatapp.auth.session.expiryHours";
     private static final String SOCKET_READ_TIMEOUT_MS = "chatapp.server.socketReadTimeoutMs";
@@ -173,6 +177,40 @@ class AppConfigTlsTest {
         assertEquals(120000, AppConfig.getSocketReadTimeoutMs());
     }
 
+    @Test
+    void serverPortRejectsValuesOutsideTcpRange() {
+        System.setProperty(SERVER_PORT, "0");
+        assertThrows(IllegalStateException.class, AppConfig::getServerPort);
+
+        System.setProperty(SERVER_PORT, "65536");
+        assertThrows(IllegalStateException.class, AppConfig::getServerPort);
+
+        System.setProperty(SERVER_PORT, "5050");
+        assertEquals(5050, AppConfig.getServerPort());
+    }
+
+    @Test
+    void serverMaxClientsRejectsValuesOutsideSupportedRange() {
+        System.setProperty(SERVER_MAX_CLIENTS, "0");
+        assertThrows(IllegalStateException.class, AppConfig::getServerMaxClients);
+
+        System.setProperty(SERVER_MAX_CLIENTS, "10001");
+        assertThrows(IllegalStateException.class, AppConfig::getServerMaxClients);
+
+        System.setProperty(SERVER_MAX_CLIENTS, "200");
+        assertEquals(200, AppConfig.getServerMaxClients());
+    }
+
+    @Test
+    void databasePoolRejectsMaxSizeBelowMinIdle() {
+        System.setProperty(DB_POOL_MIN_IDLE, "5");
+        System.setProperty(DB_POOL_MAX_SIZE, "4");
+        assertThrows(IllegalStateException.class, AppConfig::getDbPoolMaxSize);
+
+        System.setProperty(DB_POOL_MAX_SIZE, "5");
+        assertEquals(5, AppConfig.getDbPoolMaxSize());
+    }
+
     private static void clearProperties() {
         System.clearProperty(TLS_ENABLED);
         System.clearProperty(TLS_KEY_STORE_PASSWORD);
@@ -182,6 +220,10 @@ class AppConfigTlsTest {
         System.clearProperty(DB_PASSWORD);
         System.clearProperty(DB_SSL_MODE);
         System.clearProperty(DB_USE_SSL);
+        System.clearProperty(DB_POOL_MIN_IDLE);
+        System.clearProperty(DB_POOL_MAX_SIZE);
+        System.clearProperty(SERVER_PORT);
+        System.clearProperty(SERVER_MAX_CLIENTS);
         System.clearProperty(BCRYPT_STRENGTH);
         System.clearProperty(SESSION_EXPIRY_HOURS);
         System.clearProperty(SOCKET_READ_TIMEOUT_MS);
