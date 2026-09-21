@@ -121,6 +121,8 @@ public class AuthenticationService {
             throw new AuthenticationException(GENERIC_LOGIN_FAILURE);
         }
 
+        releaseExpiredSession(user.getId(), LocalDateTime.now());
+
         String token = generateSessionToken();
         String tokenDigest = digestToken(token);
         LocalDateTime expiry = LocalDateTime.now().plusHours(AppConfig.getSessionExpiryHours());
@@ -169,6 +171,20 @@ public class AuthenticationService {
             throw invalidSession();
         }
         return session.userId;
+    }
+
+    private void releaseExpiredSession(int userId, LocalDateTime now) {
+        String tokenDigest = activeTokenByUser.get(userId);
+        if (tokenDigest == null) return;
+
+        Session session = activeSessions.get(tokenDigest);
+        if (session == null) {
+            activeTokenByUser.remove(userId, tokenDigest);
+            return;
+        }
+        if (!now.isBefore(session.expiresAt)) {
+            expireSession(tokenDigest, session);
+        }
     }
 
     private void expireSession(String tokenDigest, Session session) {
