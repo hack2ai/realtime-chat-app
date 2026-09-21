@@ -40,9 +40,9 @@ jobs:
       - name: Verify server image hardening
         run: |
           test "$(docker image inspect realtime-chat-app:scan-${{ github.sha }} --format '{{.Config.User}}')" = "chatapp"
-          test "$(docker image inspect realtime-chat-app:scan-${{ github.sha }} --format '{{json .Config.Entrypoint}}')" = '[\"java\",\"-XX:+ExitOnOutOfMemoryError\",\"-jar\",\"/app/chatapp-server.jar\"]'
+          test "$(docker image inspect realtime-chat-app:scan-${{ github.sha }} --format '{{json .Config.Entrypoint}}')" = '["java","-XX:+ExitOnOutOfMemoryError","-jar","/app/chatapp-server.jar"]'
           test "$(docker image inspect realtime-chat-app:scan-${{ github.sha }} --format '{{.Config.StopSignal}}')" = "SIGTERM"
-          test "$(docker image inspect realtime-chat-app:scan-${{ github.sha }} --format '{{json .Config.Healthcheck.Test}}')" = '[\"CMD\",\"java\",\"-cp\",\"/app/chatapp-server.jar\",\"com.chatapp.server.ServerHealthCheck\"]'
+          test "$(docker image inspect realtime-chat-app:scan-${{ github.sha }} --format '{{json .Config.Healthcheck.Test}}')" = '["CMD","java","-cp","/app/chatapp-server.jar","com.chatapp.server.ServerHealthCheck"]'
           docker run --rm --entrypoint sh realtime-chat-app:scan-${{ github.sha }} -c 'test "$(id -u)" = "10001" && test "$(stat -c %a /app/data/attachments)" = "700" && test -w /app/data/attachments && ! test -w /app && ! test -w /app/chatapp-server.jar'
           test -z "$(docker run --rm --entrypoint sh realtime-chat-app:scan-${{ github.sha }} -c 'find /app -xdev -type f -perm /6000 -print 2>/dev/null')"
 
