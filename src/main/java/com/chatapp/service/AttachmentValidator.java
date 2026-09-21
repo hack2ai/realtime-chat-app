@@ -2,22 +2,28 @@ package com.chatapp.service;
 
 import com.chatapp.exception.ValidationException;
 
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.util.Enumeration;
 import java.util.HashSet;
 import java.util.Locale;
 import java.util.Set;
-import java.util.zip.ZipInputStream;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 
 /** Validates attachment metadata and file signatures before storage. */
 public final class AttachmentValidator {
     private static final int MAX_NAME_LENGTH = 180;
     private static final int MAX_CONTENT_TYPE_LENGTH = 120;
+    private static final int MAX_ZIP_ENTRIES = 2048;
+    private static final int MAX_ZIP_ENTRY_NAME_LENGTH = 255;
     private static final Set<String> ALLOWED_TYPES = Set.of(
             "application/pdf", "text/plain", "text/csv", "application/octet-stream",
             "image/jpeg", "image/png", "image/gif", "image/webp",
@@ -37,7 +43,7 @@ public final class AttachmentValidator {
         String name = fileName.strip().replace('\\', '/');
         int slash = name.lastIndexOf('/');
         if (slash >= 0) name = name.substring(slash + 1);
-        name = name.replaceAll("[\\p{Cntrl}]", "_");
+        name = name.replaceAll("[\\\\p{Cntrl}]", "_");
         if (name.isBlank() || ".".equals(name) || "..".equals(name)) throw new ValidationException("Invalid file name.");
         if (isBlockedExtension(name)) throw new ValidationException("Executable attachment types are not allowed.");
         return name.length() > MAX_NAME_LENGTH ? name.substring(0, MAX_NAME_LENGTH) : name;
@@ -93,16 +99,42 @@ public final class AttachmentValidator {
         if (!startsWith(value, new byte[]{0x50, 0x4b, 0x03, 0x04})) {
             throw new ValidationException("File content does not match its declared " + type + " type.");
         }
+
         Set<String> entries = new HashSet<>();
-        try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(value), StandardCharsets.UTF_8)) {
-            java.util.zip.ZipEntry entry;
-            while ((entry = zip.getNextEntry()) != null) {
-                entries.add(entry.getName());
-                zip.closeEntry();
+        Path temp = null;
+        try {
+            temp = Files.createTempFile("chatapp-attachment-", ".zip");
+            Files.write(temp, value, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+            try (ZipFile zip = new ZipFile(temp.toFile(), StandardCharsets.UTF_8)) {
+                Enumeration<? extends ZipEntry> enumeration = zip.entries();
+                int entryCount = 0;
+                while (enumeration.hasMoreElements()) {
+                    ZipEntry entry = enumeration.nextElement();
+                    entryCount++;
+                    if (entryCount > MAX_ZIP_ENTRIES) {
+                        throw new ValidationException("Archive contains too many entries.");
+                    }
+                    String name = entry.getName();
+                    if (name == null || name.isBlank() || name.length() > MAX_ZIP_ENTRY_NAME_LENGTH) {
+                        throw new ValidationException("Archive contains an invalid entry name.");
+                    }
+                    entries.add(name);
+                }
             }
+        } catch (ValidationException e) {
+            throw e;
         } catch (IOException | RuntimeException e) {
             throw new ValidationException("Invalid " + type + " archive.");
+        } finally {
+            if (temp != null) {
+                try {
+                    Files.deleteIfExists(temp);
+                } catch (IOException ignored) {
+                    // Best-effort cleanup; the bounded byte array remains the authoritative input.
+                }
+            }
         }
+
         if (!entries.contains("[Content_Types].xml") || !entries.contains(requiredEntry)) {
             throw new ValidationException("File content does not match its declared " + type + " structure.");
         }
