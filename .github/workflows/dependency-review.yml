@@ -4,8 +4,7 @@ on:
   pull_request:
     branches: [main]
 
-permissions:
-  contents: read
+permissions: {}
 
 concurrency:
   group: dependency-review-${{ github.workflow }}-${{ github.ref }}
@@ -13,6 +12,8 @@ concurrency:
 
 jobs:
   dependency-review:
+    permissions:
+      contents: read
     name: Review dependency changes
     runs-on: ubuntu-latest
     timeout-minutes: 10
