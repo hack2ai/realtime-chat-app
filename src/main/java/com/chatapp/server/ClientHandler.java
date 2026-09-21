@@ -56,16 +56,20 @@ public class ClientHandler implements Runnable {
     private static final int OUTBOUND_QUEUE_CAPACITY=256;
     private static final int OUTBOUND_QUEUE_MAX_BYTES=16*1024*1024;
     private final Socket socket; private final ChatServer server; private final AuthenticationService authService;
-    private final ChatService chatService; private final GroupService groupService; private final MessageSearchService messageSearchService=new MessageSearchService();
-    private final AttachmentService attachmentService=new AttachmentService();
+    private final ChatService chatService; private final GroupService groupService;
+    private final MessageSearchService messageSearchService; private final AttachmentService attachmentService;
     private final MessageCodec codec=new MessageCodec(); private DataInputStream in; private DataOutputStream out;
     private final OutboundMessageQueue outbound=new OutboundMessageQueue(OUTBOUND_QUEUE_CAPACITY,OUTBOUND_QUEUE_MAX_BYTES);
     private final AtomicBoolean closed=new AtomicBoolean(); private final AtomicInteger protocolErrors=new AtomicInteger();
     private volatile Thread writerThread; private volatile Thread sessionExpiryThread;
     private volatile int authenticatedUserId=-1; private volatile String authenticatedUsername; private volatile String sessionToken;
-    public ClientHandler(Socket socket,ChatServer server,AuthenticationService authService){this(socket,server,authService,new ChatService(),new GroupService());}
-    public ClientHandler(Socket socket,ChatServer server,AuthenticationService authService,ChatService chatService){this(socket,server,authService,chatService,new GroupService());}
-    public ClientHandler(Socket socket,ChatServer server,AuthenticationService authService,ChatService chatService,GroupService groupService){this.socket=socket;this.server=server;this.authService=authService;this.chatService=chatService;this.groupService=groupService;}
+    public ClientHandler(Socket socket,ChatServer server,AuthenticationService authService){this(socket,server,authService,new ChatService(),new GroupService(),new MessageSearchService(),new AttachmentService());}
+    public ClientHandler(Socket socket,ChatServer server,AuthenticationService authService,ChatService chatService){this(socket,server,authService,chatService,new GroupService(),new MessageSearchService(),new AttachmentService());}
+    public ClientHandler(Socket socket,ChatServer server,AuthenticationService authService,ChatService chatService,GroupService groupService){this(socket,server,authService,chatService,groupService,new MessageSearchService(),new AttachmentService());}
+    public ClientHandler(Socket socket,ChatServer server,AuthenticationService authService,ChatService chatService,GroupService groupService,MessageSearchService messageSearchService,AttachmentService attachmentService){
+        if(socket==null||server==null||authService==null||chatService==null||groupService==null||messageSearchService==null||attachmentService==null) throw new IllegalArgumentException("Client handler dependencies must not be null.");
+        this.socket=socket;this.server=server;this.authService=authService;this.chatService=chatService;this.groupService=groupService;this.messageSearchService=messageSearchService;this.attachmentService=attachmentService;
+    }
     @Override public void run(){try{in=new DataInputStream(socket.getInputStream());out=new DataOutputStream(socket.getOutputStream());startWriter();messageLoop();}catch(SocketTimeoutException e){if(!closed.get())logger.info("Authentication timeout for {}",socket.getRemoteSocketAddress());}catch(IOException e){if(!closed.get())logger.warn("I/O error on {}: {}",socket.getRemoteSocketAddress(),e.getClass().getSimpleName());}finally{cleanup();}}
     private void startWriter(){writerThread=Thread.startVirtualThread(()->{try{while(!closed.get()){OutboundMessageQueue.Entry message=outbound.take();try{writeNow(message.frame());}finally{outbound.complete(message);}}}catch(InterruptedException e){Thread.currentThread().interrupt();}catch(IOException e){if(!closed.get())logger.warn("Output error on {}: {}",socket.getRemoteSocketAddress(),e.getClass().getSimpleName());cleanup();}});}
     private void messageLoop()throws IOException{while(!socket.isClosed()){final Envelope envelope;try{envelope=codec.read(in);}catch(EOFException e){logger.info("Client disconnected: {}",socket.getRemoteSocketAddress());return;}catch(SocketTimeoutException e){if(authenticatedUserId==-1)return;throw e;}catch(RuntimeException e){logger.warn("Invalid protocol message from {}; closing connection",socket.getRemoteSocketAddress());return;}if(envelope==null||envelope.getType()==null){sendError("Invalid message envelope.");continue;}try{dispatch(envelope);}catch(Exception e){logger.error("Error handling {} from {}: {}",envelope.getType(),socket.getRemoteSocketAddress(),e.getClass().getSimpleName());sendError("An internal error occurred processing your request.");}}}
