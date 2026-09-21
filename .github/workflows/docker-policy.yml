@@ -62,7 +62,7 @@ jobs:
             .services.server.security_opt == ["no-new-privileges:true"] and
             .services.server.cap_drop == ["ALL"] and
             .services.server.cpus == 1 and
-            .services.server.mem_limit == 805306368 and
+            ((.services.server.mem_limit == "768m") or (.services.server.mem_limit == 805306368)) and
             .services.server.pids_limit == 256 and
             .services.server.ulimits.nofile.soft == 4096 and
             .services.server.ulimits.nofile.hard == 8192 and
@@ -72,7 +72,7 @@ jobs:
             .services.db.init == true and
             .services.db.security_opt == ["no-new-privileges:true"] and
             .services.db.cpus == 2 and
-            .services.db.mem_limit == 1073741824 and
+            ((.services.db.mem_limit == "1g") or (.services.db.mem_limit == 1073741824)) and
             .services.db.pids_limit == 512 and
             .services.db.ulimits.nofile.soft == 4096 and
             .services.db.ulimits.nofile.hard == 8192 and
