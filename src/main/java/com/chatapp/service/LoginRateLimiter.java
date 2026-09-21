@@ -24,16 +24,20 @@ public final class LoginRateLimiter {
         return current.failures() < MAX_FAILURES;
     }
 
-    public void recordFailure(String key) {
+    /**
+     * The capacity check spans the read/eviction/write sequence, so concurrent
+     * new keys cannot grow the bounded map beyond MAX_KEYS.
+     */
+    public synchronized void recordFailure(String key) {
         if (key == null || key.isBlank()) return;
         Instant now = Instant.now();
-        attempts.compute(key, (ignored, current) -> {
-            if (current == null || expired(current, now)) {
-                enforceCapacity(now);
-                return new Attempt(1, now);
-            }
-            return new Attempt(current.failures() + 1, current.windowStart());
-        });
+        Attempt current = attempts.get(key);
+        if (current == null || expired(current, now)) {
+            enforceCapacity(now);
+            attempts.put(key, new Attempt(1, now));
+            return;
+        }
+        attempts.put(key, new Attempt(current.failures() + 1, current.windowStart()));
     }
 
     public void recordSuccess(String key) {
