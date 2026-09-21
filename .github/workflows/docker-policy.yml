@@ -32,10 +32,10 @@ jobs:
             exit 1
           fi
 
-      - name: Enforce supported Java major version
+      - name: Enforce pinned Java base-image versions
         run: |
-          grep -Eq '^FROM[[:space:]]+maven:3\.9\.[0-9]+-eclipse-temurin-21-noble([[:space:]]|$)' Dockerfile
-          grep -Eq '^FROM[[:space:]]+eclipse-temurin:21\.[0-9]+_[0-9]+-jre-noble([[:space:]]|$)' Dockerfile
+          grep -Fxq 'FROM maven:3.9.16-eclipse-temurin-21-noble AS build' Dockerfile
+          grep -Fxq 'FROM eclipse-temurin:21.0.12_8-jre-noble' Dockerfile
 
       - name: Verify Compose database image uses a patch-level tag
         run: |
