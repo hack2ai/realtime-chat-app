@@ -330,3 +330,19 @@ jobs:
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
           subject-path: release-assets/chatapp-sbom.json
+
+      - name: Download container SBOM
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: chatapp-container-${{ github.sha }}
+          path: container-assets
+
+      - name: Verify container SBOM
+        run: |
+          cd container-assets
+          sha256sum --check chatapp-container-sbom.json.sha256
+
+      - name: Attest container SBOM
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-path: container-assets/chatapp-container-sbom.json
