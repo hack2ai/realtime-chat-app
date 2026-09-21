@@ -25,13 +25,6 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set up JDK 21
-        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
-        with:
-          distribution: temurin
-          java-version: '21'
-          cache: maven
-
       - name: Verify action pinning
         run: |
           violations=$(grep -RhoE 'uses:[[:space:]]+[^@[:space:]]+@[^[:space:]#]+' .github/workflows | awk -F@ '$2 !~ /^[0-9a-fA-F]{40}$/')
@@ -144,10 +137,7 @@ jobs:
         env:
           PROJECT_VERSION: ${{ env.PROJECT_VERSION }}
         run: |
-          docker build --pull \
-            --build-arg APP_VERSION="$PROJECT_VERSION" \
-            --build-arg VCS_REF="${{ github.sha }}" \
-            --tag realtime-chat-app:${{ github.sha }} .
+          docker build --pull             --build-arg APP_VERSION="$PROJECT_VERSION"             --build-arg VCS_REF="${{ github.sha }}"             --tag realtime-chat-app:${{ github.sha }} .
 
       - name: Scan server container image
         uses: aquasecurity/trivy-action@d2a0b60797ff03db6132bd4e2b293f9b37081297 # immutable commit; Trivy v0.74.0
