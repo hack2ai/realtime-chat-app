@@ -36,6 +36,15 @@ public final class MessageCodec {
 
     public void write(DataOutputStream out, Envelope envelope) throws IOException {
         if (out == null) throw new IllegalArgumentException("Output stream must not be null.");
+        byte[] bytes = encode(envelope);
+        synchronized (out) {
+            out.writeInt(bytes.length);
+            out.write(bytes);
+            out.flush();
+        }
+    }
+
+    public byte[] encode(Envelope envelope) throws IOException {
         if (envelope == null || envelope.getType() == null) {
             throw new IllegalArgumentException("Envelope and message type must not be null.");
         }
@@ -44,11 +53,7 @@ public final class MessageCodec {
         if (bytes.length > MAX_MESSAGE_BYTES) {
             throw new IOException("Refusing to send oversized message: " + bytes.length + " bytes.");
         }
-        synchronized (out) {
-            out.writeInt(bytes.length);
-            out.write(bytes);
-            out.flush();
-        }
+        return bytes;
     }
 
     public Envelope read(DataInputStream in) throws IOException {
