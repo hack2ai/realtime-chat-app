@@ -45,17 +45,17 @@ jobs:
           test -z "$unexpected_secrets"
 
       - name: Verify and package
-        run: mvn --batch-mode --no-transfer-progress verify
+        run: mvn --batch-mode --no-transfer-progress --strict-checksums verify
 
       - name: Verify reproducible server package
         run: |
           cp target/chatapp-server.jar /tmp/chatapp-server-first.jar
-          mvn --batch-mode --no-transfer-progress -DskipTests package
+          mvn --batch-mode --no-transfer-progress --strict-checksums -DskipTests package
           sha256sum /tmp/chatapp-server-first.jar target/chatapp-server.jar
           cmp -s /tmp/chatapp-server-first.jar target/chatapp-server.jar
 
       - name: Read project version
-        run: echo "PROJECT_VERSION=$(mvn --batch-mode --no-transfer-progress -q -DforceStdout help:evaluate -Dexpression=project.version)" >> "$GITHUB_ENV"
+        run: echo "PROJECT_VERSION=$(mvn --batch-mode --no-transfer-progress --strict-checksums -q -DforceStdout help:evaluate -Dexpression=project.version)" >> "$GITHUB_ENV"
 
       - name: Verify runnable server package
         run: |
@@ -64,7 +64,7 @@ jobs:
 
       - name: Generate software bill of materials
         run: |
-          mvn --batch-mode --no-transfer-progress org.cyclonedx:cyclonedx-maven-plugin:2.9.3:makeAggregateBom -DoutputFormat=json -DoutputName=chatapp-sbom
+          mvn --batch-mode --no-transfer-progress --strict-checksums org.cyclonedx:cyclonedx-maven-plugin:2.9.3:makeAggregateBom -DoutputFormat=json -DoutputName=chatapp-sbom
           test -s target/chatapp-sbom.json
 
       - name: Verify software bill of materials
