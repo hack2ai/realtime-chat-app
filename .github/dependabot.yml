@@ -37,10 +37,6 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - dependencies
-    ignore:
-      - dependency-name: "maven"
-        versions:
-          - "3.9.15-eclipse-temurin-26"
     groups:
       docker-images-minor-patch:
         patterns:
