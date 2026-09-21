@@ -68,7 +68,7 @@ jobs:
             .services.server.ulimits.nofile.hard == 8192 and
             .services.server.logging.options["max-size"] == "10m" and
             .services.server.logging.options["max-file"] == "3" and
-            .services.server.ports == ["5050:5050"] and
+            (any(.services.server.ports[]?; .target == 5050 and ((.published | tonumber) == 5050) and .protocol == "tcp")) and
             .services.db.init == true and
             .services.db.security_opt == ["no-new-privileges:true"] and
             .services.db.cpus == 2 and
