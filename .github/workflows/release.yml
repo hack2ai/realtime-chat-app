@@ -35,6 +35,9 @@ jobs:
           java-version: '21'
           cache: maven
 
+      - name: Check repository diff
+        run: git diff --check
+
       - name: Verify workflow action pinning
         run: |
           violations=$(grep -RhoE 'uses:[[:space:]]+[^@[:space:]]+@[^[:space:]#]+' .github/workflows | awk -F@ '$2 !~ /^[0-9a-fA-F]{40}$/')
