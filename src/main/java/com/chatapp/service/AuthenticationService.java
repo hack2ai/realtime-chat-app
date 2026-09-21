@@ -236,7 +236,7 @@ public class AuthenticationService {
             return;
         }
         if (!now.isBefore(session.expiresAt)) {
-            expireSession(tokenDigest, session);
+            expireSessionLocked(tokenDigest, session);
         }
     }
 
