@@ -129,7 +129,10 @@ jobs:
             .services.server.cap_drop == ["ALL"] and
             .services.server.logging.options["max-size"] == "10m" and
             .services.server.logging.options["max-file"] == "3" and
-            (any(.services.server.ports[]?; .target == 5050 and ((.published | tonumber) == 5050) and .protocol == "tcp")) and
+            ((.services.server.ports | length) == 1) and
+            (.services.server.ports[0].target == 5050) and
+            ((.services.server.ports[0].published | tonumber) == 5050) and
+            (.services.server.ports[0].protocol == "tcp") and
             .services.db.init == true and
             .services.db.cpus == 2.0 and
             ((.services.db.mem_limit == "1g") or (.services.db.mem_limit == 1073741824)) and
