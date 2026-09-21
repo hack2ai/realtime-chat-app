@@ -63,7 +63,7 @@ JavaFX Client ──────────────────────
                          Local attachment storage
 ```
 
-The networking, service, persistence, protocol, client, and domain layers remain separated so features can evolve without turning the socket handler into a monolith.
+The networking, service, persistence, protocol, client, and domain layers remain separated so features can evolve without turning the socket handler into a monolith. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the dependency boundaries and change rules.
 
 ## Features
 
