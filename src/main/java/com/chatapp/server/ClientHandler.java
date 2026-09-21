@@ -35,8 +35,6 @@ import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.Locale;
 import java.util.OptionalInt;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -56,20 +54,20 @@ public class ClientHandler implements Runnable {
     private static final RequestRateLimiter REGISTRATION_RATE_LIMITER=new RequestRateLimiter(5,Duration.ofMinutes(1),10_000);
     private static final RequestRateLimiter PING_RATE_LIMITER=new RequestRateLimiter(30,Duration.ofSeconds(10),10_000);
     private static final int OUTBOUND_QUEUE_CAPACITY=256;
+    private static final int OUTBOUND_QUEUE_MAX_BYTES=16*1024*1024;
     private final Socket socket; private final ChatServer server; private final AuthenticationService authService;
     private final ChatService chatService; private final GroupService groupService; private final MessageSearchService messageSearchService=new MessageSearchService();
     private final AttachmentService attachmentService=new AttachmentService();
     private final MessageCodec codec=new MessageCodec(); private DataInputStream in; private DataOutputStream out;
-    private final BlockingQueue<OutboundMessage> outbound=new ArrayBlockingQueue<>(OUTBOUND_QUEUE_CAPACITY);
+    private final OutboundMessageQueue outbound=new OutboundMessageQueue(OUTBOUND_QUEUE_CAPACITY,OUTBOUND_QUEUE_MAX_BYTES);
     private final AtomicBoolean closed=new AtomicBoolean(); private final AtomicInteger protocolErrors=new AtomicInteger();
     private volatile Thread writerThread; private volatile Thread sessionExpiryThread;
     private volatile int authenticatedUserId=-1; private volatile String authenticatedUsername; private volatile String sessionToken;
-    private record OutboundMessage(MessageType type,Object payload) {}
     public ClientHandler(Socket socket,ChatServer server,AuthenticationService authService){this(socket,server,authService,new ChatService(),new GroupService());}
     public ClientHandler(Socket socket,ChatServer server,AuthenticationService authService,ChatService chatService){this(socket,server,authService,chatService,new GroupService());}
     public ClientHandler(Socket socket,ChatServer server,AuthenticationService authService,ChatService chatService,GroupService groupService){this.socket=socket;this.server=server;this.authService=authService;this.chatService=chatService;this.groupService=groupService;}
     @Override public void run(){try{in=new DataInputStream(socket.getInputStream());out=new DataOutputStream(socket.getOutputStream());startWriter();messageLoop();}catch(SocketTimeoutException e){if(!closed.get())logger.info("Authentication timeout for {}",socket.getRemoteSocketAddress());}catch(IOException e){if(!closed.get())logger.warn("I/O error on {}: {}",socket.getRemoteSocketAddress(),e.getClass().getSimpleName());}finally{cleanup();}}
-    private void startWriter(){writerThread=Thread.startVirtualThread(()->{try{while(!closed.get()){OutboundMessage message=outbound.take();if(message.type()==null)continue;writeNow(message.type(),message.payload());}}catch(InterruptedException e){Thread.currentThread().interrupt();}catch(IOException e){if(!closed.get())logger.warn("Output error on {}: {}",socket.getRemoteSocketAddress(),e.getClass().getSimpleName());cleanup();}});}
+    private void startWriter(){writerThread=Thread.startVirtualThread(()->{try{while(!closed.get()){OutboundMessageQueue.Entry message=outbound.take();try{writeNow(message.frame());}finally{outbound.complete(message);}}}catch(InterruptedException e){Thread.currentThread().interrupt();}catch(IOException e){if(!closed.get())logger.warn("Output error on {}: {}",socket.getRemoteSocketAddress(),e.getClass().getSimpleName());cleanup();}});}
     private void messageLoop()throws IOException{while(!socket.isClosed()){final Envelope envelope;try{envelope=codec.read(in);}catch(EOFException e){logger.info("Client disconnected: {}",socket.getRemoteSocketAddress());return;}catch(SocketTimeoutException e){if(authenticatedUserId==-1)return;throw e;}catch(RuntimeException e){logger.warn("Invalid protocol message from {}; closing connection",socket.getRemoteSocketAddress());return;}if(envelope==null||envelope.getType()==null){sendError("Invalid message envelope.");continue;}try{dispatch(envelope);}catch(Exception e){logger.error("Error handling {} from {}: {}",envelope.getType(),socket.getRemoteSocketAddress(),e.getClass().getSimpleName());sendError("An internal error occurred processing your request.");}}}
     private void dispatch(Envelope envelope)throws Exception{switch(envelope.getType()){
         case PING->{if(PING_RATE_LIMITER.allow(buildAddressRateKey()))send(MessageType.PONG,null);}
@@ -104,11 +102,11 @@ public class ClientHandler implements Runnable {
     private void handleLeaveGroup(Envelope envelope)throws IOException,ValidationException{GroupJoinRequest req=codec.unwrap(envelope,GroupJoinRequest.class);if(req==null){sendError("Invalid group leave request.");return;}groupService.leave(authenticatedUserId,req.getGroupId());send(MessageType.S2C_GROUP_LIST,new GroupListResponse(groupService.list(authenticatedUserId)));sendNotification("Group left","You left group #"+req.getGroupId()+".","INFO");}
     private void handleGroupMessage(Envelope envelope)throws IOException,ValidationException{GroupMessageRequest req=codec.unwrap(envelope,GroupMessageRequest.class);if(req==null){sendError("Invalid group message request.");return;}GroupMessageEvent event=groupService.sendMessage(authenticatedUserId,authenticatedUsername,req.getGroupId(),req.getMessage());for(int memberId:groupService.members(req.getGroupId())){ClientHandler member=server.getHandler(memberId);if(member!=null)member.sendAsync(MessageType.S2C_GROUP_MESSAGE,event);}}
     private void handleGroupHistory(Envelope envelope)throws IOException,ValidationException{GroupHistoryRequest req=codec.unwrap(envelope,GroupHistoryRequest.class);if(req==null){sendError("Invalid group history request.");return;}send(MessageType.S2C_GROUP_HISTORY,new GroupHistoryResponse(req.getGroupId(),groupService.history(authenticatedUserId,req.getGroupId(),req.getLimit(),req.getBeforeMessageId())));}
-    void send(MessageType type,Object payload)throws IOException{if(closed.get())throw new IOException("Client connection is closed");if(!outbound.offer(new OutboundMessage(type,payload)))throw new IOException("Client outbound queue is full");}
-    void sendAsync(MessageType type,Object payload){if(closed.get()||!outbound.offer(new OutboundMessage(type,payload))){logger.warn("Outbound queue full or client closed for user {}; closing connection",authenticatedUserId);cleanup();}}
-    private void writeNow(MessageType type,Object payload)throws IOException{if(out==null)throw new IOException("Client output stream is not initialized");codec.write(out,codec.wrap(type,payload));}
+    void send(MessageType type,Object payload)throws IOException{if(closed.get())throw new IOException("Client connection is closed");byte[] frame=codec.encode(codec.wrap(type,payload));if(!outbound.offer(frame))throw new IOException("Client outbound queue is full");}
+    void sendAsync(MessageType type,Object payload){if(closed.get())return;try{byte[] frame=codec.encode(codec.wrap(type,payload));if(!outbound.offer(frame)){logger.warn("Outbound queue full or client closed for user {}; closing connection",authenticatedUserId);cleanup();}}catch(IOException|RuntimeException e){logger.warn("Unable to prepare outbound message for user {}; closing connection ({})",authenticatedUserId,e.getClass().getSimpleName());cleanup();}}
+    private void writeNow(byte[] frame)throws IOException{if(out==null)throw new IOException("Client output stream is not initialized");out.writeInt(frame.length);out.write(frame);out.flush();}
     private void sendError(String message){int errors=protocolErrors.incrementAndGet();try{send(MessageType.S2C_ERROR,new AuthFailedResponse(message));}catch(IOException e){logger.debug("Unable to send error response to {}",socket.getRemoteSocketAddress());return;}if(errors>=MAX_PROTOCOL_ERRORS){logger.info("Protocol error budget exhausted for {}; closing connection",socket.getRemoteSocketAddress());closeConnection();}}
     private void handleLogout(){if(sessionToken!=null)authService.logout(sessionToken);closeConnection();}
-    private void cleanup(){if(!closed.compareAndSet(false,true))return;Thread watcher=sessionExpiryThread;if(watcher!=null)watcher.interrupt();if(authenticatedUserId!=-1){authService.logout(sessionToken);server.deregisterClient(authenticatedUserId,this);}server.handlerClosed(this);try{socket.close();}catch(IOException ignored){}Thread writer=writerThread;if(writer!=null)writer.interrupt();outbound.clear();}
+    private void cleanup(){if(!closed.compareAndSet(false,true))return;Thread watcher=sessionExpiryThread;if(watcher!=null)watcher.interrupt();if(authenticatedUserId!=-1){authService.logout(sessionToken);server.deregisterClient(authenticatedUserId,this);}server.handlerClosed(this);try{socket.close();}catch(IOException ignored){}outbound.close();Thread writer=writerThread;if(writer!=null)writer.interrupt();}
     void closeConnection(){try{socket.close();}catch(IOException ignored){ }cleanup();}
 }
