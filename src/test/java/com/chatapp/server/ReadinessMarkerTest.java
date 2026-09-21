@@ -1,5 +1,6 @@
 package com.chatapp.server;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -37,7 +38,7 @@ class ReadinessMarkerTest {
         marker.markReady();
 
         assertTrue(Files.isRegularFile(markerPath));
-        assertEqualsZero(Files.size(markerPath));
+        assertEquals(0, Files.size(markerPath));
     }
 
     @Test
@@ -77,9 +78,5 @@ class ReadinessMarkerTest {
     @Test
     void rejectsNullPath() {
         assertThrows(IllegalArgumentException.class, () -> new ReadinessMarker(null));
-    }
-
-    private static void assertEqualsZero(long value) {
-        assertTrue(value == 0, "expected zero-length marker but was " + value);
     }
 }
