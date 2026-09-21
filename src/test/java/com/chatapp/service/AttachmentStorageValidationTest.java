@@ -25,7 +25,7 @@ class AttachmentStorageValidationTest {
     void acceptsPlainTextWithoutBinarySignature() throws ValidationException {
         AttachmentStorageService storage = new AttachmentStorageService();
         byte[] source = "hello chat".getBytes(java.nio.charset.StandardCharsets.UTF_8);
-        AttachmentStorageService.StoredFile stored = storage.store("hello.txt", "text/plain", source);
+        AttachmentStorage.StoredFile stored = storage.store("hello.txt", "text/plain", source);
         try {
             assertArrayEquals(source, storage.load(stored.fileId()));
         } finally {
