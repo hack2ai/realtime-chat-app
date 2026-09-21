@@ -323,6 +323,11 @@ realtime-chat-app/
 - [x] Phase 6 — notifications, deployment packaging, CI/CD hardening, rate limiting, dependency automation, and configurable TLS
 - [x] Phase 7 — production verification, container hardening, CI/CD supply-chain protection, deployment smoke tests, and build provenance attestations
 - [ ] Phase 8 — production observability, managed storage, certificate lifecycle automation, and external security testing
+  - [x] Operational readiness heartbeat and server metrics logging
+  - [x] Attachment storage abstraction for managed-object-storage adapters
+  - [ ] Provider-specific object storage integration and retention policy
+  - [ ] Automated certificate renewal integration
+  - [ ] External penetration/security testing
 
 ## Development
 
