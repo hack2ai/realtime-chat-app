@@ -92,9 +92,9 @@ public final class AppConfig {
     public static String getDbName() { return require("db.name"); }
     public static String getDbUser() { return require("db.user"); }
     public static String getDbPassword() { return requireSecret("db.password"); }
-    public static int getDbPoolMinIdle() { return requirePositiveInt("db.pool.minIdle"); }
+    public static int getDbPoolMinIdle() { return requireRange("db.pool.minIdle", 1, 50); }
     public static int getDbPoolMaxSize() {
-        int value = requirePositiveInt("db.pool.maxSize");
+        int value = requireRange("db.pool.maxSize", 1, 100);
         if (value < getDbPoolMinIdle()) throw new IllegalStateException("Config key 'db.pool.maxSize' must be at least db.pool.minIdle.");
         return value;
     }
