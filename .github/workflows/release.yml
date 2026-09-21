@@ -66,20 +66,20 @@ jobs:
           test -z "$unexpected_secrets"
 
       - name: Verify and package
-        run: mvn --batch-mode --no-transfer-progress verify
+        run: mvn --batch-mode --no-transfer-progress --strict-checksums verify
 
       - name: Verify release version matches project
         env:
           RELEASE_VERSION: ${{ github.ref_name }}
         run: |
-          PROJECT_VERSION=$(mvn --batch-mode --no-transfer-progress -q -DforceStdout help:evaluate -Dexpression=project.version)
+          PROJECT_VERSION=$(mvn --batch-mode --no-transfer-progress --strict-checksums -q -DforceStdout help:evaluate -Dexpression=project.version)
           TEST_VERSION="${RELEASE_VERSION#v}"
           test "$PROJECT_VERSION" = "$TEST_VERSION"
           echo "PROJECT_VERSION=$PROJECT_VERSION" >> "$GITHUB_ENV"
 
       - name: Generate software bill of materials
         run: |
-          mvn --batch-mode --no-transfer-progress org.cyclonedx:cyclonedx-maven-plugin:2.9.3:makeAggregateBom -DoutputFormat=json -DoutputName=chatapp-sbom
+          mvn --batch-mode --no-transfer-progress --strict-checksums org.cyclonedx:cyclonedx-maven-plugin:2.9.3:makeAggregateBom -DoutputFormat=json -DoutputName=chatapp-sbom
           test -s target/chatapp-sbom.json
 
       - name: Verify release SBOM
