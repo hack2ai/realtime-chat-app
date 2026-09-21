@@ -243,7 +243,7 @@ The TCP server listens on port `5050`. The JavaFX desktop client can connect to 
 docker compose down
 ```
 
-The server container runs as a non-root user. The Compose database is intended for development/demo environments; production deployments should use managed MySQL, application TLS, TLS for database traffic where appropriate, an external secret manager, and durable object storage for attachments.
+The server container runs as a non-root user. The Compose database is intended for development/demo environments. For encrypted database transport, set `CHATAPP_DB_USESSL=true` and choose `CHATAPP_DB_SSLMODE=REQUIRED`, `VERIFY_CA`, or `VERIFY_IDENTITY` as appropriate for your certificate setup. Production deployments should use managed MySQL, application TLS, an external secret manager, and durable object storage for attachments.
 
 ### Automated releases
 
