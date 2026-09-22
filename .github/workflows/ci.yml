@@ -174,6 +174,10 @@ jobs:
             .services.db.security_opt == ["no-new-privileges:true"] and
             .services.db.logging.options["max-size"] == "10m" and
             .services.db.logging.options["max-file"] == "3" and
+            ((.services.db.healthcheck.test[1] | tostring) | contains("MYSQL_PASSWORD")) and
+            ((.services.db.healthcheck.test[1] | tostring) | contains("MYSQL_USER")) and
+            ((.services.db.healthcheck.test[1] | tostring) | contains("mysqladmin ping")) and
+            ((.services.db.healthcheck.test[1] | tostring) | contains("MYSQL_ROOT_PASSWORD") | not) and
             (.services.db.ports == null) and
             .networks.backend.internal == true
           ' >/dev/null
