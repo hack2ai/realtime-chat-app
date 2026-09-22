@@ -40,7 +40,7 @@ public final class TlsContextFactory {
                 context.init(keyManagers.getKeyManagers(), null, null);
                 return context;
             } finally {
-                java.util.Arrays.fill(password, '\\0');
+                java.util.Arrays.fill(password, '\0');
             }
         } catch (Exception e) {
             throw new IllegalStateException("Unable to initialize TLS server context.", e);
@@ -92,7 +92,7 @@ public final class TlsContextFactory {
                     }
                     trustManagers.init(trustStore);
                 } finally {
-                    java.util.Arrays.fill(password, '\\0');
+                    java.util.Arrays.fill(password, '\0');
                 }
             }
             SSLContext context = SSLContext.getInstance(TLS_PROTOCOL);
