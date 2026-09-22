@@ -116,7 +116,7 @@
                                     <version>[21,22)</version>
                                 </requireJavaVersion>
                                 <requireMavenVersion>
-                                    <version>[3.8,)</version>
+                                    <version>[3.9,4)</version>
                                 </requireMavenVersion>
                                 <requireReleaseDeps>
                                     <message>Release builds must use released dependency versions; remove any SNAPSHOT or other unreleased dependency.</message>
