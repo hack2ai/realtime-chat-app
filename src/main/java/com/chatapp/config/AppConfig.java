@@ -125,6 +125,9 @@ public final class AppConfig {
     public static boolean isTlsEnabled() { return optionalBoolean("tls.enabled", false); }
     public static String getTlsKeyStorePath() { return require("tls.keyStorePath"); }
     public static String getTlsKeyStorePassword() { return requireSecret("tls.keyStorePassword"); }
+    public static int getTlsCertificateExpiryWarningDays() {
+        return optionalRange("tls.certificateExpiryWarningDays", 30, 0, 3650);
+    }
     public static boolean isClientTlsEnabled() { return optionalBoolean("client.tls.enabled", false); }
     public static String getTlsTrustStorePath() { return optional("client.tls.trustStorePath", ""); }
     public static String getTlsTrustStorePassword() { return optional("client.tls.trustStorePassword", ""); }
