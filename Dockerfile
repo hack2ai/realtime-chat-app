@@ -5,7 +5,8 @@ COPY --chown=builder:builder pom.xml .
 COPY --chown=builder:builder src ./src
 USER builder
 ENV MAVEN_CONFIG=/home/builder/.m2
-RUN mvn --batch-mode --no-transfer-progress --strict-checksums -DskipTests package
+RUN test "$(id -u)" -eq 10000 && test "$(id -un)" = "builder" \
+    && mvn --batch-mode --no-transfer-progress --strict-checksums -DskipTests package
 
 FROM eclipse-temurin:21.0.12_8-jre-noble
 WORKDIR /app
