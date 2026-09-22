@@ -11,6 +11,9 @@ public final class ServerMetrics {
     private final AtomicLong acceptedConnections = new AtomicLong();
     private final AtomicLong rateLimitedConnections = new AtomicLong();
     private final AtomicLong capacityRejectedConnections = new AtomicLong();
+    private final AtomicLong successfulAuthentications = new AtomicLong();
+    private final AtomicLong failedAuthentications = new AtomicLong();
+    private final AtomicLong protocolErrors = new AtomicLong();
 
     public void connectionAccepted() {
         acceptedConnections.incrementAndGet();
@@ -28,6 +31,18 @@ public final class ServerMetrics {
 
     public void connectionCapacityRejected() {
         capacityRejectedConnections.incrementAndGet();
+    }
+
+    public void authenticationSucceeded() {
+        successfulAuthentications.incrementAndGet();
+    }
+
+    public void authenticationFailed() {
+        failedAuthentications.incrementAndGet();
+    }
+
+    public void protocolError() {
+        protocolErrors.incrementAndGet();
     }
 
     public long activeConnections() {
@@ -50,6 +65,18 @@ public final class ServerMetrics {
         return capacityRejectedConnections.get();
     }
 
+    public long successfulAuthentications() {
+        return successfulAuthentications.get();
+    }
+
+    public long failedAuthentications() {
+        return failedAuthentications.get();
+    }
+
+    public long protocolErrors() {
+        return protocolErrors.get();
+    }
+
     public long uptimeSeconds() {
         return TimeUnit.NANOSECONDS.toSeconds(Math.max(0L, System.nanoTime() - startedAtNanos));
     }
@@ -69,6 +96,9 @@ public final class ServerMetrics {
                 + ", acceptedTotal=" + acceptedConnections()
                 + ", rateLimitedTotal=" + rateLimitedConnections()
                 + ", capacityRejectedTotal=" + capacityRejectedConnections()
+                + ", authSuccessTotal=" + successfulAuthentications()
+                + ", authFailureTotal=" + failedAuthentications()
+                + ", protocolErrorTotal=" + protocolErrors()
                 + ", uptimeSeconds=" + uptimeSeconds()
                 + ", usedHeapBytes=" + usedHeapBytes()
                 + ", maxHeapBytes=" + maxHeapBytes();
