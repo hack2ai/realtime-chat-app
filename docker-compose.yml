@@ -25,7 +25,7 @@ services:
       - ./src/main/resources/sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
       - ./docker/mysql/02-application-grants.sql:/docker-entrypoint-initdb.d/02-application-grants.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "MYSQL_PWD=\"$${MYSQL_ROOT_PASSWORD}\" mysqladmin ping -h 127.0.0.1 -u root --silent"]
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$${MYSQL_PASSWORD}\" mysqladmin ping -h 127.0.0.1 -u \"$${MYSQL_USER}\" --silent"]
       interval: 10s
       timeout: 5s
       retries: 10
