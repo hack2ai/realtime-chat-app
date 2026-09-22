@@ -30,7 +30,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.RejectedExecutionException;
@@ -60,11 +60,10 @@ public class ChatServer {
     public ChatServer(AuthenticationService authService) {
         this.authService = authService;
         int maxClients = AppConfig.getServerMaxClients();
-        int queueCapacity = Math.max(1, maxClients / 2);
         this.clientThreadPool = new ThreadPoolExecutor(
                 Math.min(4, maxClients), maxClients,
                 30L, TimeUnit.SECONDS,
-                new ArrayBlockingQueue<>(queueCapacity),
+                new SynchronousQueue<>(),
                 Thread.ofVirtual().factory(),
                 new ThreadPoolExecutor.AbortPolicy());
         this.clientThreadPool.allowCoreThreadTimeOut(true);
