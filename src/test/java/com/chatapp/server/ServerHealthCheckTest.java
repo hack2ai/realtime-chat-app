@@ -3,6 +3,8 @@ package com.chatapp.server;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.net.InetAddress;
+import java.net.ServerSocket;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
@@ -92,5 +94,27 @@ class ServerHealthCheckTest {
         assertFalse(ServerHealthCheck.isHealthy(null, modifiedAt, 30_000));
         assertFalse(ServerHealthCheck.isHealthy(marker, modifiedAt, -1));
         assertFalse(ServerHealthCheck.isHealthy(marker, modifiedAt - 1, 30_000));
+    }
+
+    @Test
+    void acceptsListeningLoopbackPort() throws Exception {
+        try (ServerSocket server = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
+            assertTrue(ServerHealthCheck.isListening(server.getLocalPort()));
+        }
+    }
+
+    @Test
+    void rejectsClosedLoopbackPort() throws Exception {
+        ServerSocket server = new ServerSocket(0, 1, InetAddress.getLoopbackAddress());
+        int port = server.getLocalPort();
+        server.close();
+
+        assertFalse(ServerHealthCheck.isListening(port));
+    }
+
+    @Test
+    void rejectsInvalidPort() {
+        assertFalse(ServerHealthCheck.isListening(0));
+        assertFalse(ServerHealthCheck.isListening(65536));
     }
 }
