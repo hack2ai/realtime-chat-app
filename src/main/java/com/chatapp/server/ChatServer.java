@@ -57,6 +57,18 @@ public class ChatServer {
     private volatile boolean running;
     private ServerSocket serverSocket;
 
+    void recordAuthenticationSuccess() {
+        serverMetrics.authenticationSucceeded();
+    }
+
+    void recordAuthenticationFailure() {
+        serverMetrics.authenticationFailed();
+    }
+
+    void recordProtocolError() {
+        serverMetrics.protocolError();
+    }
+
     public ChatServer(AuthenticationService authService) {
         this.authService = authService;
         int maxClients = AppConfig.getServerMaxClients();
