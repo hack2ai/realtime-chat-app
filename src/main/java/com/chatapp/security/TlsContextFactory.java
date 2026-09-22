@@ -21,7 +21,6 @@ public final class TlsContextFactory {
     private static final Logger logger = LoggerFactory.getLogger(TlsContextFactory.class);
     private static final String KEYSTORE_TYPE = "PKCS12";
     private static final String TLS_PROTOCOL = "TLS";
-    private static final long CERTIFICATE_EXPIRY_WARNING_DAYS = 30;
 
     private TlsContextFactory() {}
 
@@ -41,7 +40,7 @@ public final class TlsContextFactory {
                 context.init(keyManagers.getKeyManagers(), null, null);
                 return context;
             } finally {
-                java.util.Arrays.fill(password, '\0');
+                java.util.Arrays.fill(password, '\\0');
             }
         } catch (Exception e) {
             throw new IllegalStateException("Unable to initialize TLS server context.", e);
@@ -72,7 +71,8 @@ public final class TlsContextFactory {
         }
 
         long daysRemaining = Duration.between(now, earliestExpiry).toDays();
-        if (daysRemaining <= CERTIFICATE_EXPIRY_WARNING_DAYS) {
+        int warningDays = AppConfig.getTlsCertificateExpiryWarningDays();
+        if (daysRemaining <= warningDays) {
             logger.warn("TLS server certificate expires in {} days.", Math.max(0, daysRemaining));
         }
     }
@@ -92,7 +92,7 @@ public final class TlsContextFactory {
                     }
                     trustManagers.init(trustStore);
                 } finally {
-                    java.util.Arrays.fill(password, '\0');
+                    java.util.Arrays.fill(password, '\\0');
                 }
             }
             SSLContext context = SSLContext.getInstance(TLS_PROTOCOL);
