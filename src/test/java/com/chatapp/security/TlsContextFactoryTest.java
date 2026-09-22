@@ -1,11 +1,13 @@
 package com.chatapp.security;
 
+import com.chatapp.config.AppConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import javax.net.ssl.SSLContext;
 import java.nio.file.Path;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -73,6 +75,33 @@ class TlsContextFactoryTest {
         } finally {
             restoreProperty(pathProperty, previousPath);
             restoreProperty(passwordProperty, previousPassword);
+        }
+    }
+
+    @Test
+    void certificateExpiryWarningDaysCanBeConfiguredWithinSafeBounds() {
+        String property = "chatapp.tls.certificateExpiryWarningDays";
+        String previous = System.getProperty(property);
+        try {
+            System.setProperty(property, "45");
+            assertEquals(45, AppConfig.getTlsCertificateExpiryWarningDays());
+        } finally {
+            restoreProperty(property, previous);
+        }
+    }
+
+    @Test
+    void certificateExpiryWarningDaysRejectsValuesOutsideSafeBounds() {
+        String property = "chatapp.tls.certificateExpiryWarningDays";
+        String previous = System.getProperty(property);
+        try {
+            System.setProperty(property, "-1");
+            assertThrows(IllegalStateException.class, AppConfig::getTlsCertificateExpiryWarningDays);
+
+            System.setProperty(property, "3651");
+            assertThrows(IllegalStateException.class, AppConfig::getTlsCertificateExpiryWarningDays);
+        } finally {
+            restoreProperty(property, previous);
         }
     }
 
