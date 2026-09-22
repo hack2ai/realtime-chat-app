@@ -66,6 +66,14 @@ Rotate database credentials and TLS material through the deployment environment 
 
 Enable application TLS for deployments that cross an untrusted network. The server uses a PKCS12 keystore and the client can use the JVM default trust store or a configured private trust store.
 
+The server validates the certificate chain presented in its key entries at startup. It also warns when the earliest server certificate is within the configured renewal window:
+
+```properties
+tls.certificateExpiryWarningDays=30
+```
+
+The setting accepts `0` through `3650` days. Use a warning window that matches the organization's certificate renewal SLA; the default is 30 days.
+
 Before enabling TLS in production, verify certificate validity, hostname expectations, trust-chain distribution, and an operational certificate renewal process.
 
 ## Attachments
