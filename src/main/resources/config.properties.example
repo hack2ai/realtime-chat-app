@@ -35,6 +35,9 @@ tls.enabled=false
 # Required when tls.enabled=true. Use a PKCS12 keystore containing the server certificate/private key.
 tls.keyStorePath=config/server-keystore.p12
 tls.keyStorePassword=CHANGE_ME
+# Warn when the earliest server certificate expires within this many days.
+# Valid range: 0-3650. Default: 30.
+tls.certificateExpiryWarningDays=30
 # Enable on the desktop client when connecting to a TLS-enabled server.
 client.tls.enabled=false
 # Leave blank to use the JVM's default CA trust store; set a PKCS12 path for a private/self-signed CA.
