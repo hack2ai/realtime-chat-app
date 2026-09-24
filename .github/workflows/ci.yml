@@ -40,6 +40,9 @@ jobs:
       - name: Verify layered architecture
         run: python3 scripts/check_architecture.py
 
+      - name: Verify workflow hardening policy
+        run: python3 scripts/check_workflow_hardening.py
+
       - name: Verify action pinning
         run: |
           violations=$(grep -RhoE 'uses:[[:space:]]+[^@[:space:]]+@[^[:space:]#]+' .github/workflows | awk -F@ '$2 !~ /^[0-9a-fA-F]{40}$/')
