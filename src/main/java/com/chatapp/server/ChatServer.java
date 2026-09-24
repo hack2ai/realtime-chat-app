@@ -67,6 +67,10 @@ public class ChatServer {
         serverMetrics.protocolError();
     }
 
+    void recordOutboundQueueRejection() {
+        serverMetrics.outboundQueueRejected();
+    }
+
     public ChatServer(AuthenticationService authService) {
         this.authService = authService;
         int maxClients = AppConfig.getServerMaxClients();
