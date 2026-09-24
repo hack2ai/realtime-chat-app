@@ -62,9 +62,39 @@ public class TestClient {
                     Envelope response = codec.read(in);
                     System.out.println("Received: " + response.getType());
                 }
+                case "auth-smoke" -> runAuthSmoke(codec, in, out);
                 default -> printUsageAndExit();
             }
         }
+    }
+
+    private static void runAuthSmoke(MessageCodec codec, DataInputStream in, DataOutputStream out) throws IOException {
+        String suffix = Long.toUnsignedString(System.currentTimeMillis());
+        String username = "smoke" + suffix;
+        String email = username + "@example.com";
+        String password = "SmokePass9";
+
+        codec.write(out, codec.wrap(MessageType.C2S_REGISTER,
+                new RegisterRequest(username, email, password, password)));
+        Envelope registerResponse = codec.read(in);
+        if (registerResponse == null || registerResponse.getType() != MessageType.S2C_REGISTER_SUCCESS) {
+            throw new IOException("Authentication smoke test registration failed.");
+        }
+
+        codec.write(out, codec.wrap(MessageType.C2S_LOGIN,
+                new LoginRequest(username, password)));
+        Envelope loginResponse = codec.read(in);
+        if (loginResponse == null || loginResponse.getType() != MessageType.S2C_LOGIN_SUCCESS) {
+            throw new IOException("Authentication smoke test login failed.");
+        }
+
+        LoginSuccessResponse login = codec.unwrap(loginResponse, LoginSuccessResponse.class);
+        if (login == null || login.getUserId() <= 0
+                || login.getSessionToken() == null || login.getSessionToken().isBlank()) {
+            throw new IOException("Authentication smoke test returned an invalid session.");
+        }
+
+        System.out.println("Authentication smoke test passed.");
     }
 
     private static void handleAuthResponse(MessageCodec codec, DataInputStream in) throws IOException {
@@ -104,6 +134,7 @@ public class TestClient {
                   register <username> <email> <password> <confirmPassword>
                   login <usernameOrEmail> <password>
                   ping
+                  auth-smoke
                 """);
         System.exit(1);
     }
