@@ -11,6 +11,7 @@ public final class ServerMetrics {
     private final AtomicLong acceptedConnections = new AtomicLong();
     private final AtomicLong rateLimitedConnections = new AtomicLong();
     private final AtomicLong capacityRejectedConnections = new AtomicLong();
+    private final AtomicLong outboundQueueRejectedMessages = new AtomicLong();
     private final AtomicLong successfulAuthentications = new AtomicLong();
     private final AtomicLong failedAuthentications = new AtomicLong();
     private final AtomicLong protocolErrors = new AtomicLong();
@@ -31,6 +32,10 @@ public final class ServerMetrics {
 
     public void connectionCapacityRejected() {
         capacityRejectedConnections.incrementAndGet();
+    }
+
+    public void outboundQueueRejected() {
+        outboundQueueRejectedMessages.incrementAndGet();
     }
 
     public void authenticationSucceeded() {
@@ -65,6 +70,10 @@ public final class ServerMetrics {
         return capacityRejectedConnections.get();
     }
 
+    public long outboundQueueRejectedMessages() {
+        return outboundQueueRejectedMessages.get();
+    }
+
     public long successfulAuthentications() {
         return successfulAuthentications.get();
     }
@@ -96,6 +105,7 @@ public final class ServerMetrics {
                 + ", acceptedTotal=" + acceptedConnections()
                 + ", rateLimitedTotal=" + rateLimitedConnections()
                 + ", capacityRejectedTotal=" + capacityRejectedConnections()
+                + ", outboundQueueRejectedTotal=" + outboundQueueRejectedMessages()
                 + ", authSuccessTotal=" + successfulAuthentications()
                 + ", authFailureTotal=" + failedAuthentications()
                 + ", protocolErrorTotal=" + protocolErrors()
