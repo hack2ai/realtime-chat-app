@@ -10,6 +10,7 @@ from pathlib import Path
 WORKFLOW_DIR = Path(".github/workflows")
 JOB_RE = re.compile(r"^  ([A-Za-z0-9_.-]+):\s*$")
 TIMEOUT_RE = re.compile(r"^    timeout-minutes:\s*([0-9]+)\s*$")
+PERMISSIONS_RE = re.compile(r"^    permissions:\s*$")
 
 
 def validate_workflow(path: Path) -> list[str]:
@@ -26,13 +27,18 @@ def validate_workflow(path: Path) -> list[str]:
     in_jobs = False
     current_job: str | None = None
     current_has_timeout = False
+    current_has_permissions = False
 
     def finish_job() -> None:
-        nonlocal current_job, current_has_timeout
-        if current_job is not None and not current_has_timeout:
-            errors.append(f"job '{current_job}' is missing timeout-minutes")
+        nonlocal current_job, current_has_timeout, current_has_permissions
+        if current_job is not None:
+            if not current_has_timeout:
+                errors.append(f"job '{current_job}' is missing timeout-minutes")
+            if not current_has_permissions:
+                errors.append(f"job '{current_job}' is missing job-level permissions")
         current_job = None
         current_has_timeout = False
+        current_has_permissions = False
 
     for line in lines:
         if line == "jobs:":
@@ -51,8 +57,11 @@ def validate_workflow(path: Path) -> list[str]:
             current_job = job_match.group(1)
             continue
 
-        if current_job is not None and TIMEOUT_RE.match(line):
-            current_has_timeout = True
+        if current_job is not None:
+            if TIMEOUT_RE.match(line):
+                current_has_timeout = True
+            if PERMISSIONS_RE.match(line):
+                current_has_permissions = True
 
     finish_job()
     return errors
