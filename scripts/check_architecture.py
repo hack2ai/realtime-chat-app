@@ -6,11 +6,11 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src" / "main" / "java" / "com" / "chatapp"
 
 RULES = {
-    "client": r"import com\\.chatapp\\.(database|service|server)\\.",
-    "socket/protocol": r"import com\\.chatapp\\.(client|server|service|database|security)\\.",
-    "service": r"import com\\.chatapp\\.(client|server|socket)\\.",
-    "database": r"import com\\.chatapp\\.(client|server|service|socket|security)\\.",
-    "model": r"import com\\.chatapp\\.(client|server|service|database|socket|security|config)\\.",
+    "client": r"import com\.chatapp\.(database|service|server)\.",
+    "socket/protocol": r"import com\.chatapp\.(client|server|service|database|security)\.",
+    "service": r"import com\.chatapp\.(client|server|socket)\.",
+    "database": r"import com\.chatapp\.(client|server|service|socket|security)\.",
+    "model": r"import com\.chatapp\.(client|server|service|database|socket|security|config)\.",
 }
 
 for relative, pattern in RULES.items():
@@ -25,10 +25,10 @@ for relative, pattern in RULES.items():
                 raise SystemExit(1)
 
 for path in SRC.rglob("*.java"):
-    if str(path).startswith(str(SRC / "database") + "/"):
+    if path.is_relative_to(SRC / "database"):
         continue
     text = path.read_text(encoding="utf-8")
-    if re.search(r"import java\\.sql\\.|\\b(?:DriverManager|PreparedStatement|Statement|ResultSet)\\b", text):
+    if re.search(r"import java\.sql\.|\b(?:DriverManager|PreparedStatement|Statement|ResultSet)\b", text):
         print(f"Architecture violation: JDBC usage outside database layer: {path.relative_to(ROOT)}", file=sys.stderr)
         raise SystemExit(1)
 
