@@ -6,6 +6,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import javax.net.ssl.SSLContext;
 import java.nio.file.Path;
+import java.security.KeyStore;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -25,6 +26,34 @@ class TlsContextFactoryTest {
         try {
             System.setProperty(pathProperty, "");
             System.clearProperty(passwordProperty);
+
+            SSLContext context = TlsContextFactory.createClientContext();
+
+            assertNotNull(context);
+            assertNotNull(context.getSocketFactory());
+        } finally {
+            restoreProperty(pathProperty, previousPath);
+            restoreProperty(passwordProperty, previousPassword);
+        }
+    }
+
+    @Test
+    void clientContextLoadsConfiguredPkcs12TrustStore() throws Exception {
+        String pathProperty = "chatapp.client.tls.trustStorePath";
+        String passwordProperty = "chatapp.client.tls.trustStorePassword";
+        String previousPath = System.getProperty(pathProperty);
+        String previousPassword = System.getProperty(passwordProperty);
+        String password = "test-password";
+        Path trustStorePath = tempDir.resolve("client-truststore.p12");
+        try {
+            KeyStore trustStore = KeyStore.getInstance("PKCS12");
+            trustStore.load(null, password.toCharArray());
+            try (var output = java.nio.file.Files.newOutputStream(trustStorePath)) {
+                trustStore.store(output, password.toCharArray());
+            }
+
+            System.setProperty(pathProperty, trustStorePath.toString());
+            System.setProperty(passwordProperty, password);
 
             SSLContext context = TlsContextFactory.createClientContext();
 
