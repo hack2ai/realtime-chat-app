@@ -344,6 +344,12 @@ jobs:
           printf '%s\n' "$output"
           printf '%s\n' "$output" | grep -Fq "Received: PONG"
 
+      - name: Smoke test authentication flow
+        run: |
+          output="$(timeout 30s mvn --batch-mode --no-transfer-progress --strict-checksums -DskipTests exec:java -Dexec.mainClass=com.chatapp.client.TestClient -Dexec.args=auth-smoke 2>&1)"
+          printf '%s\n' "$output"
+          printf '%s\n' "$output" | grep -Fq "Authentication smoke test passed."
+
       - name: Verify database runtime grants
         env:
           CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
