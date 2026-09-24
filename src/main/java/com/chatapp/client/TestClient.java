@@ -159,7 +159,7 @@ public class TestClient {
             Envelope senderEnvelope = readUntilType(codec, senderIn, MessageType.S2C_PRIVATE_MESSAGE);
             PrivateMessageEvent senderEvent = codec.unwrap(senderEnvelope, PrivateMessageEvent.class);
             assertPrivateMessage(senderEvent, sender.getUserId(), receiver.getUserId(), messageText, "sender");
-            if (!senderEvent.getMessageId().equals(receiverEvent.getMessageId())) {
+            if (senderEvent.getMessageId() != receiverEvent.getMessageId()) {
                 throw new IOException("Private chat smoke test returned mismatched message IDs.");
             }
             if (!"DELIVERED".equals(senderEvent.getStatus())) {
