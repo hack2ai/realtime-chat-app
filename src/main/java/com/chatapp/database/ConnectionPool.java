@@ -133,6 +133,19 @@ public final class ConnectionPool {
         }
     }
 
+    /** Performs a lightweight database readiness check behind the persistence boundary. */
+    public boolean isHealthy() {
+        Connection connection = null;
+        try {
+            connection = borrowConnection();
+            return isValid(connection);
+        } catch (SQLException | RuntimeException e) {
+            return false;
+        } finally {
+            returnConnection(connection);
+        }
+    }
+
     public void returnConnection(Connection conn) {
         if (conn == null) return;
         if (shutdown.get() || !isValid(conn) || !availableConnections.offer(conn)) {
