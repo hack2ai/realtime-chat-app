@@ -40,6 +40,785 @@ jobs:
       - name: Verify layered architecture
         run: python3 scripts/check_architecture.py
 
+      - name: Verify workflow hardening policy
+        run: |
+          set -euo pipefail
+          for workflow in .github/workflows/*.yml; do
+            grep -Eq '^permissions:[[:space:]]*\\{\\}[[:space:]]*        run: |
+          violations=$(grep -RhoE 'uses:[[:space:]]+[^@[:space:]]+@[^[:space:]#]+' .github/workflows | awk -F@ '$2 !~ /^[0-9a-fA-F]{40}$/')
+          test -z "$violations"
+
+      - name: Verify Docker build context secret exclusions
+        run: |
+          required_patterns=(
+            '**/config.properties'
+            '**/.env'
+            '**/.env.*'
+            '**/secrets/**'
+            '**/*.p12'
+            '**/*.pfx'
+            '**/*.jks'
+            '**/*.keystore'
+            '**/*.pem'
+            '**/*.key'
+            '**/*.crt'
+          )
+          for pattern in "${required_patterns[@]}"; do
+            grep -Fxq "$pattern" .dockerignore || {
+              echo "Required Docker secret exclusion is missing: $pattern"
+              exit 1
+            }
+          done
+
+      - name: Verify Docker base image tags
+        run: |
+          base_images=$(awk '$1 == "FROM" {print $2}' Dockerfile)
+          test -n "$base_images"
+          while IFS= read -r image; do
+            image="${image%%@*}"
+            case "$image" in
+              *:latest|*:nightly|*:edge)
+                echo "Floating Docker base image tag is not allowed: $image"
+                exit 1
+                ;;
+              *:*)
+                ;;
+              *)
+                echo "Docker base image must use an explicit tag: $image"
+                exit 1
+                ;;
+            esac
+          done <<< "$base_images"
+
+      - name: Scan container configuration
+        uses: aquasecurity/trivy-action@d2a0b60797ff03db6132bd4e2b293f9b37081297 # immutable commit; Trivy v0.74.0
+        with:
+          scan-type: config
+          input: .
+          format: table
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          scanners: misconfig
+
+      - name: Verify repository contains no tracked secret artifacts
+        run: |
+          tracked_secrets=$(git ls-files -z | tr '\0' '\n' | grep -E '(^|/)(config\.properties|\.env(\..*)?|secrets/.*|[^/]+\.(p12|pfx|jks|keystore|pem|key|crt))$' || true)
+          unexpected_secrets=$(printf '%s\n' "$tracked_secrets" | grep -Fxv 'src/test/resources/config.properties' || true)
+          test -z "$unexpected_secrets"
+
+      - name: Verify and package
+        run: mvn --batch-mode --no-transfer-progress --strict-checksums verify
+
+      - name: Verify reproducible server package
+        run: |
+          cp target/chatapp-server.jar /tmp/chatapp-server-first.jar
+          mvn --batch-mode --no-transfer-progress --strict-checksums -DskipTests package
+          sha256sum /tmp/chatapp-server-first.jar target/chatapp-server.jar
+          cmp -s /tmp/chatapp-server-first.jar target/chatapp-server.jar
+
+      - name: Read project version
+        run: echo "PROJECT_VERSION=$(mvn --batch-mode --no-transfer-progress --strict-checksums -q -DforceStdout help:evaluate -Dexpression=project.version)" >> "$GITHUB_ENV"
+
+      - name: Verify runnable server package
+        run: |
+          test -s target/chatapp-server.jar
+          unzip -p target/chatapp-server.jar META-INF/MANIFEST.MF | tr -d '\r' | grep -Fxq "Main-Class: com.chatapp.server.ChatServer"
+
+      - name: Generate software bill of materials
+        run: |
+          mvn --batch-mode --no-transfer-progress --strict-checksums org.cyclonedx:cyclonedx-maven-plugin:2.9.3:makeAggregateBom -DoutputFormat=json -DoutputName=chatapp-sbom
+          test -s target/chatapp-sbom.json
+
+      - name: Verify software bill of materials
+        env:
+          PROJECT_VERSION: ${{ env.PROJECT_VERSION }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          sbom = json.loads(Path("target/chatapp-sbom.json").read_text(encoding="utf-8"))
+          component = sbom.get("metadata", {}).get("component", {})
+          if sbom.get("bomFormat") != "CycloneDX":
+              raise SystemExit("SBOM is not CycloneDX")
+          if component.get("name") != "realtime-chat-app":
+              raise SystemExit("SBOM component name mismatch")
+          if component.get("version") != os.environ["PROJECT_VERSION"]:
+              raise SystemExit("SBOM project version mismatch")
+          if not sbom.get("components"):
+              raise SystemExit("SBOM contains no dependency components")
+          PY
+
+      - name: Generate and verify checksums
+        run: |
+          sha256sum target/chatapp-server.jar > target/chatapp-server.jar.sha256
+          sha256sum --check target/chatapp-server.jar.sha256
+          sha256sum target/chatapp-sbom.json > target/chatapp-sbom.json.sha256
+          sha256sum --check target/chatapp-sbom.json.sha256
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: chatapp-server-${{ github.sha }}
+          path: |
+            target/chatapp-server.jar
+            target/chatapp-server.jar.sha256
+            target/chatapp-sbom.json
+            target/chatapp-sbom.json.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Validate Docker Compose configuration
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: docker compose config --quiet
+
+      - name: Verify Docker Compose hardening
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: |
+          docker compose config --format json | jq -e '
+            .services.server.read_only == true and
+            .services.server.init == true and
+            (.services.server.user | tostring) == "10001" and
+            .services.server.cpus == 1.0 and
+            ((.services.server.mem_limit == "768m") or (.services.server.mem_limit == 805306368)) and
+            .services.server.pids_limit == 256 and
+            .services.server.security_opt == ["no-new-privileges:true"] and
+            .services.server.cap_drop == ["ALL"] and
+            .services.server.logging.options["max-size"] == "10m" and
+            .services.server.logging.options["max-file"] == "3" and
+            ((.services.server.ports | length) == 1) and
+            (.services.server.ports[0].target == 5050) and
+            (((.services.server.ports[0].published | tostring | tonumber) == 5050)) and
+            (.services.server.ports[0].protocol == "tcp") and
+            .services.db.init == true and
+            .services.db.cpus == 2.0 and
+            ((.services.db.mem_limit == "1g") or (.services.db.mem_limit == 1073741824)) and
+            .services.db.pids_limit == 512 and
+            .services.db.security_opt == ["no-new-privileges:true"] and
+            .services.db.logging.options["max-size"] == "10m" and
+            .services.db.logging.options["max-file"] == "3" and
+            ((.services.db.healthcheck.test[1] | tostring) | contains("MYSQL_PASSWORD")) and
+            ((.services.db.healthcheck.test[1] | tostring) | contains("MYSQL_USER")) and
+            ((.services.db.healthcheck.test[1] | tostring) | contains("mysqladmin ping")) and
+            ((.services.db.healthcheck.test[1] | tostring) | contains("MYSQL_ROOT_PASSWORD") | not) and
+            (.services.db.ports == null) and
+            .networks.backend.internal == true
+          ' >/dev/null
+
+      - name: Build server container image
+        env:
+          PROJECT_VERSION: ${{ env.PROJECT_VERSION }}
+        run: |
+          docker build --pull --build-arg APP_VERSION="$PROJECT_VERSION" --build-arg VCS_REF="${{ github.sha }}" --tag realtime-chat-app:${{ github.sha }} .
+
+      - name: Scan server container image
+        uses: aquasecurity/trivy-action@d2a0b60797ff03db6132bd4e2b293f9b37081297 # immutable commit; Trivy v0.74.0
+        with:
+          scan-type: image
+          image-ref: realtime-chat-app:${{ github.sha }}
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+          vuln-type: os,library
+
+      - name: Generate container image SBOM
+        uses: aquasecurity/trivy-action@d2a0b60797ff03db6132bd4e2b293f9b37081297 # immutable commit; Trivy v0.74.0
+        with:
+          scan-type: image
+          image-ref: realtime-chat-app:${{ github.sha }}
+          format: cyclonedx
+          output: target/chatapp-container-sbom.json
+          exit-code: '0'
+          vuln-type: os,library
+
+      - name: Verify container image SBOM
+        run: |
+          test -s target/chatapp-container-sbom.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          sbom = json.loads(Path("target/chatapp-container-sbom.json").read_text(encoding="utf-8"))
+          if sbom.get("bomFormat") != "CycloneDX":
+              raise SystemExit("container SBOM is not CycloneDX")
+          if not sbom.get("specVersion"):
+              raise SystemExit("container SBOM is missing specVersion")
+          if not sbom.get("components"):
+              raise SystemExit("container SBOM contains no components")
+          PY
+          sha256sum target/chatapp-container-sbom.json > target/chatapp-container-sbom.json.sha256
+          sha256sum --check target/chatapp-container-sbom.json.sha256
+
+      - name: Upload container SBOM
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: chatapp-container-${{ github.sha }}
+          path: |
+            target/chatapp-container-sbom.json
+            target/chatapp-container-sbom.json.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Verify server image metadata
+        env:
+          PROJECT_VERSION: ${{ env.PROJECT_VERSION }}
+        run: |
+          test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{index .Config.Labels "org.opencontainers.image.source"}}')" = "https://github.com/hack2ai/realtime-chat-app"
+          test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{index .Config.Labels "org.opencontainers.image.description"}}')" = "Secure Java 21 real-time chat server"
+          test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{index .Config.Labels "org.opencontainers.image.licenses"}}')" = "MIT"
+          test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{index .Config.Labels "org.opencontainers.image.version"}}')" = "$PROJECT_VERSION"
+          test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "${{ github.sha }}"
+
+      - name: Verify server image is non-root
+        run: |
+          test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{.Config.User}}')" = "chatapp"
+
+      - name: Verify server image entrypoint
+        run: |
+          test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{json .Config.Entrypoint}}')" = '["java","-XX:+ExitOnOutOfMemoryError","-jar","/app/chatapp-server.jar"]'
+
+      - name: Verify server image lifecycle metadata
+        run: |
+          test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{json .Config.Healthcheck.Test}}')" = '["CMD","java","-cp","/app/chatapp-server.jar","com.chatapp.server.ServerHealthCheck"]'
+          test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{json .Config.ExposedPorts}}')" = '{"5050/tcp":{}}'
+          test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{.Config.StopSignal}}')" = "SIGTERM"
+
+      - name: Verify server image filesystem permissions
+        run: |
+          docker run --rm --entrypoint sh "realtime-chat-app:${{ github.sha }}" -c 'test "$(id -u)" = "10001" && test "$(stat -c %a /app/data/attachments)" = "700" && test -w /app/data/attachments && ! test -w /app && ! test -w /app/chatapp-server.jar'
+
+      - name: Verify server image contains no private-key artifacts
+        run: |
+          test -z "$(docker run --rm --entrypoint sh "realtime-chat-app:${{ github.sha }}" -c 'find /app -xdev -type f \( -name "*.p12" -o -name "*.pfx" -o -name "*.jks" -o -name "*.keystore" -o -name "*.pem" -o -name "*.key" -o -name "*.crt" \) -print 2>/dev/null')"
+
+      - name: Verify server image excludes build toolchain
+        run: |
+          docker run --rm --entrypoint sh "realtime-chat-app:${{ github.sha }}" -c 'test ! -e /workspace && test ! -e /root/.m2 && ! command -v mvn >/dev/null 2>&1'
+
+      - name: Verify server image has no setuid/setgid application files
+        run: |
+          test -z "$(docker run --rm --entrypoint sh "realtime-chat-app:${{ github.sha }}" -c 'find /app -xdev -type f -perm /6000 -print 2>/dev/null')"
+
+      - name: Verify server image has no secret-like environment variables
+        run: |
+          image_env=$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{json .Config.Env}}')
+          if printf '%s' "$image_env" | grep -Eq 'CHATAPP_(DB_PASSWORD|MYSQL_ROOT_PASSWORD|AUTH_.*(PASSWORD|SECRET|TOKEN))'; then
+            echo "application secret-like environment variable found in image metadata"
+            exit 1
+          fi
+
+      - name: Verify server image Java runtime
+        run: |
+          docker run --rm --entrypoint java "realtime-chat-app:${{ github.sha }}" -version
+
+      - name: Smoke test Docker Compose stack
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: |
+          docker compose up -d --build
+          for attempt in $(seq 1 45); do
+            server_id="$(docker compose ps -q server)"
+            if [ -n "$server_id" ]; then
+              state="$(docker inspect --format '{{.State.Status}}' "$server_id")"
+              health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$server_id")"
+              if [ "$health" = "healthy" ]; then
+                exit 0
+              fi
+              if [ "$state" = "exited" ] || [ "$health" = "unhealthy" ]; then
+                docker compose ps
+                exit 1
+              fi
+            fi
+            sleep 2
+          done
+          docker compose ps
+          exit 1
+
+      - name: Smoke test application protocol
+        run: |
+          output="$(timeout 15s mvn --batch-mode --no-transfer-progress --strict-checksums -DskipTests exec:java -Dexec.mainClass=com.chatapp.client.TestClient -Dexec.args=ping 2>&1)"
+          printf '%s\n' "$output"
+          printf '%s\n' "$output" | grep -Fq "Received: PONG"
+
+      - name: Smoke test authentication flow
+        run: |
+          output="$(timeout 30s mvn --batch-mode --no-transfer-progress --strict-checksums -DskipTests exec:java -Dexec.mainClass=com.chatapp.client.TestClient -Dexec.args=auth-smoke 2>&1)"
+          printf '%s\n' "$output"
+          printf '%s\n' "$output" | grep -Fq "Authentication smoke test passed."
+
+      - name: Smoke test private chat flow
+        run: |
+          output="$(timeout 45s mvn --batch-mode --no-transfer-progress --strict-checksums -DskipTests exec:java -Dexec.mainClass=com.chatapp.client.TestClient -Dexec.args=chat-smoke 2>&1)"
+          printf '%s\n' "$output"
+          printf '%s\n' "$output" | grep -Fq "Private chat smoke test passed."
+
+      - name: Verify database runtime grants
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: |
+          grants="$(docker compose exec -T -e MYSQL_PWD="$CHATAPP_MYSQL_ROOT_PASSWORD" db mysql -h 127.0.0.1 -u root -NBe "SHOW GRANTS FOR 'chatapp_user'@'%';")"
+          printf '%s\n' "$grants"
+          test "$(printf '%s\n' "$grants" | grep -c '^GRANT ')" -eq 2
+          printf '%s\n' "$grants" | grep -Fq 'GRANT USAGE ON *.* TO'
+          printf '%s\n' "$grants" | grep -Fq 'GRANT SELECT, INSERT, UPDATE, DELETE ON `chatapp_db`.* TO'
+          if printf '%s\n' "$grants" | grep -Eq 'GRANT OPTION|CREATE|ALTER|DROP|FILE|PROCESS|SHUTDOWN|SUPER|RELOAD|REPLICATION|TRIGGER|EVENT'; then
+            echo "database runtime account has unexpected privileges"
+            exit 1
+          fi
+
+      - name: Stop Docker Compose smoke test
+        if: always()
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: docker compose down -v
+
+  attest:
+    if: github.event_name == 'push'
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      attestations: write
+      id-token: write
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: chatapp-server-${{ github.sha }}
+          path: release-assets
+
+      - name: Verify downloaded build artifacts
+        run: |
+          cd release-assets
+          sha256sum --check chatapp-server-${{ github.sha }}.jar.sha256
+          sha256sum --check chatapp-sbom.json.sha256
+      - name: Attest server package
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-path: release-assets/chatapp-server.jar
+
+      - name: Attest server SBOM
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-path: release-assets/chatapp-sbom.json
+
+      - name: Download container SBOM
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: chatapp-container-${{ github.sha }}
+          path: container-assets
+
+      - name: Verify container SBOM
+        run: |
+          cd container-assets
+          sha256sum --check chatapp-container-sbom.json.sha256
+
+      - name: Attest container SBOM
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-path: container-assets/chatapp-container-sbom.json
+ "$workflow" || { echo "Top-level permissions must be {}: $workflow"; exit 1; }
+            grep -Eq '^concurrency:[[:space:]]*        run: |
+          violations=$(grep -RhoE 'uses:[[:space:]]+[^@[:space:]]+@[^[:space:]#]+' .github/workflows | awk -F@ '$2 !~ /^[0-9a-fA-F]{40}$/')
+          test -z "$violations"
+
+      - name: Verify Docker build context secret exclusions
+        run: |
+          required_patterns=(
+            '**/config.properties'
+            '**/.env'
+            '**/.env.*'
+            '**/secrets/**'
+            '**/*.p12'
+            '**/*.pfx'
+            '**/*.jks'
+            '**/*.keystore'
+            '**/*.pem'
+            '**/*.key'
+            '**/*.crt'
+          )
+          for pattern in "${required_patterns[@]}"; do
+            grep -Fxq "$pattern" .dockerignore || {
+              echo "Required Docker secret exclusion is missing: $pattern"
+              exit 1
+            }
+          done
+
+      - name: Verify Docker base image tags
+        run: |
+          base_images=$(awk '$1 == "FROM" {print $2}' Dockerfile)
+          test -n "$base_images"
+          while IFS= read -r image; do
+            image="${image%%@*}"
+            case "$image" in
+              *:latest|*:nightly|*:edge)
+                echo "Floating Docker base image tag is not allowed: $image"
+                exit 1
+                ;;
+              *:*)
+                ;;
+              *)
+                echo "Docker base image must use an explicit tag: $image"
+                exit 1
+                ;;
+            esac
+          done <<< "$base_images"
+
+      - name: Scan container configuration
+        uses: aquasecurity/trivy-action@d2a0b60797ff03db6132bd4e2b293f9b37081297 # immutable commit; Trivy v0.74.0
+        with:
+          scan-type: config
+          input: .
+          format: table
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          scanners: misconfig
+
+      - name: Verify repository contains no tracked secret artifacts
+        run: |
+          tracked_secrets=$(git ls-files -z | tr '\0' '\n' | grep -E '(^|/)(config\.properties|\.env(\..*)?|secrets/.*|[^/]+\.(p12|pfx|jks|keystore|pem|key|crt))$' || true)
+          unexpected_secrets=$(printf '%s\n' "$tracked_secrets" | grep -Fxv 'src/test/resources/config.properties' || true)
+          test -z "$unexpected_secrets"
+
+      - name: Verify and package
+        run: mvn --batch-mode --no-transfer-progress --strict-checksums verify
+
+      - name: Verify reproducible server package
+        run: |
+          cp target/chatapp-server.jar /tmp/chatapp-server-first.jar
+          mvn --batch-mode --no-transfer-progress --strict-checksums -DskipTests package
+          sha256sum /tmp/chatapp-server-first.jar target/chatapp-server.jar
+          cmp -s /tmp/chatapp-server-first.jar target/chatapp-server.jar
+
+      - name: Read project version
+        run: echo "PROJECT_VERSION=$(mvn --batch-mode --no-transfer-progress --strict-checksums -q -DforceStdout help:evaluate -Dexpression=project.version)" >> "$GITHUB_ENV"
+
+      - name: Verify runnable server package
+        run: |
+          test -s target/chatapp-server.jar
+          unzip -p target/chatapp-server.jar META-INF/MANIFEST.MF | tr -d '\r' | grep -Fxq "Main-Class: com.chatapp.server.ChatServer"
+
+      - name: Generate software bill of materials
+        run: |
+          mvn --batch-mode --no-transfer-progress --strict-checksums org.cyclonedx:cyclonedx-maven-plugin:2.9.3:makeAggregateBom -DoutputFormat=json -DoutputName=chatapp-sbom
+          test -s target/chatapp-sbom.json
+
+      - name: Verify software bill of materials
+        env:
+          PROJECT_VERSION: ${{ env.PROJECT_VERSION }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          sbom = json.loads(Path("target/chatapp-sbom.json").read_text(encoding="utf-8"))
+          component = sbom.get("metadata", {}).get("component", {})
+          if sbom.get("bomFormat") != "CycloneDX":
+              raise SystemExit("SBOM is not CycloneDX")
+          if component.get("name") != "realtime-chat-app":
+              raise SystemExit("SBOM component name mismatch")
+          if component.get("version") != os.environ["PROJECT_VERSION"]:
+              raise SystemExit("SBOM project version mismatch")
+          if not sbom.get("components"):
+              raise SystemExit("SBOM contains no dependency components")
+          PY
+
+      - name: Generate and verify checksums
+        run: |
+          sha256sum target/chatapp-server.jar > target/chatapp-server.jar.sha256
+          sha256sum --check target/chatapp-server.jar.sha256
+          sha256sum target/chatapp-sbom.json > target/chatapp-sbom.json.sha256
+          sha256sum --check target/chatapp-sbom.json.sha256
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: chatapp-server-${{ github.sha }}
+          path: |
+            target/chatapp-server.jar
+            target/chatapp-server.jar.sha256
+            target/chatapp-sbom.json
+            target/chatapp-sbom.json.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Validate Docker Compose configuration
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: docker compose config --quiet
+
+      - name: Verify Docker Compose hardening
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: |
+          docker compose config --format json | jq -e '
+            .services.server.read_only == true and
+            .services.server.init == true and
+            (.services.server.user | tostring) == "10001" and
+            .services.server.cpus == 1.0 and
+            ((.services.server.mem_limit == "768m") or (.services.server.mem_limit == 805306368)) and
+            .services.server.pids_limit == 256 and
+            .services.server.security_opt == ["no-new-privileges:true"] and
+            .services.server.cap_drop == ["ALL"] and
+            .services.server.logging.options["max-size"] == "10m" and
+            .services.server.logging.options["max-file"] == "3" and
+            ((.services.server.ports | length) == 1) and
+            (.services.server.ports[0].target == 5050) and
+            (((.services.server.ports[0].published | tostring | tonumber) == 5050)) and
+            (.services.server.ports[0].protocol == "tcp") and
+            .services.db.init == true and
+            .services.db.cpus == 2.0 and
+            ((.services.db.mem_limit == "1g") or (.services.db.mem_limit == 1073741824)) and
+            .services.db.pids_limit == 512 and
+            .services.db.security_opt == ["no-new-privileges:true"] and
+            .services.db.logging.options["max-size"] == "10m" and
+            .services.db.logging.options["max-file"] == "3" and
+            ((.services.db.healthcheck.test[1] | tostring) | contains("MYSQL_PASSWORD")) and
+            ((.services.db.healthcheck.test[1] | tostring) | contains("MYSQL_USER")) and
+            ((.services.db.healthcheck.test[1] | tostring) | contains("mysqladmin ping")) and
+            ((.services.db.healthcheck.test[1] | tostring) | contains("MYSQL_ROOT_PASSWORD") | not) and
+            (.services.db.ports == null) and
+            .networks.backend.internal == true
+          ' >/dev/null
+
+      - name: Build server container image
+        env:
+          PROJECT_VERSION: ${{ env.PROJECT_VERSION }}
+        run: |
+          docker build --pull --build-arg APP_VERSION="$PROJECT_VERSION" --build-arg VCS_REF="${{ github.sha }}" --tag realtime-chat-app:${{ github.sha }} .
+
+      - name: Scan server container image
+        uses: aquasecurity/trivy-action@d2a0b60797ff03db6132bd4e2b293f9b37081297 # immutable commit; Trivy v0.74.0
+        with:
+          scan-type: image
+          image-ref: realtime-chat-app:${{ github.sha }}
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+          vuln-type: os,library
+
+      - name: Generate container image SBOM
+        uses: aquasecurity/trivy-action@d2a0b60797ff03db6132bd4e2b293f9b37081297 # immutable commit; Trivy v0.74.0
+        with:
+          scan-type: image
+          image-ref: realtime-chat-app:${{ github.sha }}
+          format: cyclonedx
+          output: target/chatapp-container-sbom.json
+          exit-code: '0'
+          vuln-type: os,library
+
+      - name: Verify container image SBOM
+        run: |
+          test -s target/chatapp-container-sbom.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          sbom = json.loads(Path("target/chatapp-container-sbom.json").read_text(encoding="utf-8"))
+          if sbom.get("bomFormat") != "CycloneDX":
+              raise SystemExit("container SBOM is not CycloneDX")
+          if not sbom.get("specVersion"):
+              raise SystemExit("container SBOM is missing specVersion")
+          if not sbom.get("components"):
+              raise SystemExit("container SBOM contains no components")
+          PY
+          sha256sum target/chatapp-container-sbom.json > target/chatapp-container-sbom.json.sha256
+          sha256sum --check target/chatapp-container-sbom.json.sha256
+
+      - name: Upload container SBOM
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: chatapp-container-${{ github.sha }}
+          path: |
+            target/chatapp-container-sbom.json
+            target/chatapp-container-sbom.json.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Verify server image metadata
+        env:
+          PROJECT_VERSION: ${{ env.PROJECT_VERSION }}
+        run: |
+          test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{index .Config.Labels "org.opencontainers.image.source"}}')" = "https://github.com/hack2ai/realtime-chat-app"
+          test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{index .Config.Labels "org.opencontainers.image.description"}}')" = "Secure Java 21 real-time chat server"
+          test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{index .Config.Labels "org.opencontainers.image.licenses"}}')" = "MIT"
+          test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{index .Config.Labels "org.opencontainers.image.version"}}')" = "$PROJECT_VERSION"
+          test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "${{ github.sha }}"
+
+      - name: Verify server image is non-root
+        run: |
+          test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{.Config.User}}')" = "chatapp"
+
+      - name: Verify server image entrypoint
+        run: |
+          test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{json .Config.Entrypoint}}')" = '["java","-XX:+ExitOnOutOfMemoryError","-jar","/app/chatapp-server.jar"]'
+
+      - name: Verify server image lifecycle metadata
+        run: |
+          test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{json .Config.Healthcheck.Test}}')" = '["CMD","java","-cp","/app/chatapp-server.jar","com.chatapp.server.ServerHealthCheck"]'
+          test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{json .Config.ExposedPorts}}')" = '{"5050/tcp":{}}'
+          test "$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{.Config.StopSignal}}')" = "SIGTERM"
+
+      - name: Verify server image filesystem permissions
+        run: |
+          docker run --rm --entrypoint sh "realtime-chat-app:${{ github.sha }}" -c 'test "$(id -u)" = "10001" && test "$(stat -c %a /app/data/attachments)" = "700" && test -w /app/data/attachments && ! test -w /app && ! test -w /app/chatapp-server.jar'
+
+      - name: Verify server image contains no private-key artifacts
+        run: |
+          test -z "$(docker run --rm --entrypoint sh "realtime-chat-app:${{ github.sha }}" -c 'find /app -xdev -type f \( -name "*.p12" -o -name "*.pfx" -o -name "*.jks" -o -name "*.keystore" -o -name "*.pem" -o -name "*.key" -o -name "*.crt" \) -print 2>/dev/null')"
+
+      - name: Verify server image excludes build toolchain
+        run: |
+          docker run --rm --entrypoint sh "realtime-chat-app:${{ github.sha }}" -c 'test ! -e /workspace && test ! -e /root/.m2 && ! command -v mvn >/dev/null 2>&1'
+
+      - name: Verify server image has no setuid/setgid application files
+        run: |
+          test -z "$(docker run --rm --entrypoint sh "realtime-chat-app:${{ github.sha }}" -c 'find /app -xdev -type f -perm /6000 -print 2>/dev/null')"
+
+      - name: Verify server image has no secret-like environment variables
+        run: |
+          image_env=$(docker image inspect realtime-chat-app:${{ github.sha }} --format '{{json .Config.Env}}')
+          if printf '%s' "$image_env" | grep -Eq 'CHATAPP_(DB_PASSWORD|MYSQL_ROOT_PASSWORD|AUTH_.*(PASSWORD|SECRET|TOKEN))'; then
+            echo "application secret-like environment variable found in image metadata"
+            exit 1
+          fi
+
+      - name: Verify server image Java runtime
+        run: |
+          docker run --rm --entrypoint java "realtime-chat-app:${{ github.sha }}" -version
+
+      - name: Smoke test Docker Compose stack
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: |
+          docker compose up -d --build
+          for attempt in $(seq 1 45); do
+            server_id="$(docker compose ps -q server)"
+            if [ -n "$server_id" ]; then
+              state="$(docker inspect --format '{{.State.Status}}' "$server_id")"
+              health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$server_id")"
+              if [ "$health" = "healthy" ]; then
+                exit 0
+              fi
+              if [ "$state" = "exited" ] || [ "$health" = "unhealthy" ]; then
+                docker compose ps
+                exit 1
+              fi
+            fi
+            sleep 2
+          done
+          docker compose ps
+          exit 1
+
+      - name: Smoke test application protocol
+        run: |
+          output="$(timeout 15s mvn --batch-mode --no-transfer-progress --strict-checksums -DskipTests exec:java -Dexec.mainClass=com.chatapp.client.TestClient -Dexec.args=ping 2>&1)"
+          printf '%s\n' "$output"
+          printf '%s\n' "$output" | grep -Fq "Received: PONG"
+
+      - name: Smoke test authentication flow
+        run: |
+          output="$(timeout 30s mvn --batch-mode --no-transfer-progress --strict-checksums -DskipTests exec:java -Dexec.mainClass=com.chatapp.client.TestClient -Dexec.args=auth-smoke 2>&1)"
+          printf '%s\n' "$output"
+          printf '%s\n' "$output" | grep -Fq "Authentication smoke test passed."
+
+      - name: Smoke test private chat flow
+        run: |
+          output="$(timeout 45s mvn --batch-mode --no-transfer-progress --strict-checksums -DskipTests exec:java -Dexec.mainClass=com.chatapp.client.TestClient -Dexec.args=chat-smoke 2>&1)"
+          printf '%s\n' "$output"
+          printf '%s\n' "$output" | grep -Fq "Private chat smoke test passed."
+
+      - name: Verify database runtime grants
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: |
+          grants="$(docker compose exec -T -e MYSQL_PWD="$CHATAPP_MYSQL_ROOT_PASSWORD" db mysql -h 127.0.0.1 -u root -NBe "SHOW GRANTS FOR 'chatapp_user'@'%';")"
+          printf '%s\n' "$grants"
+          test "$(printf '%s\n' "$grants" | grep -c '^GRANT ')" -eq 2
+          printf '%s\n' "$grants" | grep -Fq 'GRANT USAGE ON *.* TO'
+          printf '%s\n' "$grants" | grep -Fq 'GRANT SELECT, INSERT, UPDATE, DELETE ON `chatapp_db`.* TO'
+          if printf '%s\n' "$grants" | grep -Eq 'GRANT OPTION|CREATE|ALTER|DROP|FILE|PROCESS|SHUTDOWN|SUPER|RELOAD|REPLICATION|TRIGGER|EVENT'; then
+            echo "database runtime account has unexpected privileges"
+            exit 1
+          fi
+
+      - name: Stop Docker Compose smoke test
+        if: always()
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: docker compose down -v
+
+  attest:
+    if: github.event_name == 'push'
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      attestations: write
+      id-token: write
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: chatapp-server-${{ github.sha }}
+          path: release-assets
+
+      - name: Verify downloaded build artifacts
+        run: |
+          cd release-assets
+          sha256sum --check chatapp-server-${{ github.sha }}.jar.sha256
+          sha256sum --check chatapp-sbom.json.sha256
+      - name: Attest server package
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-path: release-assets/chatapp-server.jar
+
+      - name: Attest server SBOM
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-path: release-assets/chatapp-sbom.json
+
+      - name: Download container SBOM
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: chatapp-container-${{ github.sha }}
+          path: container-assets
+
+      - name: Verify container SBOM
+        run: |
+          cd container-assets
+          sha256sum --check chatapp-container-sbom.json.sha256
+
+      - name: Attest container SBOM
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-path: container-assets/chatapp-container-sbom.json
+ "$workflow" || { echo "Concurrency policy is missing: $workflow"; exit 1; }
+            if ! awk '\n              /^jobs:[[:space:]]*$/ { in_jobs=1; next }\n              in_jobs && /^[^[:space:]]/ { in_jobs=0 }\n              in_jobs && /^  [A-Za-z0-9_-]+:[[:space:]]*$/ { job=$0; has_timeout=0; next }\n              in_jobs && /^    timeout-minutes:[[:space:]]*[0-9]+[[:space:]]*$/ { has_timeout=1; next }\n              in_jobs && /^  [A-Za-z0-9_-]+:[[:space:]]*$/ && job != "" && !has_timeout { print job; failed=1; has_timeout=0 }\n              END { if (failed) exit 1 }\n            ' "$workflow" >/tmp/workflow-jobs.txt; then
+              echo "A workflow job is missing timeout-minutes: $workflow"
+              cat /tmp/workflow-jobs.txt
+              exit 1
+            fi
+          done
+
       - name: Verify action pinning
         run: |
           violations=$(grep -RhoE 'uses:[[:space:]]+[^@[:space:]]+@[^[:space:]#]+' .github/workflows | awk -F@ '$2 !~ /^[0-9a-fA-F]{40}$/')
