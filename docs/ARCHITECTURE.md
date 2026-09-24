@@ -123,6 +123,8 @@ When adding a feature:
 5. Keep `ClientHandler` limited to protocol translation, session state, and routing.
 6. Add tests at the service/protocol boundary and persistence boundary where behavior warrants it.
 
+The CI pipeline runs `scripts/check_architecture.py` to reject forbidden cross-layer imports and JDBC usage outside the database layer. Keep this guard in sync when the architecture intentionally evolves.
+
 Avoid adding SQL to server handlers, database calls to JavaFX code, or filesystem-specific logic to business services.
 
 ## Current composition
