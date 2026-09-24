@@ -16,13 +16,12 @@ import java.net.Socket;
 
 /**
  * A bare command-line client for exercising the server's authentication
- * flow without needing the JavaFX UI (which doesn't exist until Phase 4).
+ * flow without needing the JavaFX UI.
  *
  * <p>This is a development/testing aid, not part of the end-user
- * product — its only job is to prove the wire protocol, codec framing,
- * and {@code AuthenticationService} integration all work correctly
- * together over a real socket, end to end. Run {@code ChatServer} first,
- * then run this class with arguments to register or log in.
+ * product — its job is to prove the wire protocol, codec framing,
+ * and {@code AuthenticationService} integration all work together
+ * over a real socket, end to end. Run {@code ChatServer} first.
  *
  * <p>Usage:
  * <pre>
@@ -31,6 +30,8 @@ import java.net.Socket;
  * </pre>
  */
 public class TestClient {
+
+    private static final String GENERIC_LOGIN_FAILURE = "Invalid username/email or password.";
 
     public static void main(String[] args) throws IOException {
         if (args.length < 1) {
@@ -82,6 +83,24 @@ public class TestClient {
         }
 
         codec.write(out, codec.wrap(MessageType.C2S_LOGIN,
+                new LoginRequest(username, "WrongPass9")));
+        Envelope wrongPasswordResponse = codec.read(in);
+        assertGenericLoginFailure(codec, wrongPasswordResponse, "wrong password");
+
+        codec.write(out, codec.wrap(MessageType.C2S_LOGIN,
+                new LoginRequest("missing" + suffix, password)));
+        Envelope missingUserResponse = codec.read(in);
+        assertGenericLoginFailure(codec, missingUserResponse, "unknown account");
+
+        AuthFailedResponse wrongPassword = codec.unwrap(wrongPasswordResponse, AuthFailedResponse.class);
+        AuthFailedResponse missingUser = codec.unwrap(missingUserResponse, AuthFailedResponse.class);
+        if (!GENERIC_LOGIN_FAILURE.equals(wrongPassword.getReason())
+                || !GENERIC_LOGIN_FAILURE.equals(missingUser.getReason())
+                || !wrongPassword.getReason().equals(missingUser.getReason())) {
+            throw new IOException("Authentication smoke test exposed inconsistent login failure responses.");
+        }
+
+        codec.write(out, codec.wrap(MessageType.C2S_LOGIN,
                 new LoginRequest(username, password)));
         Envelope loginResponse = codec.read(in);
         if (loginResponse == null || loginResponse.getType() != MessageType.S2C_LOGIN_SUCCESS) {
@@ -95,6 +114,17 @@ public class TestClient {
         }
 
         System.out.println("Authentication smoke test passed.");
+    }
+
+    private static void assertGenericLoginFailure(MessageCodec codec, Envelope response, String scenario)
+            throws IOException {
+        if (response == null || response.getType() != MessageType.S2C_LOGIN_FAILED) {
+            throw new IOException("Authentication smoke test " + scenario + " unexpectedly succeeded.");
+        }
+        AuthFailedResponse failure = codec.unwrap(response, AuthFailedResponse.class);
+        if (failure == null || !GENERIC_LOGIN_FAILURE.equals(failure.getReason())) {
+            throw new IOException("Authentication smoke test " + scenario + " returned a non-generic failure.");
+        }
     }
 
     private static void handleAuthResponse(MessageCodec codec, DataInputStream in) throws IOException {
