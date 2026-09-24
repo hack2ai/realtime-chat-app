@@ -37,6 +37,9 @@ jobs:
       - name: Check repository diff
         run: git diff --check
 
+      - name: Verify layered architecture
+        run: python3 scripts/check_architecture.py
+
       - name: Verify action pinning
         run: |
           violations=$(grep -RhoE 'uses:[[:space:]]+[^@[:space:]]+@[^[:space:]#]+' .github/workflows | awk -F@ '$2 !~ /^[0-9a-fA-F]{40}$/')
