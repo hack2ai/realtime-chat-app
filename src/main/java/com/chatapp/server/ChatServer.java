@@ -22,8 +22,6 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
 import java.nio.file.Path;
-import java.sql.Connection;
-import java.sql.SQLException;
 import java.time.Duration;
 import java.util.Collection;
 import java.util.Set;
@@ -147,14 +145,8 @@ public class ChatServer {
     }
 
     private void verifyDatabaseReady() throws IOException {
-        Connection connection = null;
-        try {
-            connection = ConnectionPool.getInstance().borrowConnection();
-            if (!connection.isValid(2)) throw new SQLException("Database connection validation failed.");
-        } catch (SQLException | RuntimeException e) {
-            throw new IOException("Database is not ready.", e);
-        } finally {
-            if (connection != null) ConnectionPool.getInstance().returnConnection(connection);
+        if (!ConnectionPool.getInstance().isHealthy()) {
+            throw new IOException("Database is not ready.");
         }
     }
 
