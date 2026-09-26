@@ -1,4 +1,4 @@
-FROM maven:3.9.16-eclipse-temurin-21-noble AS build
+FROM maven:3-eclipse-temurin-24-noble AS build
 RUN useradd --create-home --uid 10000 builder && mkdir -p /workspace && chown builder:builder /workspace
 WORKDIR /workspace
 COPY --chown=builder:builder pom.xml .
