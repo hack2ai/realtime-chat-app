@@ -11,6 +11,9 @@ WORKFLOW_DIR = Path(".github/workflows")
 JOB_RE = re.compile(r"^  ([A-Za-z0-9_.-]+):\s*$")
 TIMEOUT_RE = re.compile(r"^    timeout-minutes:\s*([0-9]+)\s*$")
 PERMISSIONS_RE = re.compile(r"^    permissions:\s*$")
+CHECKOUT_RE = re.compile(r"^        uses:\s+actions/checkout@[0-9a-fA-F]{40}(?:\s+#.*)?$")
+STEP_RE = re.compile(r"^      - name:\s+")
+PULL_REQUEST_TARGET_RE = re.compile(r"^\s*pull_request_target:\s*$")
 
 
 def validate_workflow(path: Path) -> list[str]:
@@ -23,6 +26,9 @@ def validate_workflow(path: Path) -> list[str]:
 
     if not re.search(r"^concurrency:\s*$", text, re.MULTILINE):
         errors.append("missing top-level concurrency policy")
+
+    if PULL_REQUEST_TARGET_RE.search(text, re.MULTILINE):
+        errors.append("pull_request_target is not allowed")
 
     in_jobs = False
     current_job: str | None = None
@@ -40,7 +46,15 @@ def validate_workflow(path: Path) -> list[str]:
         current_has_timeout = False
         current_has_permissions = False
 
-    for line in lines:
+    def validate_checkout(start_index: int) -> None:
+        index = start_index + 1
+        while index < len(lines) and not STEP_RE.match(lines[index]):
+            index += 1
+        block = lines[start_index:index]
+        if not any(line.strip() == "persist-credentials: false" for line in block):
+            errors.append("actions/checkout must set persist-credentials: false")
+
+    for index, line in enumerate(lines):
         if line == "jobs:":
             in_jobs = True
             continue
@@ -49,6 +63,8 @@ def validate_workflow(path: Path) -> list[str]:
             break
 
         if not in_jobs:
+            if CHECKOUT_RE.match(line):
+                validate_checkout(index)
             continue
 
         job_match = JOB_RE.match(line)
@@ -62,6 +78,9 @@ def validate_workflow(path: Path) -> list[str]:
                 current_has_timeout = True
             if PERMISSIONS_RE.match(line):
                 current_has_permissions = True
+
+        if CHECKOUT_RE.match(line):
+            validate_checkout(index)
 
     finish_job()
     return errors
