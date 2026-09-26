@@ -51,6 +51,30 @@ jobs:
           violations=$(grep -RhoE 'uses:[[:space:]]+[^@[:space:]]+@[^[:space:]#]+' .github/workflows | awk -F@ '$2 !~ /^[0-9a-fA-F]{40}$/')
           test -z "$violations"
 
+      - name: Verify security-sensitive CODEOWNERS coverage
+        run: |
+          required_patterns=(
+            '/.github/ @hack2ai'
+            '/Dockerfile @hack2ai'
+            '/docker-compose.yml @hack2ai'
+            '/pom.xml @hack2ai'
+            '/SECURITY.md @hack2ai'
+            '/src/main/java/com/chatapp/auth/ @hack2ai'
+            '/src/main/java/com/chatapp/config/ @hack2ai'
+            '/src/main/java/com/chatapp/database/ @hack2ai'
+            '/src/main/java/com/chatapp/server/ @hack2ai'
+            '/src/main/java/com/chatapp/service/ @hack2ai'
+            '/src/main/java/com/chatapp/socket/ @hack2ai'
+            '/src/main/resources/sql/ @hack2ai'
+            '/src/main/resources/config.properties.example @hack2ai'
+          )
+          for pattern in "${required_patterns[@]}"; do
+            grep -Fxq "$pattern" .github/CODEOWNERS || {
+              echo "Required CODEOWNERS coverage is missing: $pattern"
+              exit 1
+            }
+          done
+
       - name: Verify Docker build context secret exclusions
         run: |
           required_patterns=(
