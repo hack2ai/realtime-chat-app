@@ -180,35 +180,77 @@ jobs:
           CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
           CHATAPP_DB_PASSWORD: ci-app-password
         run: |
-          docker compose config --format json | jq -e '
-            .services.server.read_only == true and
-            .services.server.init == true and
-            (.services.server.user | tostring) == "10001" and
-            .services.server.cpus == 1.0 and
-            ((.services.server.mem_limit == "768m") or (.services.server.mem_limit == 805306368)) and
-            .services.server.pids_limit == 256 and
-            .services.server.security_opt == ["no-new-privileges:true"] and
-            .services.server.cap_drop == ["ALL"] and
-            .services.server.logging.options["max-size"] == "10m" and
-            .services.server.logging.options["max-file"] == "3" and
-            ((.services.server.ports | length) == 1) and
-            (.services.server.ports[0].target == 5050) and
-            (((.services.server.ports[0].published | tostring | tonumber) == 5050)) and
-            (.services.server.ports[0].protocol == "tcp") and
-            .services.db.init == true and
-            .services.db.cpus == 2.0 and
-            ((.services.db.mem_limit == "1g") or (.services.db.mem_limit == 1073741824)) and
-            .services.db.pids_limit == 512 and
-            .services.db.security_opt == ["no-new-privileges:true"] and
-            .services.db.logging.options["max-size"] == "10m" and
-            .services.db.logging.options["max-file"] == "3" and
-            ((.services.db.healthcheck.test[1] | tostring) | contains("MYSQL_PASSWORD")) and
-            ((.services.db.healthcheck.test[1] | tostring) | contains("MYSQL_USER")) and
-            ((.services.db.healthcheck.test[1] | tostring) | contains("mysqladmin ping")) and
-            ((.services.db.healthcheck.test[1] | tostring) | contains("MYSQL_ROOT_PASSWORD") | not) and
-            (.services.db.ports == null or (.services.db.ports | length) == 0) and
-            .networks.backend.internal == true
-          ' >/dev/null
+          docker compose config --format json > /tmp/chatapp-compose.json
+          python3 - <<'PY'
+          import json
+          import re
+          from pathlib import Path
+
+          config = json.loads(Path("/tmp/chatapp-compose.json").read_text(encoding="utf-8"))
+          services = config["services"]
+          server = services["server"]
+          db = services["db"]
+
+          def number(value):
+              return float(value)
+
+          def memory_bytes(value):
+              if isinstance(value, (int, float)):
+                  return int(value)
+              text = str(value).strip().lower()
+              match = re.fullmatch(r"([0-9]+(?:\\.[0-9]+)?)([kmgt]?)b?", text)
+              if not match:
+                  raise AssertionError(f"unsupported memory format: {value!r}")
+              amount = float(match.group(1))
+              unit = match.group(2)
+              factor = {"": 1, "k": 1024, "m": 1024**2, "g": 1024**3, "t": 1024**4}[unit]
+              return int(amount * factor)
+
+          def check(condition, message):
+              if not condition:
+                  raise AssertionError(message)
+
+          check(server.get("read_only") is True, "server.read_only must be true")
+          check(server.get("init") is True, "server.init must be true")
+          check(str(server.get("user")) == "10001", f"server.user: {server.get('user')!r}")
+          check(number(server.get("cpus")) == 1.0, f"server.cpus: {server.get('cpus')!r}")
+          check(memory_bytes(server.get("mem_limit")) == 768 * 1024**2, f"server.mem_limit: {server.get('mem_limit')!r}")
+          check(int(server.get("pids_limit")) == 256, f"server.pids_limit: {server.get('pids_limit')!r}")
+          check(server.get("security_opt") == ["no-new-privileges:true"], f"server.security_opt: {server.get('security_opt')!r}")
+          check(server.get("cap_drop") == ["ALL"], f"server.cap_drop: {server.get('cap_drop')!r}")
+          logging = server.get("logging", {}).get("options", {})
+          check(logging.get("max-size") == "10m", f"server logging max-size: {logging.get('max-size')!r}")
+          check(logging.get("max-file") == "3", f"server logging max-file: {logging.get('max-file')!r}")
+
+          ports = server.get("ports") or []
+          check(len(ports) == 1, f"server ports: {ports!r}")
+          port = ports[0]
+          check(int(str(port.get("target"))) == 5050, f"server port target: {port.get('target')!r}")
+          check(int(str(port.get("published"))) == 5050, f"server port published: {port.get('published')!r}")
+          check(port.get("protocol") == "tcp", f"server port protocol: {port.get('protocol')!r}")
+
+          check(db.get("init") is True, "db.init must be true")
+          check(number(db.get("cpus")) == 2.0, f"db.cpus: {db.get('cpus')!r}")
+          check(memory_bytes(db.get("mem_limit")) == 1024 * 1024**2, f"db.mem_limit: {db.get('mem_limit')!r}")
+          check(int(db.get("pids_limit")) == 512, f"db.pids_limit: {db.get('pids_limit')!r}")
+          check(db.get("security_opt") == ["no-new-privileges:true"], f"db.security_opt: {db.get('security_opt')!r}")
+          db_logging = db.get("logging", {}).get("options", {})
+          check(db_logging.get("max-size") == "10m", f"db logging max-size: {db_logging.get('max-size')!r}")
+          check(db_logging.get("max-file") == "3", f"db logging max-file: {db_logging.get('max-file')!r}")
+
+          db_health = (db.get("healthcheck", {}).get("test") or [])
+          check(len(db_health) >= 2, f"db healthcheck: {db_health!r}")
+          command = str(db_health[1])
+          check("MYSQL_PASSWORD" in command, "db healthcheck must use MYSQL_PASSWORD")
+          check("MYSQL_USER" in command, "db healthcheck must use MYSQL_USER")
+          check("mysqladmin ping" in command, "db healthcheck must use mysqladmin ping")
+          check("MYSQL_ROOT_PASSWORD" not in command, "db healthcheck must not use MYSQL_ROOT_PASSWORD")
+
+          check(not db.get("ports"), f"db ports must be unpublished: {db.get('ports')!r}")
+          check(config.get("networks", {}).get("backend", {}).get("internal") is True, "backend network must be internal")
+
+          print("Docker Compose hardening checks passed.")
+          PY
 
       - name: Build server container image
         env:
