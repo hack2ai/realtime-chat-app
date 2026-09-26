@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.chatapp.service.AuthenticationService;
-import java.lang.reflect.Method;
 import java.net.InetAddress;
 import org.junit.jupiter.api.Test;
 
@@ -13,7 +12,7 @@ class ChatServerLifecycleTest {
     @Test
     void metricsSchedulerCanBeRecreatedAfterStop() throws Exception {
         ChatServer server = new ChatServer(new AuthenticationService());
-        Method startMetricsLogging = ChatServer.class.getDeclaredMethod("startMetricsLogging");
+        java.lang.reflect.Method startMetricsLogging = ChatServer.class.getDeclaredMethod("startMetricsLogging");
         startMetricsLogging.setAccessible(true);
 
         startMetricsLogging.invoke(server);
@@ -42,5 +41,13 @@ class ChatServerLifecycleTest {
 
         assertTrue(ChatServer.isPlaintextRemoteBind(wildcard, false));
         assertFalse(ChatServer.isPlaintextRemoteBind(wildcard, true));
+    }
+
+    @Test
+    void readinessHeartbeatRequiresRunningServerAndHealthyDatabase() {
+        assertTrue(ChatServer.shouldRefreshReadiness(true, true));
+        assertFalse(ChatServer.shouldRefreshReadiness(true, false));
+        assertFalse(ChatServer.shouldRefreshReadiness(false, true));
+        assertFalse(ChatServer.shouldRefreshReadiness(false, false));
     }
 }
