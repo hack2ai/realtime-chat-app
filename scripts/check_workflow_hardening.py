@@ -16,6 +16,12 @@ STEP_RE = re.compile(r"^      - name:\s+")
 PULL_REQUEST_TARGET_RE = re.compile(r"^\s*pull_request_target:\s*$")
 CONCURRENCY_GROUP_RE = re.compile(r"^  group:\s*(.+?)\s*$")
 CONCURRENCY_CANCEL_RE = re.compile(r"^  cancel-in-progress:\s*(true|false)\s*$")
+CONCURRENCY_ID_FIELDS = (
+    "github.ref",
+    "github.ref_name",
+    "github.sha",
+    "github.event.workflow_run.head_sha",
+)
 
 
 def validate_workflow(path: Path) -> list[str]:
@@ -32,12 +38,8 @@ def validate_workflow(path: Path) -> list[str]:
         group_match = CONCURRENCY_GROUP_RE.search(text, re.MULTILINE)
         if group_match is None:
             errors.append("concurrency policy is missing a group")
-        else:
-            group = group_match.group(1)
-            if "${{ github.workflow }}" not in group:
-                errors.append("concurrency group must include github.workflow")
-            if "${{ github.ref }}" not in group and "${{ github.ref_name }}" not in group:
-                errors.append("concurrency group must include github.ref or github.ref_name")
+        elif not any(field in group_match.group(1) for field in CONCURRENCY_ID_FIELDS):
+            errors.append("concurrency group must include a GitHub ref or run identity")
 
         if CONCURRENCY_CANCEL_RE.search(text, re.MULTILINE) is None:
             errors.append("concurrency policy is missing cancel-in-progress")
