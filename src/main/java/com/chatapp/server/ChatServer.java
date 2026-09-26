@@ -100,6 +100,13 @@ public class ChatServer {
         String bindAddress = AppConfig.getServerBindAddress();
         int port = AppConfig.getServerPort();
         InetAddress address = InetAddress.getByName(bindAddress);
+        if (isPlaintextRemoteBind(address, AppConfig.isTlsEnabled())) {
+            logger.warn(
+                    "TLS is disabled while the server is bound to non-loopback address {}:{}; "
+                            + "credentials and messages may traverse the network without encryption.",
+                    bindAddress,
+                    port);
+        }
         serverSocket = createServerSocket(address, port);
         try {
             running = true;
@@ -116,6 +123,10 @@ public class ChatServer {
             serverSocket = null;
             throw e;
         }
+    }
+
+    static boolean isPlaintextRemoteBind(InetAddress address, boolean tlsEnabled) {
+        return !tlsEnabled && address != null && !address.isLoopbackAddress();
     }
 
     private static ScheduledExecutorService createMetricsScheduler() {
