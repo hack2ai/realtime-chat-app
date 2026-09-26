@@ -447,12 +447,12 @@ jobs:
           sha256sum --check chatapp-server-${{ github.sha }}.jar.sha256
           sha256sum --check chatapp-sbom.json.sha256
       - name: Attest server package
-        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: release-assets/chatapp-server.jar
 
       - name: Attest server SBOM
-        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: release-assets/chatapp-sbom.json
 
@@ -468,6 +468,6 @@ jobs:
           sha256sum --check chatapp-container-sbom.json.sha256
 
       - name: Attest container SBOM
-        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: container-assets/chatapp-container-sbom.json
