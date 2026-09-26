@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLSocket;
+import java.io.IOException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -27,5 +28,20 @@ class ChatClientConnectionTlsTest {
     @Test
     void configureTlsSocketRejectsNullSocket() {
         assertThrows(IllegalArgumentException.class, () -> ChatClientConnection.configureTlsSocket(null));
+    }
+
+    @Test
+    void startTlsHandshakeRejectsNullSocket() {
+        assertThrows(IllegalArgumentException.class, () -> ChatClientConnection.startTlsHandshake(null));
+    }
+
+    @Test
+    void startTlsHandshakeRestoresExistingReadTimeoutWhenHandshakeFailsImmediately() throws Exception {
+        SSLSocket socket = (SSLSocket) SSLContext.getDefault().getSocketFactory().createSocket();
+        socket.setSoTimeout(4_321);
+        socket.close();
+
+        assertThrows(IOException.class, () -> ChatClientConnection.startTlsHandshake(socket));
+        assertEquals(4_321, socket.getSoTimeout());
     }
 }
