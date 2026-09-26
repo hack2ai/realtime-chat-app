@@ -45,12 +45,17 @@ def validate_workflow(path: Path) -> list[str]:
         errors.append("missing top-level concurrency policy")
     else:
         group_match = CONCURRENCY_GROUP_RE.search(text)
+        cancel_match = CONCURRENCY_CANCEL_RE.search(text)
         if group_match is None:
             errors.append("concurrency policy is missing a group")
         elif not any(field in group_match.group(1) for field in CONCURRENCY_ID_FIELDS):
-            errors.append("concurrency group must include a GitHub ref or run identity")
+            # A static group is useful for intentionally serializing non-cancellable
+            # workflows such as release publication. A static group is unsafe here
+            # when cancellation is enabled because unrelated refs would cancel one another.
+            if cancel_match is None or cancel_match.group(1) != "false":
+                errors.append("concurrency group must include a GitHub ref or run identity")
 
-        if CONCURRENCY_CANCEL_RE.search(text) is None:
+        if cancel_match is None:
             errors.append("concurrency policy is missing cancel-in-progress")
 
     if PULL_REQUEST_TARGET_RE.search(text) is not None:
