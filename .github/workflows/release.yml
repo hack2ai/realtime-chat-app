@@ -155,12 +155,12 @@ jobs:
           sha256sum --check "chatapp-server-${RELEASE_VERSION}.sbom.json.sha256"
 
       - name: Attest release server artifact
-        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: chatapp-server-${{ github.ref_name }}.jar
 
       - name: Attest release SBOM
-        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: chatapp-server-${{ github.ref_name }}.sbom.json
 
@@ -327,14 +327,14 @@ jobs:
           test "$SHA_TAG_DIGEST" = "$PUBLISHED_DIGEST"
 
       - name: Attest release container
-        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ghcr.io/${{ github.repository }}
           subject-digest: ${{ steps.push-release-container.outputs.digest }}
           push-to-registry: true
 
       - name: Attest release container SBOM
-        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: chatapp-container-${{ github.ref_name }}.sbom.json
 
