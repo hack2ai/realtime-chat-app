@@ -129,6 +129,10 @@ public class ChatServer {
         return !tlsEnabled && address != null && !address.isLoopbackAddress();
     }
 
+    static boolean shouldRefreshReadiness(boolean serverRunning, boolean databaseHealthy) {
+        return serverRunning && databaseHealthy;
+    }
+
     private static ScheduledExecutorService createMetricsScheduler() {
         return Executors.newSingleThreadScheduledExecutor(
                 Thread.ofVirtual().name("chat-server-metrics", 0).factory());
@@ -151,7 +155,7 @@ public class ChatServer {
     }
 
     private void heartbeatReadinessMarker() {
-        if (!running) return;
+        if (!shouldRefreshReadiness(running, ConnectionPool.getInstance().isHealthy())) return;
         try {
             READINESS_MARKER.heartbeat();
         } catch (IOException e) {
