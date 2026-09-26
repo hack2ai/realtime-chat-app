@@ -14,9 +14,9 @@ PERMISSIONS_RE = re.compile(r"^    permissions:\s*$")
 CHECKOUT_RE = re.compile(r"^        uses:\s+actions/checkout@[0-9a-fA-F]{40}(?:\s+#.*)?$")
 ACTION_USE_RE = re.compile(r"^\s*uses:\s+([^@\s]+)@([^\s#]+)(?:\s+#.*)?$")
 STEP_RE = re.compile(r"^      - name:\s+")
-PULL_REQUEST_TARGET_RE = re.compile(r"^\s*pull_request_target:\s*$")
-CONCURRENCY_GROUP_RE = re.compile(r"^  group:\s*(.+?)\s*$")
-CONCURRENCY_CANCEL_RE = re.compile(r"^  cancel-in-progress:\s*(true|false)\s*$")
+PULL_REQUEST_TARGET_RE = re.compile(r"^\s*pull_request_target:\s*$", re.MULTILINE)
+CONCURRENCY_GROUP_RE = re.compile(r"^  group:\s*(.+?)\s*$", re.MULTILINE)
+CONCURRENCY_CANCEL_RE = re.compile(r"^  cancel-in-progress:\s*(true|false)\s*$", re.MULTILINE)
 CONCURRENCY_ID_FIELDS = (
     "github.ref",
     "github.ref_name",
@@ -43,16 +43,16 @@ def validate_workflow(path: Path) -> list[str]:
     if not re.search(r"^concurrency:\s*$", text, re.MULTILINE):
         errors.append("missing top-level concurrency policy")
     else:
-        group_match = CONCURRENCY_GROUP_RE.search(text, re.MULTILINE)
+        group_match = CONCURRENCY_GROUP_RE.search(text)
         if group_match is None:
             errors.append("concurrency policy is missing a group")
         elif not any(field in group_match.group(1) for field in CONCURRENCY_ID_FIELDS):
             errors.append("concurrency group must include a GitHub ref or run identity")
 
-        if CONCURRENCY_CANCEL_RE.search(text, re.MULTILINE) is None:
+        if CONCURRENCY_CANCEL_RE.search(text) is None:
             errors.append("concurrency policy is missing cancel-in-progress")
 
-    if PULL_REQUEST_TARGET_RE.search(text, re.MULTILINE):
+    if PULL_REQUEST_TARGET_RE.search(text) is not None:
         errors.append("pull_request_target is not allowed")
 
     in_jobs = False
