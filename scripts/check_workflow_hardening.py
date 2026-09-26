@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 WORKFLOW_DIR = Path(".github/workflows")
+MAX_TIMEOUT_MINUTES = 30
 JOB_RE = re.compile(r"^  ([A-Za-z0-9_.-]+):\s*$")
 TIMEOUT_RE = re.compile(r"^    timeout-minutes:\s*([0-9]+)\s*$")
 PERMISSIONS_RE = re.compile(r"^    permissions:\s*$")
@@ -58,17 +59,24 @@ def validate_workflow(path: Path) -> list[str]:
     in_jobs = False
     current_job: str | None = None
     current_has_timeout = False
+    current_timeout_minutes: int | None = None
     current_has_permissions = False
 
     def finish_job() -> None:
-        nonlocal current_job, current_has_timeout, current_has_permissions
+        nonlocal current_job, current_has_timeout, current_timeout_minutes, current_has_permissions
         if current_job is not None:
             if not current_has_timeout:
                 errors.append(f"job '{current_job}' is missing timeout-minutes")
+            elif current_timeout_minutes is not None and current_timeout_minutes > MAX_TIMEOUT_MINUTES:
+                errors.append(
+                    f"job '{current_job}' timeout-minutes must be <= {MAX_TIMEOUT_MINUTES}; "
+                    f"found {current_timeout_minutes}"
+                )
             if not current_has_permissions:
                 errors.append(f"job '{current_job}' is missing job-level permissions")
         current_job = None
         current_has_timeout = False
+        current_timeout_minutes = None
         current_has_permissions = False
 
     def validate_checkout(start_index: int) -> None:
@@ -99,8 +107,12 @@ def validate_workflow(path: Path) -> list[str]:
             continue
 
         if current_job is not None:
-            if TIMEOUT_RE.match(line):
+            timeout_match = TIMEOUT_RE.match(line)
+            if timeout_match:
                 current_has_timeout = True
+                current_timeout_minutes = int(timeout_match.group(1))
+                if current_timeout_minutes == 0:
+                    errors.append(f"job '{current_job}' timeout-minutes must be greater than 0")
             if PERMISSIONS_RE.match(line):
                 current_has_permissions = True
 
