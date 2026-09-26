@@ -19,6 +19,7 @@ SPEC.loader.exec_module(MODULE)
 
 GITHUB_WORKFLOW = "$" + "{ github.workflow }"
 GITHUB_REF = "$" + "{ github.ref }"
+WORKFLOW_RUN_HEAD_SHA = "$" + "{ github.event.workflow_run.head_sha }"
 
 SECURE_WORKFLOW = """name: Example
 
@@ -58,6 +59,10 @@ class WorkflowHardeningTests(unittest.TestCase):
     def test_secure_workflow_passes(self) -> None:
         self.assertEqual(self.validate(SECURE_WORKFLOW), [])
 
+    def test_workflow_run_head_sha_is_valid_concurrency_identity(self) -> None:
+        workflow = SECURE_WORKFLOW.replace(GITHUB_REF, WORKFLOW_RUN_HEAD_SHA)
+        self.assertEqual(self.validate(workflow), [])
+
     def test_missing_top_level_controls_is_rejected(self) -> None:
         workflow = """jobs:
   build:
@@ -84,8 +89,7 @@ class WorkflowHardeningTests(unittest.TestCase):
             "  group: example\n",
         )
         errors = self.validate(weak_group)
-        self.assertIn("concurrency group must include github.workflow", errors)
-        self.assertIn("concurrency group must include github.ref or github.ref_name", errors)
+        self.assertIn("concurrency group must include a GitHub ref or run identity", errors)
 
     def test_pull_request_target_is_rejected(self) -> None:
         workflow = SECURE_WORKFLOW.replace(
