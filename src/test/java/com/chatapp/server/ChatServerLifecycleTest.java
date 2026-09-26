@@ -35,4 +35,12 @@ class ChatServerLifecycleTest {
         assertTrue(ChatServer.isPlaintextRemoteBind(wildcard, false));
         assertFalse(ChatServer.isPlaintextRemoteBind(wildcard, true));
     }
+
+    @Test
+    void ipv6WildcardPlaintextBindingTriggersWarningPolicy() throws Exception {
+        InetAddress wildcard = InetAddress.getByName("::");
+
+        assertTrue(ChatServer.isPlaintextRemoteBind(wildcard, false));
+        assertFalse(ChatServer.isPlaintextRemoteBind(wildcard, true));
+    }
 }
