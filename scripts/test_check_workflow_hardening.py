@@ -91,6 +91,17 @@ class WorkflowHardeningTests(unittest.TestCase):
         errors = self.validate(weak_group)
         self.assertIn("concurrency group must include a GitHub ref or run identity", errors)
 
+    def test_action_references_must_be_immutable(self) -> None:
+        workflow = SECURE_WORKFLOW.replace(
+            "actions/checkout@0123456789abcdef0123456789abcdef01234567",
+            "actions/checkout@v4",
+        )
+        errors = self.validate(workflow)
+        self.assertIn(
+            "action actions/checkout must use a 40-character immutable commit SHA; found v4",
+            errors,
+        )
+
     def test_pull_request_target_is_rejected(self) -> None:
         workflow = SECURE_WORKFLOW.replace(
             "  push:",
