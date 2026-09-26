@@ -116,6 +116,19 @@ class WorkflowHardeningTests(unittest.TestCase):
             self.validate(workflow),
         )
 
+    def test_timeout_limits_are_enforced(self) -> None:
+        excessive = SECURE_WORKFLOW.replace("timeout-minutes: 15", "timeout-minutes: 31")
+        self.assertIn(
+            "job 'build' timeout-minutes must be <= 30; found 31",
+            self.validate(excessive),
+        )
+
+        zero = SECURE_WORKFLOW.replace("timeout-minutes: 15", "timeout-minutes: 0")
+        self.assertIn(
+            "job 'build' timeout-minutes must be greater than 0",
+            self.validate(zero),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
