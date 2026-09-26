@@ -12,6 +12,7 @@ JOB_RE = re.compile(r"^  ([A-Za-z0-9_.-]+):\s*$")
 TIMEOUT_RE = re.compile(r"^    timeout-minutes:\s*([0-9]+)\s*$")
 PERMISSIONS_RE = re.compile(r"^    permissions:\s*$")
 CHECKOUT_RE = re.compile(r"^        uses:\s+actions/checkout@[0-9a-fA-F]{40}(?:\s+#.*)?$")
+ACTION_USE_RE = re.compile(r"^\s*uses:\s+([^@\s]+)@([^\s#]+)(?:\s+#.*)?$")
 STEP_RE = re.compile(r"^      - name:\s+")
 PULL_REQUEST_TARGET_RE = re.compile(r"^\s*pull_request_target:\s*$")
 CONCURRENCY_GROUP_RE = re.compile(r"^  group:\s*(.+?)\s*$")
@@ -28,6 +29,13 @@ def validate_workflow(path: Path) -> list[str]:
     lines = path.read_text(encoding="utf-8").splitlines()
     text = "\n".join(lines)
     errors: list[str] = []
+
+    for line in lines:
+        action_match = ACTION_USE_RE.match(line)
+        if action_match is not None:
+            action, ref = action_match.groups()
+            if not re.fullmatch(r"[0-9a-fA-F]{40}", ref):
+                errors.append(f"action {action} must use a 40-character immutable commit SHA; found {ref}")
 
     if not re.search(r"^permissions:\s*\{\}\s*$", text, re.MULTILINE):
         errors.append("missing top-level permissions: {}")
