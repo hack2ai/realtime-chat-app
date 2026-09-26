@@ -63,6 +63,16 @@ class WorkflowHardeningTests(unittest.TestCase):
         workflow = SECURE_WORKFLOW.replace(GITHUB_REF, WORKFLOW_RUN_HEAD_SHA)
         self.assertEqual(self.validate(workflow), [])
 
+    def test_static_concurrency_group_is_valid_when_runs_are_serialized(self) -> None:
+        workflow = SECURE_WORKFLOW.replace(
+            "  group: example-" + GITHUB_WORKFLOW + "-" + GITHUB_REF + "\n",
+            "  group: release-publish\n",
+        ).replace(
+            "  cancel-in-progress: true\n",
+            "  cancel-in-progress: false\n",
+        )
+        self.assertEqual(self.validate(workflow), [])
+
     def test_missing_top_level_controls_is_rejected(self) -> None:
         workflow = """jobs:
   build:
