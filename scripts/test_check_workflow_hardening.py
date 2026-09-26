@@ -1,0 +1,90 @@
+#!/usr/bin/env python3
+"""Regression tests for GitHub Actions workflow hardening policy."""
+
+from __future__ import annotations
+
+import importlib.util
+import tempfile
+import unittest
+from pathlib import Path
+
+
+MODULE_PATH = Path(__file__).with_name("check_workflow_hardening.py")
+SPEC = importlib.util.spec_from_file_location("check_workflow_hardening", MODULE_PATH)
+if SPEC is None or SPEC.loader is None:
+    raise RuntimeError("Unable to load workflow hardening checker.")
+MODULE = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(MODULE)
+
+
+SECURE_WORKFLOW = """name: Example
+
+on:
+  push:
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: example-\${{ github.workflow }}-\${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@0123456789abcdef0123456789abcdef01234567
+        with:
+          persist-credentials: false
+      - name: Build
+        run: echo ok
+"""
+
+
+class WorkflowHardeningTests(unittest.TestCase):
+    def validate(self, content: str) -> list[str]:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "workflow.yml"
+            path.write_text(content, encoding="utf-8")
+            return MODULE.validate_workflow(path)
+
+    def test_secure_workflow_passes(self) -> None:
+        self.assertEqual(self.validate(SECURE_WORKFLOW), [])
+
+    def test_missing_top_level_controls_is_rejected(self) -> None:
+        workflow = """jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@0123456789abcdef0123456789abcdef01234567
+        with:
+          persist-credentials: false
+"""
+        errors = self.validate(workflow)
+        self.assertIn("missing top-level permissions: {}", errors)
+        self.assertIn("missing top-level concurrency policy", errors)
+        self.assertIn("job 'build' is missing timeout-minutes", errors)
+        self.assertIn("job 'build' is missing job-level permissions", errors)
+
+    def test_pull_request_target_is_rejected(self) -> None:
+        workflow = SECURE_WORKFLOW.replace(
+            "  push:",
+            "  pull_request_target:\n    branches: [main]\n  push:",
+        )
+        self.assertIn("pull_request_target is not allowed", self.validate(workflow))
+
+    def test_checkout_persist_credentials_must_be_disabled(self) -> None:
+        workflow = SECURE_WORKFLOW.replace("          persist-credentials: false\n", "")
+        self.assertIn(
+            "actions/checkout must set persist-credentials: false",
+            self.validate(workflow),
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()
