@@ -14,6 +14,8 @@ PERMISSIONS_RE = re.compile(r"^    permissions:\s*$")
 CHECKOUT_RE = re.compile(r"^        uses:\s+actions/checkout@[0-9a-fA-F]{40}(?:\s+#.*)?$")
 STEP_RE = re.compile(r"^      - name:\s+")
 PULL_REQUEST_TARGET_RE = re.compile(r"^\s*pull_request_target:\s*$")
+CONCURRENCY_GROUP_RE = re.compile(r"^  group:\s*(.+?)\s*$")
+CONCURRENCY_CANCEL_RE = re.compile(r"^  cancel-in-progress:\s*(true|false)\s*$")
 
 
 def validate_workflow(path: Path) -> list[str]:
@@ -26,6 +28,19 @@ def validate_workflow(path: Path) -> list[str]:
 
     if not re.search(r"^concurrency:\s*$", text, re.MULTILINE):
         errors.append("missing top-level concurrency policy")
+    else:
+        group_match = CONCURRENCY_GROUP_RE.search(text, re.MULTILINE)
+        if group_match is None:
+            errors.append("concurrency policy is missing a group")
+        else:
+            group = group_match.group(1)
+            if "${{ github.workflow }}" not in group:
+                errors.append("concurrency group must include github.workflow")
+            if "${{ github.ref }}" not in group and "${{ github.ref_name }}" not in group:
+                errors.append("concurrency group must include github.ref or github.ref_name")
+
+        if CONCURRENCY_CANCEL_RE.search(text, re.MULTILINE) is None:
+            errors.append("concurrency policy is missing cancel-in-progress")
 
     if PULL_REQUEST_TARGET_RE.search(text, re.MULTILINE):
         errors.append("pull_request_target is not allowed")
