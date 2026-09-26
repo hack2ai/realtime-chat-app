@@ -27,6 +27,9 @@ import java.util.function.Consumer;
 
 /** Thread-safe asynchronous transport for the chat application's wire protocol. */
 public final class ChatClientConnection implements AutoCloseable {
+    private static final int CONNECTION_TIMEOUT_MILLIS = 5_000;
+    static final int TLS_HANDSHAKE_TIMEOUT_MILLIS = 10_000;
+
     private final MessageCodec codec = new MessageCodec();
     private final Consumer<Envelope> eventListener;
     private final Consumer<Boolean> connectionListener;
@@ -65,18 +68,24 @@ public final class ChatClientConnection implements AutoCloseable {
     private Socket createSocket(String host, int port) throws IOException {
         if (!AppConfig.isClientTlsEnabled()) {
             Socket plainSocket = new Socket();
-            plainSocket.connect(new InetSocketAddress(host, port), 5000);
+            plainSocket.connect(new InetSocketAddress(host, port), CONNECTION_TIMEOUT_MILLIS);
             return plainSocket;
         }
+
+        SSLSocket sslSocket = null;
         try {
             SSLSocketFactory factory = TlsContextFactory.createClientContext().getSocketFactory();
-            SSLSocket sslSocket = (SSLSocket) factory.createSocket();
-            sslSocket.connect(new InetSocketAddress(host, port), 5000);
+            sslSocket = (SSLSocket) factory.createSocket();
+            sslSocket.connect(new InetSocketAddress(host, port), CONNECTION_TIMEOUT_MILLIS);
             configureTlsSocket(sslSocket);
-            sslSocket.startHandshake();
+            startTlsHandshake(sslSocket);
             return sslSocket;
         } catch (IllegalStateException e) {
+            closeQuietly(sslSocket);
             throw new IOException("TLS client initialization failed.", e);
+        } catch (IOException e) {
+            closeQuietly(sslSocket);
+            throw e;
         }
     }
 
@@ -86,6 +95,22 @@ public final class ChatClientConnection implements AutoCloseable {
         parameters.setEndpointIdentificationAlgorithm("HTTPS");
         sslSocket.setSSLParameters(parameters);
         sslSocket.setEnabledProtocols(new String[]{"TLSv1.3", "TLSv1.2"});
+    }
+
+    static void startTlsHandshake(SSLSocket sslSocket) throws IOException {
+        if (sslSocket == null) throw new IllegalArgumentException("TLS socket must not be null.");
+        int previousTimeout = sslSocket.getSoTimeout();
+        try {
+            sslSocket.setSoTimeout(TLS_HANDSHAKE_TIMEOUT_MILLIS);
+            sslSocket.startHandshake();
+        } finally {
+            sslSocket.setSoTimeout(previousTimeout);
+        }
+    }
+
+    private static void closeQuietly(AutoCloseable closeable) {
+        if (closeable == null) return;
+        try { closeable.close(); } catch (Exception ignored) {}
     }
 
     public CompletableFuture<LoginSuccessResponse> login(String usernameOrEmail, String password) {
