@@ -53,7 +53,7 @@ public final class AttachmentStorageService implements AttachmentStorage {
             if(!Files.isRegularFile(path,LinkOption.NOFOLLOW_LINKS))throw new ValidationException("Attachment not found.");
             long size=Files.size(path);if(size>MAX_FILE_BYTES)throw new ValidationException("Stored attachment exceeds the configured limit.");
             try(InputStream input=Files.newInputStream(path,StandardOpenOption.READ,LinkOption.NOFOLLOW_LINKS)){
-                byte[] bytes=input.readAllBytes();
+                byte[] bytes=input.readNBytes((int)MAX_FILE_BYTES + 1);
                 if(bytes.length>MAX_FILE_BYTES)throw new ValidationException("Stored attachment exceeds the configured limit.");
                 return bytes;
             }
