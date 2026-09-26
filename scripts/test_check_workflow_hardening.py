@@ -17,6 +17,9 @@ MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 
 
+GITHUB_WORKFLOW = "$" + "{ github.workflow }"
+GITHUB_REF = "$" + "{ github.ref }"
+
 SECURE_WORKFLOW = """name: Example
 
 on:
@@ -26,7 +29,7 @@ on:
 permissions: {}
 
 concurrency:
-  group: example-\${{ github.workflow }}-\${{ github.ref }}
+  group: example-""" + GITHUB_WORKFLOW + "-" + GITHUB_REF + """
   cancel-in-progress: true
 
 jobs:
@@ -70,6 +73,19 @@ class WorkflowHardeningTests(unittest.TestCase):
         self.assertIn("missing top-level concurrency policy", errors)
         self.assertIn("job 'build' is missing timeout-minutes", errors)
         self.assertIn("job 'build' is missing job-level permissions", errors)
+
+    def test_incomplete_concurrency_policy_is_rejected(self) -> None:
+        missing_cancel = SECURE_WORKFLOW.replace("  cancel-in-progress: true\n", "")
+        errors = self.validate(missing_cancel)
+        self.assertIn("concurrency policy is missing cancel-in-progress", errors)
+
+        weak_group = SECURE_WORKFLOW.replace(
+            "  group: example-" + GITHUB_WORKFLOW + "-" + GITHUB_REF + "\n",
+            "  group: example\n",
+        )
+        errors = self.validate(weak_group)
+        self.assertIn("concurrency group must include github.workflow", errors)
+        self.assertIn("concurrency group must include github.ref or github.ref_name", errors)
 
     def test_pull_request_target_is_rejected(self) -> None:
         workflow = SECURE_WORKFLOW.replace(
