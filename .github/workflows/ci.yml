@@ -206,7 +206,7 @@ jobs:
             ((.services.db.healthcheck.test[1] | tostring) | contains("MYSQL_USER")) and
             ((.services.db.healthcheck.test[1] | tostring) | contains("mysqladmin ping")) and
             ((.services.db.healthcheck.test[1] | tostring) | contains("MYSQL_ROOT_PASSWORD") | not) and
-            (.services.db.ports == null) and
+            (.services.db.ports == null or (.services.db.ports | length) == 0) and
             .networks.backend.internal == true
           ' >/dev/null
 
