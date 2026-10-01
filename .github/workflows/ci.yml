@@ -118,7 +118,7 @@ jobs:
           done <<< "$base_images"
 
       - name: Scan container configuration
-        uses: aquasecurity/trivy-action@d2a0b60797ff03db6132bd4e2b293f9b37081297 # immutable commit; Trivy v0.74.0
+        uses: aquasecurity/trivy-action@c03d123cb480c08c69b054af418ea5e69fe6e57e # immutable commit; Trivy v0.74.0
         with:
           scan-type: config
           input: .
@@ -286,7 +286,7 @@ jobs:
           docker build --pull --build-arg APP_VERSION="$PROJECT_VERSION" --build-arg VCS_REF="${{ github.sha }}" --tag realtime-chat-app:${{ github.sha }} .
 
       - name: Scan server container image
-        uses: aquasecurity/trivy-action@d2a0b60797ff03db6132bd4e2b293f9b37081297 # immutable commit; Trivy v0.74.0
+        uses: aquasecurity/trivy-action@c03d123cb480c08c69b054af418ea5e69fe6e57e # immutable commit; Trivy v0.74.0
         with:
           scan-type: image
           image-ref: realtime-chat-app:${{ github.sha }}
@@ -297,7 +297,7 @@ jobs:
           vuln-type: os,library
 
       - name: Generate container image SBOM
-        uses: aquasecurity/trivy-action@d2a0b60797ff03db6132bd4e2b293f9b37081297 # immutable commit; Trivy v0.74.0
+        uses: aquasecurity/trivy-action@c03d123cb480c08c69b054af418ea5e69fe6e57e # immutable commit; Trivy v0.74.0
         with:
           scan-type: image
           image-ref: realtime-chat-app:${{ github.sha }}
