@@ -1,0 +1,51 @@
+# ============================================================
+# Real-Time Chat Application — .gitignore
+# ============================================================
+
+target/
+*.jar
+*.war
+*.class
+
+# Local configuration / secrets
+src/main/resources/config.properties
+.env
+.env.*
+!.env.example
+secrets/
+
+# Runtime attachment data — never commit user files
+/data/
+
+# Local TLS keystores and private keys
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.key
+*.pem
+*.crt
+
+# IDEs
+.idea/
+*.iml
+*.iws
+out/
+.classpath
+.project
+.settings/
+bin/
+.vscode/
+nbproject/
+nb-configuration.xml
+
+# OS junk
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs / temporary files
+*.log
+logs/
+*.bak
+*.tmp

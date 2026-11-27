@@ -1,0 +1,108 @@
+services:
+  db:
+    image: mysql:8.4.11
+    restart: unless-stopped
+    networks:
+      - backend
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cpus: 2.0
+    mem_limit: 1g
+    pids_limit: 512
+    stop_grace_period: 30s
+    ulimits:
+      nofile:
+        soft: 4096
+        hard: 8192
+    environment:
+      MYSQL_ROOT_PASSWORD: ${CHATAPP_MYSQL_ROOT_PASSWORD:?set CHATAPP_MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: chatapp_db
+      MYSQL_USER: chatapp_user
+      MYSQL_PASSWORD: ${CHATAPP_DB_PASSWORD:?set CHATAPP_DB_PASSWORD}
+    volumes:
+      - chatapp-mysql:/var/lib/mysql
+      - ./src/main/resources/sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./docker/mysql/02-application-grants.sql:/docker-entrypoint-initdb.d/02-application-grants.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$${MYSQL_PASSWORD}\" mysqladmin ping -h 127.0.0.1 -u \"$${MYSQL_USER}\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  server:
+    build: .
+    restart: unless-stopped
+    networks:
+      - backend
+      - public
+    init: true
+    user: "10001"
+    read_only: true
+    cpus: 1.0
+    mem_limit: 768m
+    pids_limit: 256
+    stop_grace_period: 10s
+    ulimits:
+      nofile:
+        soft: 4096
+        hard: 8192
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      CHATAPP_DB_HOST: db
+      CHATAPP_DB_PORT: 3306
+      CHATAPP_DB_NAME: chatapp_db
+      CHATAPP_DB_USER: chatapp_user
+      CHATAPP_DB_PASSWORD: ${CHATAPP_DB_PASSWORD:?set CHATAPP_DB_PASSWORD}
+      CHATAPP_DB_USESSL: ${CHATAPP_DB_USESSL:-false}
+      CHATAPP_DB_SSLMODE: ${CHATAPP_DB_SSLMODE:-DISABLED}
+      CHATAPP_DB_ALLOWPUBLICKEYRETRIEVAL: "false"
+      CHATAPP_DB_SOCKETTIMEOUTMS: 60000
+      CHATAPP_SERVER_PORT: 5050
+      CHATAPP_SERVER_BINDADDRESS: 0.0.0.0
+      CHATAPP_SERVER_MAXCLIENTS: 200
+      CHATAPP_SERVER_SOCKETREADTIMEOUTMS: 120000
+      CHATAPP_AUTH_BCRYPT_STRENGTH: 12
+      CHATAPP_AUTH_SESSION_EXPIRYHOURS: 24
+      CHATAPP_ATTACHMENTS_STORAGEPATH: /app/data/attachments
+      CHATAPP_DB_POOL_MINIDLE: 2
+      CHATAPP_DB_POOL_MAXSIZE: 10
+      CHATAPP_DB_POOL_CONNECTIONTIMEOUTMS: 5000
+    healthcheck:
+      test: ["CMD", "java", "-cp", "/app/chatapp-server.jar", "com.chatapp.server.ServerHealthCheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    ports:
+      - "5050:5050"
+    volumes:
+      - chatapp-attachments:/app/data/attachments
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  backend:
+    internal: true
+  public: {}
+
+volumes:
+  chatapp-mysql:
+  chatapp-attachments:

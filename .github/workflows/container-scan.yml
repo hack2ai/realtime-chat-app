@@ -1,0 +1,144 @@
+name: Container Scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '45 3 * * 0'
+
+permissions: {}
+
+concurrency:
+  group: container-scan-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    name: Scan server image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build server container image
+        run: |
+          docker build --pull \
+            --build-arg APP_VERSION="scan-${{ github.sha }}" \
+            --build-arg VCS_REF="${{ github.sha }}" \
+            --tag realtime-chat-app:scan-${{ github.sha }} .
+
+      - name: Verify server image hardening
+        run: |
+          test "$(docker image inspect realtime-chat-app:scan-${{ github.sha }} --format '{{.Config.User}}')" = "chatapp"
+          test "$(docker image inspect realtime-chat-app:scan-${{ github.sha }} --format '{{json .Config.Entrypoint}}')" = '["java","-XX:+ExitOnOutOfMemoryError","-jar","/app/chatapp-server.jar"]'
+          test "$(docker image inspect realtime-chat-app:scan-${{ github.sha }} --format '{{.Config.StopSignal}}')" = "SIGTERM"
+          test "$(docker image inspect realtime-chat-app:scan-${{ github.sha }} --format '{{json .Config.Healthcheck.Test}}')" = '["CMD","java","-cp","/app/chatapp-server.jar","com.chatapp.server.ServerHealthCheck"]'
+          docker run --rm --entrypoint sh realtime-chat-app:scan-${{ github.sha }} -c 'test "$(id -u)" = "10001" && test "$(stat -c %a /app/data/attachments)" = "700" && test -w /app/data/attachments && ! test -w /app && ! test -w /app/chatapp-server.jar'
+          test -z "$(docker run --rm --entrypoint sh realtime-chat-app:scan-${{ github.sha }} -c 'find /app -xdev -type f -perm /6000 -print 2>/dev/null')"
+
+      - name: Generate Trivy SARIF report
+        uses: aquasecurity/trivy-action@d2a0b60797ff03db6132bd4e2b293f9b37081297 # immutable commit; Trivy v0.74.0 update
+        with:
+          scan-type: image
+          image-ref: realtime-chat-app:scan-${{ github.sha }}
+          format: sarif
+          output: trivy-results.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '0'
+          vuln-type: os,library
+
+      - name: Enforce HIGH/CRITICAL vulnerability gate
+        uses: aquasecurity/trivy-action@d2a0b60797ff03db6132bd4e2b293f9b37081297 # immutable commit; Trivy v0.74.0 update
+        with:
+          scan-type: image
+          image-ref: realtime-chat-app:scan-${{ github.sha }}
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+          vuln-type: os,library
+
+      - name: Generate container SBOM
+        if: always()
+        uses: aquasecurity/trivy-action@d2a0b60797ff03db6132bd4e2b293f9b37081297 # immutable commit; Trivy v0.74.0 update
+        with:
+          scan-type: image
+          image-ref: realtime-chat-app:scan-${{ github.sha }}
+          format: cyclonedx
+          output: trivy-image.sbom.json
+          exit-code: '0'
+          vuln-type: os,library
+
+      - name: Verify container SBOM
+        if: always()
+        run: |
+          test -s trivy-image.sbom.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          sbom = json.loads(Path("trivy-image.sbom.json").read_text(encoding="utf-8"))
+          if sbom.get("bomFormat") != "CycloneDX":
+              raise SystemExit("container SBOM is not CycloneDX")
+          if not sbom.get("specVersion"):
+              raise SystemExit("container SBOM is missing specVersion")
+          if not sbom.get("components"):
+              raise SystemExit("container SBOM contains no components")
+          PY
+          sha256sum trivy-image.sbom.json > trivy-image.sbom.json.sha256
+          sha256sum --check trivy-image.sbom.json.sha256
+
+      - name: Upload container scan findings
+        if: ${{ always() && hashFiles('trivy-results.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
+        with:
+          sarif_file: trivy-results.sarif
+
+      - name: Upload container SBOM
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: container-sbom-${{ github.sha }}
+          path: |
+            trivy-image.sbom.json
+            trivy-image.sbom.json.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+  attest:
+    name: Attest container SBOM
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      attestations: write
+      id-token: write
+    steps:
+      - name: Download container SBOM
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: container-sbom-${{ github.sha }}
+          path: container-assets
+
+      - name: Verify container SBOM
+        run: |
+          cd container-assets
+          test -s trivy-image.sbom.json
+          test -s trivy-image.sbom.json.sha256
+          sha256sum --check trivy-image.sbom.json.sha256
+
+      - name: Attest container SBOM
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: container-assets/trivy-image.sbom.json

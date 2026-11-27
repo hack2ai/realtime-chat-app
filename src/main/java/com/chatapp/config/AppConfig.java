@@ -1,0 +1,137 @@
+package com.chatapp.config;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.Locale;
+import java.util.Properties;
+
+/** Centralized runtime configuration with file, environment, and JVM overrides. */
+public final class AppConfig {
+    private static final String CONFIG_FILE = "config.properties";
+    private static final String ENV_PREFIX = "CHATAPP_";
+    private static final String PLACEHOLDER_SECRET = "CHANGE_ME";
+    private static final Properties PROPERTIES = new Properties();
+
+    static {
+        try (InputStream in = AppConfig.class.getClassLoader().getResourceAsStream(CONFIG_FILE)) {
+            if (in != null) PROPERTIES.load(in);
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to read " + CONFIG_FILE, e);
+        }
+    }
+
+    private AppConfig() {}
+
+    private static String require(String key) {
+        String value = System.getProperty("chatapp." + key);
+        if (value == null || value.isBlank()) value = System.getenv(ENV_PREFIX + key.replace('.', '_').toUpperCase(Locale.ROOT));
+        if (value == null || value.isBlank()) value = PROPERTIES.getProperty(key);
+        if (value == null || value.isBlank()) throw new IllegalStateException("Missing required config key: " + key);
+        return value.trim();
+    }
+
+    private static String requireSecret(String key) {
+        String value = require(key);
+        if (PLACEHOLDER_SECRET.equalsIgnoreCase(value)) {
+            throw new IllegalStateException("Config key '" + key + "' must not use the default placeholder secret.");
+        }
+        return value;
+    }
+
+    private static String optional(String key, String defaultValue) {
+        String value = System.getProperty("chatapp." + key);
+        if (value == null || value.isBlank()) value = System.getenv(ENV_PREFIX + key.replace('.', '_').toUpperCase(Locale.ROOT));
+        if (value == null || value.isBlank()) value = PROPERTIES.getProperty(key);
+        return value == null || value.isBlank() ? defaultValue : value.trim();
+    }
+
+    private static int requireInt(String key) {
+        try { return Integer.parseInt(require(key)); }
+        catch (NumberFormatException e) { throw new IllegalStateException("Config key '" + key + "' must be an integer.", e); }
+    }
+
+    private static int requirePositiveInt(String key) {
+        int value = requireInt(key);
+        if (value <= 0) throw new IllegalStateException("Config key '" + key + "' must be greater than zero.");
+        return value;
+    }
+
+    private static int requirePort(String key) {
+        int value = requireInt(key);
+        if (value < 1 || value > 65535) throw new IllegalStateException("Config key '" + key + "' must be between 1 and 65535.");
+        return value;
+    }
+
+    private static int requireRange(String key, int min, int max) {
+        int value = requireInt(key);
+        if (value < min || value > max) throw new IllegalStateException("Config key '" + key + "' must be between " + min + " and " + max + ".");
+        return value;
+    }
+
+    private static int optionalRange(String key, int defaultValue, int min, int max) {
+        String value = optional(key, Integer.toString(defaultValue));
+        try {
+            int parsed = Integer.parseInt(value);
+            if (parsed < min || parsed > max) throw new IllegalStateException("Config key '" + key + "' must be between " + min + " and " + max + ".");
+            return parsed;
+        } catch (NumberFormatException e) {
+            throw new IllegalStateException("Config key '" + key + "' must be an integer.", e);
+        }
+    }
+
+    private static boolean optionalBoolean(String key, boolean defaultValue) {
+        String value = optional(key, Boolean.toString(defaultValue));
+        if (!value.equalsIgnoreCase("true") && !value.equalsIgnoreCase("false")) {
+            throw new IllegalStateException("Config key '" + key + "' must be true or false.");
+        }
+        return Boolean.parseBoolean(value);
+    }
+
+    public static String getDbHost() { return require("db.host"); }
+    public static int getDbPort() { return requirePort("db.port"); }
+    public static String getDbName() { return require("db.name"); }
+    public static String getDbUser() { return require("db.user"); }
+    public static String getDbPassword() { return requireSecret("db.password"); }
+    public static int getDbPoolMinIdle() { return requireRange("db.pool.minIdle", 1, 50); }
+    public static int getDbPoolMaxSize() {
+        int value = requireRange("db.pool.maxSize", 1, 100);
+        if (value < getDbPoolMinIdle()) throw new IllegalStateException("Config key 'db.pool.maxSize' must be at least db.pool.minIdle.");
+        return value;
+    }
+    public static int getDbConnectionTimeoutMs() { return requireRange("db.pool.connectionTimeoutMs", 1000, 120000); }
+    public static int getDbSocketTimeoutMs() { return optionalRange("db.socketTimeoutMs", 60000, 1000, 300000); }
+    public static boolean isDbUseSsl() { return optionalBoolean("db.useSsl", true); }
+    public static String getDbSslMode() {
+        String configured = optional("db.sslMode", "").toUpperCase(Locale.ROOT);
+        String mode = configured.isBlank() ? (isDbUseSsl() ? "VERIFY_IDENTITY" : "DISABLED") : configured;
+        return switch (mode) {
+            case "DISABLED", "PREFERRED", "REQUIRED", "VERIFY_CA", "VERIFY_IDENTITY" -> mode;
+            default -> throw new IllegalStateException("Config key 'db.sslMode' has unsupported value: " + mode);
+        };
+    }
+    public static boolean isDbAllowPublicKeyRetrieval() { return optionalBoolean("db.allowPublicKeyRetrieval", false); }
+    public static String getJdbcUrl() {
+        return "jdbc:mysql://" + getDbHost() + ":" + getDbPort() + "/" + getDbName()
+                + "?sslMode=" + getDbSslMode()
+                + "&allowPublicKeyRetrieval=" + isDbAllowPublicKeyRetrieval()
+                + "&connectTimeout=" + getDbConnectionTimeoutMs()
+                + "&socketTimeout=" + getDbSocketTimeoutMs()
+                + "&serverTimezone=UTC&characterEncoding=UTF-8&useUnicode=true&connectionCollation=utf8mb4_unicode_ci";
+    }
+    public static int getServerPort() { return requirePort("server.port"); }
+    public static String getServerBindAddress() { return require("server.bindAddress"); }
+    public static int getServerMaxClients() { return requireRange("server.maxClients", 1, 10000); }
+    public static int getSocketReadTimeoutMs() { return requireRange("server.socketReadTimeoutMs", 0, 300000); }
+    public static boolean isTlsEnabled() { return optionalBoolean("tls.enabled", false); }
+    public static String getTlsKeyStorePath() { return require("tls.keyStorePath"); }
+    public static String getTlsKeyStorePassword() { return requireSecret("tls.keyStorePassword"); }
+    public static int getTlsCertificateExpiryWarningDays() {
+        return optionalRange("tls.certificateExpiryWarningDays", 30, 0, 3650);
+    }
+    public static boolean isClientTlsEnabled() { return optionalBoolean("client.tls.enabled", false); }
+    public static String getTlsTrustStorePath() { return optional("client.tls.trustStorePath", ""); }
+    public static String getTlsTrustStorePassword() { return optional("client.tls.trustStorePassword", ""); }
+    public static int getBcryptStrength() { return requireRange("auth.bcrypt.strength", 10, 31); }
+    public static int getSessionExpiryHours() { return requireRange("auth.session.expiryHours", 1, 8760); }
+    public static String getAttachmentStoragePath() { return require("attachments.storagePath"); }
+}

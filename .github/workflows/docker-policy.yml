@@ -1,0 +1,84 @@
+name: Docker Policy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: docker-policy-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Reject floating Docker base-image tags
+        run: |
+          violations=$(grep -En '^[[:space:]]*FROM[[:space:]]+[^[:space:]@]+:(latest|stable|rolling)([[:space:]]|$)|^[[:space:]]*FROM[[:space:]]+[^[:space:]@:]+([[:space:]]|$)' Dockerfile || true)
+          if [ -n "$violations" ]; then
+            echo "Dockerfile contains an unversioned or floating base-image tag:"
+            printf '%s\n' "$violations"
+            exit 1
+          fi
+
+      - name: Enforce pinned Java base-image versions
+        run: |
+          grep -Fxq 'FROM maven:3.9.16-eclipse-temurin-21-noble AS build' Dockerfile
+          grep -Fxq 'FROM eclipse-temurin:21.0.12_8-jre-noble' Dockerfile
+
+      - name: Verify Compose database image uses a patch-level tag
+        run: |
+          docker_image=$(sed -n 's/^[[:space:]]*image:[[:space:]]*//p' docker-compose.yml | head -n 1)
+          test "$docker_image" = "mysql:8.4.11"
+
+      - name: Verify Dockerfile runtime hardening
+        run: |
+          grep -Fxq 'USER chatapp' Dockerfile
+          grep -Eq '^HEALTHCHECK[[:space:]]+' Dockerfile
+          grep -Fxq 'ENTRYPOINT ["java", "-XX:+ExitOnOutOfMemoryError", "-jar", "/app/chatapp-server.jar"]' Dockerfile
+          grep -Fq 'chmod 0700 /app/data/attachments' Dockerfile
+          grep -Fq 'chmod 0555 /app/chatapp-server.jar' Dockerfile
+
+      - name: Verify Compose isolation and resource policy
+        env:
+          CHATAPP_MYSQL_ROOT_PASSWORD: ci-root-password
+          CHATAPP_DB_PASSWORD: ci-app-password
+        run: |
+          docker compose config --format json | jq -e '
+            .services.server.init == true and
+            (.services.server.user | tostring) == "10001" and
+            .services.server.read_only == true and
+            .services.server.security_opt == ["no-new-privileges:true"] and
+            .services.server.cap_drop == ["ALL"] and
+            .services.server.cpus == 1 and
+            ((.services.server.mem_limit | tostring) == "768m" or (.services.server.mem_limit | tostring) == "805306368") and
+            .services.server.pids_limit == 256 and
+            .services.server.ulimits.nofile.soft == 4096 and
+            .services.server.ulimits.nofile.hard == 8192 and
+            .services.server.logging.options["max-size"] == "10m" and
+            .services.server.logging.options["max-file"] == "3" and
+            (any(.services.server.ports[]?; .target == 5050 and ((.published | tonumber) == 5050) and .protocol == "tcp")) and
+            .services.db.init == true and
+            .services.db.security_opt == ["no-new-privileges:true"] and
+            .services.db.cpus == 2 and
+            ((.services.db.mem_limit | tostring) == "1g" or (.services.db.mem_limit | tostring) == "1073741824") and
+            .services.db.pids_limit == 512 and
+            .services.db.ulimits.nofile.soft == 4096 and
+            .services.db.ulimits.nofile.hard == 8192 and
+            .services.db.logging.options["max-size"] == "10m" and
+            .services.db.logging.options["max-file"] == "3" and
+            (.services.db.ports == null or (.services.db.ports | length) == 0) and
+            .networks.backend.internal == true
+          ' >/dev/null

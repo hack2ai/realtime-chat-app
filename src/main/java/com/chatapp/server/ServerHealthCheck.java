@@ -1,0 +1,51 @@
+package com.chatapp.server;
+
+import com.chatapp.config.AppConfig;
+
+import java.io.IOException;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.Socket;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
+
+/** Small dependency-free health probe used by the container healthcheck. */
+public final class ServerHealthCheck {
+    static final long DEFAULT_MAX_AGE_MILLIS = 30_000L;
+    static final int CONNECT_TIMEOUT_MILLIS = 1_000;
+
+    private ServerHealthCheck() {
+    }
+
+    public static void main(String[] args) {
+        Path markerPath = Path.of(System.getProperty("java.io.tmpdir"), "chatapp.ready");
+        if (!isHealthy(markerPath, System.currentTimeMillis(), DEFAULT_MAX_AGE_MILLIS)
+                || !isListening(AppConfig.getServerPort())) {
+            System.exit(1);
+        }
+    }
+
+    static boolean isHealthy(Path markerPath, long nowMillis, long maxAgeMillis) {
+        if (markerPath == null || maxAgeMillis < 0) return false;
+        try {
+            if (!Files.isRegularFile(markerPath, LinkOption.NOFOLLOW_LINKS)) return false;
+            FileTime lastModified = Files.getLastModifiedTime(markerPath, LinkOption.NOFOLLOW_LINKS);
+            long ageMillis = nowMillis - lastModified.toMillis();
+            return ageMillis >= 0 && ageMillis <= maxAgeMillis;
+        } catch (IOException | SecurityException e) {
+            return false;
+        }
+    }
+
+    static boolean isListening(int port) {
+        if (port < 1 || port > 65535) return false;
+        try (Socket socket = new Socket()) {
+            socket.connect(new InetSocketAddress(InetAddress.getLoopbackAddress(), port), CONNECT_TIMEOUT_MILLIS);
+            return true;
+        } catch (IOException | SecurityException e) {
+            return false;
+        }
+    }
+}

@@ -1,0 +1,582 @@
+package com.chatapp.service;
+
+import com.chatapp.database.UserDAO;
+import com.chatapp.exception.AuthenticationException;
+import com.chatapp.exception.ValidationException;
+import com.chatapp.model.User;
+import org.junit.jupiter.api.Test;
+
+import java.lang.reflect.Field;
+import java.nio.charset.StandardCharsets;
+import java.sql.SQLIntegrityConstraintViolationException;
+import java.time.LocalDateTime;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+class AuthenticationServiceTest {
+
+    @Test
+    void invalidCredentialsUseGenericFailure() {
+        UserDAO dao = new InMemoryUserDAO(null);
+        AuthenticationService service = new AuthenticationService(dao);
+
+        AuthenticationException error = assertThrows(AuthenticationException.class,
+                () -> service.login("unknown", "wrong-password"));
+
+        assertEquals("Invalid username/email or password.", error.getMessage());
+    }
+
+    @Test
+    void oversizedLoginIdentifierIsRejectedBeforeLookup() {
+        UserDAO dao = new InMemoryUserDAO(null);
+        AuthenticationService service = new AuthenticationService(dao);
+
+        AuthenticationException error = assertThrows(AuthenticationException.class,
+                () -> service.login("a".repeat(255), "wrong-password"));
+
+        assertEquals("Invalid username/email or password.", error.getMessage());
+    }
+
+    @Test
+    void oversizedLoginPasswordIsRejectedBeforeLookup() {
+        UserDAO dao = new InMemoryUserDAO(null);
+        AuthenticationService service = new AuthenticationService(dao);
+
+        AuthenticationException error = assertThrows(AuthenticationException.class,
+                () -> service.login("alice", "a".repeat(73)));
+
+        assertEquals("Invalid username/email or password.", error.getMessage());
+    }
+
+    @Test
+    void multibyteLoginPasswordIsBoundByUtf8Bytes() {
+        UserDAO dao = new InMemoryUserDAO(null);
+        AuthenticationService service = new AuthenticationService(dao);
+        String oversizedUtf8Password = "é".repeat(37);
+
+        assertEquals(74, oversizedUtf8Password.getBytes(StandardCharsets.UTF_8).length);
+        AuthenticationException error = assertThrows(AuthenticationException.class,
+                () -> service.login("alice", oversizedUtf8Password));
+
+        assertEquals("Invalid username/email or password.", error.getMessage());
+    }
+
+    @Test
+    void registrationRejectsAsciiPasswordOverBcryptByteLimit() {
+        UserDAO dao = new LookupTrackingUserDAO(null);
+        AuthenticationService service = new AuthenticationService(dao);
+        String oversizedPassword = "a".repeat(72) + "1";
+
+        assertEquals(73, oversizedPassword.getBytes(StandardCharsets.UTF_8).length);
+        ValidationException error = assertThrows(ValidationException.class,
+                () -> service.register("alice", "alice@example.com", oversizedPassword, oversizedPassword));
+
+        assertEquals("Password must not exceed 72 UTF-8 bytes.", error.getMessage());
+        assertEquals(0, ((LookupTrackingUserDAO) dao).getUsernameLookups());
+        assertEquals(0, ((LookupTrackingUserDAO) dao).getEmailLookups());
+    }
+
+    @Test
+    void registrationRejectsMultibytePasswordOverBcryptByteLimit() {
+        UserDAO dao = new LookupTrackingUserDAO(null);
+        AuthenticationService service = new AuthenticationService(dao);
+        String oversizedUtf8Password = "é".repeat(36) + "A1";
+
+        assertEquals(74, oversizedUtf8Password.getBytes(StandardCharsets.UTF_8).length);
+        ValidationException error = assertThrows(ValidationException.class,
+                () -> service.register("alice", "alice@example.com", oversizedUtf8Password, oversizedUtf8Password));
+
+        assertEquals("Password must not exceed 72 UTF-8 bytes.", error.getMessage());
+        assertEquals(0, ((LookupTrackingUserDAO) dao).getUsernameLookups());
+        assertEquals(0, ((LookupTrackingUserDAO) dao).getEmailLookups());
+    }
+
+    @Test
+    void successfulLoginCreatesExpiringSession() throws Exception {
+        User user = userWithHash("alice", new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder(10).encode("correct-password"));
+        AuthenticationService service = new AuthenticationService(new InMemoryUserDAO(user));
+
+        AuthenticationService.LoginResult result = service.login("alice", "correct-password");
+
+        assertNotNull(result.sessionToken());
+        assertFalse(result.sessionToken().isBlank());
+        assertEquals(43, result.sessionToken().length(), "32 random bytes should encode to 43 Base64URL characters");
+        assertTrue(result.sessionToken().matches("[A-Za-z0-9_-]+"));
+        assertEquals(user.getId(), service.validateSession(result.sessionToken()));
+        assertNotNull(result.expiresAt());
+        assertTrue(result.expiresAt().isAfter(LocalDateTime.now()));
+    }
+
+    @Test
+    void expiredSessionIsRejectedAndRemoved() throws Exception {
+        User user = userWithHash("alice", new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder(10).encode("correct-password"));
+        AuthenticationService service = new AuthenticationService(new InMemoryUserDAO(user));
+
+        AuthenticationService.LoginResult result = service.login("alice", "correct-password");
+
+        Field sessionsField = AuthenticationService.class.getDeclaredField("activeSessions");
+        sessionsField.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> sessions = (Map<String, Object>) sessionsField.get(service);
+        assertEquals(1, sessions.size());
+
+        String tokenDigest = sessions.keySet().iterator().next();
+        Class<?> sessionType = Class.forName("com.chatapp.service.AuthenticationService$Session");
+        java.lang.reflect.Constructor<?> constructor =
+                sessionType.getDeclaredConstructor(int.class, LocalDateTime.class);
+        constructor.setAccessible(true);
+        Object expiredSession = constructor.newInstance(user.getId(), LocalDateTime.now().minusSeconds(1));
+        sessions.put(tokenDigest, expiredSession);
+
+        AuthenticationException error = assertThrows(AuthenticationException.class,
+                () -> service.validateSession(result.sessionToken()));
+
+        assertEquals("Session is invalid or has expired. Please log in again.", error.getMessage());
+        assertFalse(sessions.containsKey(tokenDigest), "expired sessions must be removed from the active session store");
+
+        AuthenticationService.LoginResult replacement = service.login("alice", "correct-password");
+        assertEquals(user.getId(), service.validateSession(replacement.sessionToken()));
+    }
+
+    @Test
+    void expiredSessionDoesNotBlockReplacementLogin() throws Exception {
+        User user = userWithHash("alice", new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder(10).encode("correct-password"));
+        AuthenticationService service = new AuthenticationService(new InMemoryUserDAO(user));
+
+        AuthenticationService.LoginResult first = service.login("alice", "correct-password");
+
+        Field sessionsField = AuthenticationService.class.getDeclaredField("activeSessions");
+        sessionsField.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> sessions = (Map<String, Object>) sessionsField.get(service);
+        String tokenDigest = sessions.keySet().iterator().next();
+
+        Class<?> sessionType = Class.forName("com.chatapp.service.AuthenticationService$Session");
+        java.lang.reflect.Constructor<?> constructor =
+                sessionType.getDeclaredConstructor(int.class, LocalDateTime.class);
+        constructor.setAccessible(true);
+        sessions.put(tokenDigest, constructor.newInstance(user.getId(), LocalDateTime.now().minusSeconds(1)));
+
+        AuthenticationService.LoginResult replacement = service.login("alice", "correct-password");
+
+        assertNotEquals(first.sessionToken(), replacement.sessionToken());
+        assertEquals(user.getId(), service.validateSession(replacement.sessionToken()));
+        assertEquals(1, sessions.size(), "the expired session must be replaced rather than retained");
+    }
+
+    @Test
+    void expiredSessionCannotOverwriteReplacementLoginStatus() throws Exception {
+        String previousStrength = System.getProperty("chatapp.auth.bcrypt.strength");
+        System.setProperty("chatapp.auth.bcrypt.strength", "10");
+        try {
+            User user = userWithHash("alice",
+                    new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder(10).encode("correct-password"));
+            BlockingPresenceUserDAO dao = new BlockingPresenceUserDAO(user);
+            AuthenticationService service = new AuthenticationService(dao);
+
+            AuthenticationService.LoginResult first = service.login("alice", "correct-password");
+            expireActiveSession(service, user.getId());
+
+            dao.blockOfflineUpdates();
+            dao.observeOnlineUpdates();
+
+            AtomicReference<Throwable> expiryFailure = new AtomicReference<>();
+            Thread expiryThread = new Thread(() -> {
+                try {
+                    service.validateSession(first.sessionToken());
+                    expiryFailure.set(new AssertionError("expired session unexpectedly validated"));
+                } catch (AuthenticationException expected) {
+                    // Expected.
+                } catch (Throwable failure) {
+                    expiryFailure.set(failure);
+                }
+            });
+            expiryThread.start();
+
+            assertTrue(dao.awaitOfflineUpdate(2, TimeUnit.SECONDS),
+                    "expired-session cleanup must reach the offline status update");
+
+            AtomicReference<AuthenticationService.LoginResult> replacement = new AtomicReference<>();
+            AtomicReference<Throwable> loginFailure = new AtomicReference<>();
+            Thread loginThread = new Thread(() -> {
+                try {
+                    replacement.set(service.login("alice", "correct-password"));
+                } catch (Throwable failure) {
+                    loginFailure.set(failure);
+                }
+            });
+            loginThread.start();
+
+            assertFalse(dao.awaitOnlineUpdate(2, TimeUnit.SECONDS),
+                    "replacement login must wait for expiry cleanup of the same account");
+
+            dao.releaseOfflineUpdate();
+            expiryThread.join(5000);
+            loginThread.join(5000);
+
+            assertFalse(expiryThread.isAlive(), "expiry validation thread must finish");
+            assertFalse(loginThread.isAlive(), "replacement login thread must finish");
+            assertNull(expiryFailure.get());
+            assertNull(loginFailure.get());
+            assertNotNull(replacement.get());
+            assertEquals(user.getId(), service.validateSession(replacement.get().sessionToken()));
+            assertEquals(User.Status.ONLINE, user.getStatus(),
+                    "the replacement login must leave persisted presence online");
+        } finally {
+            if (previousStrength == null) {
+                System.clearProperty("chatapp.auth.bcrypt.strength");
+            } else {
+                System.setProperty("chatapp.auth.bcrypt.strength", previousStrength);
+            }
+        }
+    }
+
+    private static void expireActiveSession(AuthenticationService service, int userId) throws Exception {
+        Field sessionsField = AuthenticationService.class.getDeclaredField("activeSessions");
+        sessionsField.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> sessions = (Map<String, Object>) sessionsField.get(service);
+
+        String tokenDigest = sessions.keySet().stream().findFirst()
+                .orElseThrow(() -> new AssertionError("expected active session"));
+        Class<?> sessionType = Class.forName("com.chatapp.service.AuthenticationService$Session");
+        java.lang.reflect.Constructor<?> constructor =
+                sessionType.getDeclaredConstructor(int.class, LocalDateTime.class);
+        constructor.setAccessible(true);
+        sessions.put(tokenDigest, constructor.newInstance(userId, LocalDateTime.now().minusSeconds(1)));
+    }
+
+    @Test
+    void sessionStoreContainsOnlyTokenDigests() throws Exception {
+        User user = userWithHash("alice", new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder(10).encode("correct-password"));
+        AuthenticationService service = new AuthenticationService(new InMemoryUserDAO(user));
+
+        AuthenticationService.LoginResult result = service.login("alice", "correct-password");
+
+        Field sessionsField = AuthenticationService.class.getDeclaredField("activeSessions");
+        sessionsField.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        Map<String, ?> sessions = (Map<String, ?>) sessionsField.get(service);
+
+        assertEquals(1, sessions.size());
+        assertFalse(sessions.containsKey(result.sessionToken()), "Raw bearer tokens must never be stored as session-map keys");
+        assertEquals(43, sessions.keySet().iterator().next().length(), "SHA-256 digest should be Base64URL encoded");
+    }
+
+    @Test
+    void successfulLogoutAllowsAccountToLoginAgain() throws Exception {
+        User user = userWithHash("alice", new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder(10).encode("correct-password"));
+        AuthenticationService service = new AuthenticationService(new InMemoryUserDAO(user));
+
+        AuthenticationService.LoginResult first = service.login("alice", "correct-password");
+        service.logout(first.sessionToken());
+        AuthenticationService.LoginResult second = service.login("alice", "correct-password");
+
+        assertNotEquals(first.sessionToken(), second.sessionToken());
+        assertEquals(user.getId(), service.validateSession(second.sessionToken()));
+    }
+
+    @Test
+    void duplicateLoginForSameUserIsRejected() throws Exception {
+        User user = userWithHash("alice", new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder(10).encode("correct-password"));
+        AuthenticationService service = new AuthenticationService(new InMemoryUserDAO(user));
+
+        service.login("alice", "correct-password");
+
+        AuthenticationException error = assertThrows(AuthenticationException.class,
+                () -> service.login("alice", "correct-password"));
+        assertEquals("This account is already connected.", error.getMessage());
+    }
+
+    @Test
+    void logoutInvalidatesSession() throws Exception {
+        User user = userWithHash("alice", new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder(10).encode("correct-password"));
+        AuthenticationService service = new AuthenticationService(new InMemoryUserDAO(user));
+
+        AuthenticationService.LoginResult result = service.login("alice", "correct-password");
+        service.logout(result.sessionToken());
+
+        assertThrows(AuthenticationException.class, () -> service.validateSession(result.sessionToken()));
+    }
+
+    @Test
+    void logoutStillInvalidatesSessionWhenStatusCleanupFails() throws Exception {
+        User user = userWithHash("alice", new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder(10).encode("correct-password"));
+        FailingCleanupUserDAO dao = new FailingCleanupUserDAO(user);
+        AuthenticationService service = new AuthenticationService(dao);
+
+        AuthenticationService.LoginResult result = service.login("alice", "correct-password");
+        int lastSeenUpdatesBeforeLogout = dao.getLastSeenUpdates();
+        dao.setFailStatusUpdate(true);
+
+        assertDoesNotThrow(() -> service.logout(result.sessionToken()));
+        assertThrows(AuthenticationException.class, () -> service.validateSession(result.sessionToken()));
+        assertTrue(dao.getLastSeenUpdates() > lastSeenUpdatesBeforeLogout,
+                "last_seen cleanup must still run when status cleanup fails");
+    }
+
+    @Test
+    void logoutStillInvalidatesSessionWhenLastSeenCleanupFails() throws Exception {
+        User user = userWithHash("alice", new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder(10).encode("correct-password"));
+        FailingCleanupUserDAO dao = new FailingCleanupUserDAO(user);
+        AuthenticationService service = new AuthenticationService(dao);
+
+        AuthenticationService.LoginResult result = service.login("alice", "correct-password");
+        int statusUpdatesBeforeLogout = dao.getStatusUpdates();
+        dao.setFailLastSeenUpdate(true);
+
+        assertDoesNotThrow(() -> service.logout(result.sessionToken()));
+        assertThrows(AuthenticationException.class, () -> service.validateSession(result.sessionToken()));
+        assertTrue(dao.getStatusUpdates() > statusUpdatesBeforeLogout,
+                "status cleanup must still run when last_seen cleanup fails");
+    }
+
+    @Test
+    void duplicateUsernameRaceBecomesValidationFailure() {
+        AuthenticationService service = new AuthenticationService(new DuplicateRegistrationUserDAO(true, false, false));
+
+        ValidationException error = assertThrows(ValidationException.class,
+                () -> service.register("alice", "alice@example.com", "password1", "password1"));
+
+        assertEquals("Username 'alice' is already taken.", error.getMessage());
+    }
+
+    @Test
+    void duplicateEmailRaceBecomesValidationFailure() {
+        AuthenticationService service = new AuthenticationService(new DuplicateRegistrationUserDAO(false, true, false));
+
+        ValidationException error = assertThrows(ValidationException.class,
+                () -> service.register("alice", "alice@example.com", "password1", "password1"));
+
+        assertEquals("An account with this email already exists.", error.getMessage());
+    }
+
+    @Test
+    void wrappedDuplicateKeyIsRecognized() {
+        AuthenticationService service = new AuthenticationService(new DuplicateRegistrationUserDAO(false, false, true));
+
+        ValidationException error = assertThrows(ValidationException.class,
+                () -> service.register("alice", "alice@example.com", "password1", "password1"));
+
+        assertEquals("An account with these details already exists.", error.getMessage());
+    }
+
+    @Test
+    void invalidSessionTokenIsRejected() {
+        AuthenticationService service = new AuthenticationService(new InMemoryUserDAO(null));
+
+        assertThrows(AuthenticationException.class, () -> service.validateSession("not-a-real-session"));
+        assertThrows(AuthenticationException.class, () -> service.validateSession(null));
+    }
+
+    @Test
+    void oversizedSessionTokenIsRejected() {
+        AuthenticationService service = new AuthenticationService(new InMemoryUserDAO(null));
+
+        String oversizedToken = "a".repeat(129);
+
+        AuthenticationException error = assertThrows(AuthenticationException.class,
+                () -> service.validateSession(oversizedToken));
+
+        assertEquals("Session is invalid or has expired. Please log in again.", error.getMessage());
+    }
+
+    private static User userWithHash(String username, String hash) {
+        User user = new User(username, username + "@example.com", hash);
+        user.setId(42);
+        return user;
+    }
+
+    private static class InMemoryUserDAO extends UserDAO {
+        private final User user;
+
+        private InMemoryUserDAO(User user) {
+            this.user = user;
+        }
+
+        @Override
+        public Optional<User> findByUsernameOrEmail(String identifier) {
+            if (user == null) return Optional.empty();
+            return user.getUsername().equals(identifier) || user.getEmail().equals(identifier)
+                    ? Optional.of(user) : Optional.empty();
+        }
+
+        @Override
+        public void updateStatus(int userId, User.Status status) {
+            if (user != null && user.getId() == userId) user.setStatus(status);
+        }
+
+        @Override
+        public void updateLastSeen(int userId, LocalDateTime lastSeen) {
+            if (user != null && user.getId() == userId) user.setLastSeen(lastSeen);
+        }
+    }
+
+    private static class LookupTrackingUserDAO extends InMemoryUserDAO {
+        private int usernameLookups;
+        private int emailLookups;
+
+        private LookupTrackingUserDAO(User user) {
+            super(user);
+        }
+
+        private synchronized int getUsernameLookups() {
+            return usernameLookups;
+        }
+
+        private synchronized int getEmailLookups() {
+            return emailLookups;
+        }
+
+        @Override
+        public synchronized boolean usernameExists(String username) {
+            usernameLookups++;
+            return false;
+        }
+
+        @Override
+        public synchronized boolean emailExists(String email) {
+            emailLookups++;
+            return false;
+        }
+
+        @Override
+        public synchronized Optional<User> findByUsernameOrEmail(String identifier) {
+            return super.findByUsernameOrEmail(identifier);
+        }
+    }
+
+    private static class DuplicateRegistrationUserDAO extends UserDAO {
+        private final boolean usernameConflict;
+        private final boolean emailConflict;
+        private final boolean wrappedDuplicate;
+        private volatile boolean insertAttempted;
+
+        private DuplicateRegistrationUserDAO(boolean usernameConflict, boolean emailConflict, boolean wrappedDuplicate) {
+            this.usernameConflict = usernameConflict;
+            this.emailConflict = emailConflict;
+            this.wrappedDuplicate = wrappedDuplicate;
+        }
+
+        @Override
+        public boolean usernameExists(String username) {
+            return insertAttempted && usernameConflict;
+        }
+
+        @Override
+        public boolean emailExists(String email) {
+            return insertAttempted && emailConflict;
+        }
+
+        @Override
+        public User insert(User user) {
+            insertAttempted = true;
+            if (wrappedDuplicate) {
+                throw new RuntimeException(new IllegalStateException("database rejected INSERT: duplicate entry for unique index"));
+            }
+            throw new RuntimeException(new SQLIntegrityConstraintViolationException("duplicate key during concurrent registration"));
+        }
+
+        @Override
+        public Optional<User> findByUsernameOrEmail(String identifier) {
+            return Optional.empty();
+        }
+    }
+
+    private static final class BlockingPresenceUserDAO extends InMemoryUserDAO {
+        private final CountDownLatch offlineUpdateEntered = new CountDownLatch(1);
+        private final CountDownLatch allowOfflineUpdate = new CountDownLatch(1);
+        private final CountDownLatch onlineUpdateEntered = new CountDownLatch(1);
+        private volatile boolean blockOffline;
+        private volatile boolean observeOnline;
+
+        private BlockingPresenceUserDAO(User user) {
+            super(user);
+        }
+
+        private void blockOfflineUpdates() {
+            blockOffline = true;
+        }
+
+        private void observeOnlineUpdates() {
+            observeOnline = true;
+        }
+
+        private void releaseOfflineUpdate() {
+            allowOfflineUpdate.countDown();
+        }
+
+        private boolean awaitOfflineUpdate(long timeout, TimeUnit unit) throws InterruptedException {
+            return offlineUpdateEntered.await(timeout, unit);
+        }
+
+        private boolean awaitOnlineUpdate(long timeout, TimeUnit unit) throws InterruptedException {
+            return onlineUpdateEntered.await(timeout, unit);
+        }
+
+        @Override
+        public void updateStatus(int userId, User.Status status) {
+            if (status == User.Status.OFFLINE && blockOffline) {
+                offlineUpdateEntered.countDown();
+                try {
+                    if (!allowOfflineUpdate.await(5, TimeUnit.SECONDS)) {
+                        throw new IllegalStateException("timed out waiting to release offline update");
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException("interrupted while waiting to release offline update", e);
+                }
+            }
+            if (status == User.Status.ONLINE && observeOnline) {
+                onlineUpdateEntered.countDown();
+            }
+            super.updateStatus(userId, status);
+        }
+    }
+
+    private static final class FailingCleanupUserDAO extends InMemoryUserDAO {
+        private volatile boolean failStatusUpdate;
+        private volatile boolean failLastSeenUpdate;
+        private int statusUpdates;
+        private int lastSeenUpdates;
+
+        private FailingCleanupUserDAO(User user) {
+            super(user);
+        }
+
+        private void setFailStatusUpdate(boolean value) {
+            failStatusUpdate = value;
+        }
+
+        private void setFailLastSeenUpdate(boolean value) {
+            failLastSeenUpdate = value;
+        }
+
+        private synchronized int getStatusUpdates() {
+            return statusUpdates;
+        }
+
+        private synchronized int getLastSeenUpdates() {
+            return lastSeenUpdates;
+        }
+
+        @Override
+        public synchronized void updateStatus(int userId, User.Status status) {
+            if (failStatusUpdate) throw new RuntimeException("simulated database outage");
+            statusUpdates++;
+            super.updateStatus(userId, status);
+        }
+
+        @Override
+        public synchronized void updateLastSeen(int userId, LocalDateTime lastSeen) {
+            if (failLastSeenUpdate) throw new RuntimeException("simulated database outage");
+            lastSeenUpdates++;
+            super.updateLastSeen(userId, lastSeen);
+        }
+    }
+}

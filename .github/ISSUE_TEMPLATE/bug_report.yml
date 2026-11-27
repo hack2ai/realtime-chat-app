@@ -1,0 +1,73 @@
+name: Bug report
+description: Report a reproducible problem in the chat application.
+title: "bug: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please remove passwords, tokens, private keys, personal data, and other secrets from logs before posting.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: Describe what went wrong and what you expected instead.
+      placeholder: Tell us what happened and what you expected.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Provide the smallest reliable sequence that reproduces the issue.
+      placeholder: |
+        1. Start the server with ...
+        2. Connect with ...
+        3. Send ...
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Application version
+      description: Provide the Git tag, commit SHA, or local version you tested.
+      placeholder: v1.1.0 or commit SHA
+    validations:
+      required: true
+
+  - type: input
+    id: java
+    attributes:
+      label: Java version
+      placeholder: Java 21.0.x
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include OS, database version, Docker/Compose version if relevant, and whether TLS or Docker Compose was used.
+      placeholder: |
+        OS: Ubuntu 24.04
+        MySQL: 8.4
+        Docker: 28.x
+        Compose: v2.x
+        TLS: enabled/disabled
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or error output
+      description: Paste sanitized logs. Do not include credentials, tokens, keys, or private data.
+      render: text
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Add screenshots, related issues, or other context that helps diagnose the problem.

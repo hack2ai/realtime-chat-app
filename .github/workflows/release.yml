@@ -1,0 +1,378 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions: {}
+
+concurrency:
+  group: release-publish
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      packages: write
+      attestations: write
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Check repository diff
+        run: git diff --check
+
+      - name: Verify workflow hardening policy
+        run: python3 scripts/check_workflow_hardening.py
+
+      - name: Verify Docker base image tags
+        run: |
+          base_images=$(awk '$1 == "FROM" {print $2}' Dockerfile)
+          test -n "$base_images"
+          while IFS= read -r image; do
+            image="${image%%@*}"
+            case "$image" in
+              *:latest|*:nightly|*:edge)
+                echo "Floating Docker base image tag is not allowed: $image"
+                exit 1
+                ;;
+              *:*)
+                ;;
+              *)
+                echo "Docker base image must use an explicit tag: $image"
+                exit 1
+                ;;
+            esac
+          done <<< "$base_images"
+
+      - name: Verify semantic version tag
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          if [[ ! "$RELEASE_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tag must match vMAJOR.MINOR.PATCH: $RELEASE_VERSION"
+            exit 1
+          fi
+
+      - name: Verify release commit is on main
+        env:
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$RELEASE_SHA" origin/main; then
+            echo "Release tag ${{ github.ref_name }} does not point to a commit contained in main."
+            exit 1
+          fi
+
+      - name: Verify repository contains no tracked secret artifacts
+        run: |
+          tracked_secrets=$(git ls-files -z | tr '\0' '\n' | grep -E '(^|/)(config\.properties|\.env(\..*)?|secrets/.*|[^/]+\.(p12|pfx|jks|keystore|pem|key|crt))$' || true)
+          unexpected_secrets=$(printf '%s\n' "$tracked_secrets" | grep -Fxv 'src/test/resources/config.properties' || true)
+          test -z "$unexpected_secrets"
+
+      - name: Verify and package
+        run: mvn --batch-mode --no-transfer-progress --strict-checksums verify
+
+      - name: Verify reproducible server package
+        run: |
+          cp target/chatapp-server.jar /tmp/chatapp-server-first.jar
+          mvn --batch-mode --no-transfer-progress --strict-checksums -DskipTests package
+          sha256sum /tmp/chatapp-server-first.jar target/chatapp-server.jar
+          cmp -s /tmp/chatapp-server-first.jar target/chatapp-server.jar
+
+      - name: Verify release version matches project
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          PROJECT_VERSION=$(mvn --batch-mode --no-transfer-progress --strict-checksums -q -DforceStdout help:evaluate -Dexpression=project.version)
+          TEST_VERSION="${RELEASE_VERSION#v}"
+          test "$PROJECT_VERSION" = "$TEST_VERSION"
+          echo "PROJECT_VERSION=$PROJECT_VERSION" >> "$GITHUB_ENV"
+
+      - name: Generate software bill of materials
+        run: |
+          mvn --batch-mode --no-transfer-progress --strict-checksums org.cyclonedx:cyclonedx-maven-plugin:2.9.3:makeAggregateBom -DoutputFormat=json -DoutputName=chatapp-sbom
+          test -s target/chatapp-sbom.json
+
+      - name: Verify release SBOM
+        env:
+          PROJECT_VERSION: ${{ env.PROJECT_VERSION }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          sbom = json.loads(Path("target/chatapp-sbom.json").read_text(encoding="utf-8"))
+          metadata = sbom.get("metadata", {})
+          component = metadata.get("component", {})
+          if sbom.get("bomFormat") != "CycloneDX":
+              raise SystemExit("SBOM is not a CycloneDX document")
+          if not sbom.get("specVersion"):
+              raise SystemExit("SBOM is missing specVersion")
+          if component.get("name") != "realtime-chat-app":
+              raise SystemExit(f"unexpected SBOM component name: {component.get('name')!r}")
+          if component.get("version") != os.environ["PROJECT_VERSION"]:
+              raise SystemExit(f"unexpected SBOM project version: {component.get('version')!r}")
+          if not metadata.get("timestamp"):
+              raise SystemExit("SBOM is missing metadata timestamp")
+          if not sbom.get("components"):
+              raise SystemExit("SBOM contains no dependency components")
+          PY
+
+      - name: Verify runnable server package
+        run: |
+          test -s target/chatapp-server.jar
+          unzip -p target/chatapp-server.jar META-INF/MANIFEST.MF | tr -d '\r' | grep -Fxq 'Main-Class: com.chatapp.server.ChatServer'
+
+      - name: Prepare release assets
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          cp target/chatapp-server.jar "chatapp-server-${RELEASE_VERSION}.jar"
+          cp target/chatapp-sbom.json "chatapp-server-${RELEASE_VERSION}.sbom.json"
+          sha256sum "chatapp-server-${RELEASE_VERSION}.jar" > "chatapp-server-${RELEASE_VERSION}.jar.sha256"
+          sha256sum "chatapp-server-${RELEASE_VERSION}.sbom.json" > "chatapp-server-${RELEASE_VERSION}.sbom.json.sha256"
+          sha256sum --check "chatapp-server-${RELEASE_VERSION}.jar.sha256"
+          sha256sum --check "chatapp-server-${RELEASE_VERSION}.sbom.json.sha256"
+
+      - name: Attest release server artifact
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: chatapp-server-${{ github.ref_name }}.jar
+
+      - name: Attest release SBOM
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: chatapp-server-${{ github.ref_name }}.sbom.json
+
+      - name: Build release container
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+          IMAGE_SHA_TAG: sha-${{ github.sha }}
+        run: |
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          docker build --pull \
+            --build-arg APP_VERSION="$PROJECT_VERSION" \
+            --build-arg VCS_REF="${{ github.sha }}" \
+            --tag "${IMAGE_NAME}:${RELEASE_VERSION}" \
+            --tag "${IMAGE_NAME}:latest" \
+            --tag "${IMAGE_NAME}:${IMAGE_SHA_TAG}" .
+
+      - name: Scan release container image
+        uses: aquasecurity/trivy-action@d2a0b60797ff03db6132bd4e2b293f9b37081297 # immutable commit; Trivy v0.74.0 update
+        with:
+          scan-type: image
+          image-ref: ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+          vuln-type: os,library
+
+      - name: Generate release container SBOM
+        uses: aquasecurity/trivy-action@d2a0b60797ff03db6132bd4e2b293f9b37081297 # immutable commit; Trivy v0.74.0
+        with:
+          scan-type: image
+          image-ref: ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+          format: cyclonedx
+          output: "chatapp-container-${{ github.ref_name }}.sbom.json"
+          exit-code: '0'
+          vuln-type: os,library
+
+      - name: Verify release container SBOM
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          test -s "chatapp-container-${RELEASE_VERSION}.sbom.json"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          path = Path(f"chatapp-container-{os.environ['RELEASE_VERSION']}.sbom.json")
+          sbom = json.loads(path.read_text(encoding="utf-8"))
+          if sbom.get("bomFormat") != "CycloneDX":
+              raise SystemExit("release container SBOM is not CycloneDX")
+          if not sbom.get("specVersion"):
+              raise SystemExit("release container SBOM is missing specVersion")
+          if not sbom.get("components"):
+              raise SystemExit("release container SBOM contains no components")
+          PY
+          sha256sum "chatapp-container-${RELEASE_VERSION}.sbom.json" > "chatapp-container-${RELEASE_VERSION}.sbom.json.sha256"
+          sha256sum --check "chatapp-container-${RELEASE_VERSION}.sbom.json.sha256"
+
+      - name: Verify release image metadata and hardening
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{index .Config.Labels "org.opencontainers.image.source"}}')" = "https://github.com/hack2ai/realtime-chat-app"
+          test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{index .Config.Labels "org.opencontainers.image.description"}}')" = "Secure Java 21 real-time chat server"
+          test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{index .Config.Labels "org.opencontainers.image.licenses"}}')" = "MIT"
+          test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{index .Config.Labels "org.opencontainers.image.version"}}')" = "$PROJECT_VERSION"
+          test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "${{ github.sha }}"
+          test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{.Config.User}}')" = "chatapp"
+          test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{json .Config.Entrypoint}}')" = '["java","-XX:+ExitOnOutOfMemoryError","-jar","/app/chatapp-server.jar"]'
+          test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{json .Config.ExposedPorts}}')" = '{"5050/tcp":{}}'
+          test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{.Config.StopSignal}}')" = "SIGTERM"
+          test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{json .Config.Healthcheck.Test}}')" = '["CMD","java","-cp","/app/chatapp-server.jar","com.chatapp.server.ServerHealthCheck"]'
+          image_env=$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{json .Config.Env}}')
+          if printf '%s' "$image_env" | grep -Eq 'CHATAPP_(DB_PASSWORD|MYSQL_ROOT_PASSWORD|AUTH_.*(PASSWORD|SECRET|TOKEN))'; then
+            echo "application secret-like environment variable found in release image metadata"
+            exit 1
+          fi
+
+      - name: Verify release image filesystem permissions
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          docker run --rm --entrypoint sh "${IMAGE_NAME}:${RELEASE_VERSION}" -c 'test "$(id -u)" = "10001" && test "$(stat -c %a /app/data/attachments)" = "700" && test -w /app/data/attachments && ! test -w /app && ! test -w /app/chatapp-server.jar'
+
+      - name: Verify release image contains no private-key artifacts
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          docker run --rm --entrypoint sh "${IMAGE_NAME}:${RELEASE_VERSION}" -c 'test -z "$(find /app -xdev -type f \( -name "*.p12" -o -name "*.pfx" -o -name "*.jks" -o -name "*.keystore" -o -name "*.pem" -o -name "*.key" -o -name "*.crt" \) -print 2>/dev/null)"'
+
+      - name: Verify release image has no setuid/setgid application files
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          test -z "$(docker run --rm --entrypoint sh "${IMAGE_NAME}:${RELEASE_VERSION}" -c 'find /app -xdev -type f -perm /6000 -print 2>/dev/null')"
+
+      - name: Verify release image Java runtime
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          docker run --rm --entrypoint java "${IMAGE_NAME}:${RELEASE_VERSION}" -version
+
+      - name: Verify release image runs as non-root
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          test "$(docker image inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{.Config.User}}')" = "chatapp"
+
+      - name: Verify release image excludes build toolchain
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          docker run --rm --entrypoint sh "${IMAGE_NAME}:${RELEASE_VERSION}" -c 'test ! -e /workspace && test ! -e /root/.m2 && ! command -v mvn >/dev/null 2>&1'
+
+      - name: Login to GitHub Container Registry
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+
+      - name: Push release container
+        id: push-release-container
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+          IMAGE_SHA_TAG: sha-${{ github.sha }}
+        run: |
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          docker push "${IMAGE_NAME}:${RELEASE_VERSION}"
+          docker push "${IMAGE_NAME}:latest"
+          docker push "${IMAGE_NAME}:${IMAGE_SHA_TAG}"
+          DIGEST="$(docker buildx imagetools inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{.Manifest.Digest}}')"
+          test -n "$DIGEST"
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+
+      - name: Verify published release digest
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+          IMAGE_SHA_TAG: sha-${{ github.sha }}
+          PUBLISHED_DIGEST: ${{ steps.push-release-container.outputs.digest }}
+        run: |
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          REMOTE_DIGEST=$(docker buildx imagetools inspect "${IMAGE_NAME}:${RELEASE_VERSION}" --format '{{.Manifest.Digest}}')
+          LATEST_DIGEST=$(docker buildx imagetools inspect "${IMAGE_NAME}:latest" --format '{{.Manifest.Digest}}')
+          SHA_TAG_DIGEST=$(docker buildx imagetools inspect "${IMAGE_NAME}:${IMAGE_SHA_TAG}" --format '{{.Manifest.Digest}}')
+          test "$REMOTE_DIGEST" = "$PUBLISHED_DIGEST"
+          test "$LATEST_DIGEST" = "$PUBLISHED_DIGEST"
+          test "$SHA_TAG_DIGEST" = "$PUBLISHED_DIGEST"
+
+      - name: Attest release container
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ghcr.io/${{ github.repository }}
+          subject-digest: ${{ steps.push-release-container.outputs.digest }}
+          push-to-registry: true
+
+      - name: Attest release container SBOM
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: chatapp-container-${{ github.ref_name }}.sbom.json
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          gh release create "$RELEASE_VERSION" \
+            "chatapp-server-${RELEASE_VERSION}.jar" \
+            "chatapp-server-${RELEASE_VERSION}.jar.sha256" \
+            "chatapp-server-${RELEASE_VERSION}.sbom.json" \
+            "chatapp-server-${RELEASE_VERSION}.sbom.json.sha256" \
+            "chatapp-container-${RELEASE_VERSION}.sbom.json" \
+            "chatapp-container-${RELEASE_VERSION}.sbom.json.sha256" \
+            --title "$RELEASE_VERSION" \
+            --generate-notes
+
+      - name: Verify published release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          sha256sum \
+            "chatapp-server-${RELEASE_VERSION}.jar" \
+            "chatapp-server-${RELEASE_VERSION}.sbom.json" \
+            "chatapp-container-${RELEASE_VERSION}.sbom.json" \
+            > /tmp/expected-release-checksums
+          mkdir -p /tmp/release-assets
+          gh release download "$RELEASE_VERSION" \
+            --pattern "chatapp-server-${RELEASE_VERSION}.jar" \
+            --pattern "chatapp-server-${RELEASE_VERSION}.jar.sha256" \
+            --pattern "chatapp-server-${RELEASE_VERSION}.sbom.json" \
+            --pattern "chatapp-server-${RELEASE_VERSION}.sbom.json.sha256" \
+            --pattern "chatapp-container-${RELEASE_VERSION}.sbom.json" \
+            --pattern "chatapp-container-${RELEASE_VERSION}.sbom.json.sha256" \
+            --dir /tmp/release-assets \
+            --clobber
+          cd /tmp/release-assets
+          sha256sum --check "chatapp-server-${RELEASE_VERSION}.jar.sha256"
+          sha256sum --check "chatapp-server-${RELEASE_VERSION}.sbom.json.sha256"
+          sha256sum --check "chatapp-container-${RELEASE_VERSION}.sbom.json.sha256"
+          sha256sum --check /tmp/expected-release-checksums

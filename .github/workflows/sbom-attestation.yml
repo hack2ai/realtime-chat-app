@@ -1,0 +1,46 @@
+name: SBOM Attestation
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions: {}
+
+concurrency:
+  group: sbom-attestation-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: true
+
+jobs:
+  attest-sbom:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      attestations: write
+      id-token: write
+    steps:
+      - name: Download CI package
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: chatapp-server-${{ github.event.workflow_run.head_sha }}
+          path: release-assets
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Verify downloaded artifact checksums
+        run: |
+          test -s release-assets/chatapp-server.jar
+          test -s release-assets/chatapp-server.jar.sha256
+          test -s release-assets/chatapp-sbom.json
+          test -s release-assets/chatapp-sbom.json.sha256
+          cd release-assets
+          sha256sum --check chatapp-server.jar.sha256
+          sha256sum --check chatapp-sbom.json.sha256
+
+      - name: Attest SBOM
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: release-assets/chatapp-sbom.json

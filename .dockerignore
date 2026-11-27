@@ -1,0 +1,26 @@
+.git
+.github
+.idea
+.vscode
+*.iml
+target
+/data
+*.log
+*.db
+*.sqlite
+*.sqlite3
+.DS_Store
+Thumbs.db
+
+# Local configuration and secrets
+**/config.properties
+**/.env
+**/.env.*
+**/secrets/**
+**/*.p12
+**/*.pfx
+**/*.jks
+**/*.keystore
+**/*.pem
+**/*.key
+**/*.crt

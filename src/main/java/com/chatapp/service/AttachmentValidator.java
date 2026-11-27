@@ -1,0 +1,191 @@
+package com.chatapp.service;
+
+import com.chatapp.exception.ValidationException;
+
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CodingErrorAction;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.util.Enumeration;
+import java.util.HashSet;
+import java.util.Locale;
+import java.util.Set;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
+
+/** Validates attachment metadata and file signatures before storage. */
+public final class AttachmentValidator {
+    private static final int MAX_NAME_LENGTH = 180;
+    private static final int MAX_CONTENT_TYPE_LENGTH = 120;
+    private static final int MAX_ZIP_ENTRIES = 2048;
+    private static final int MAX_ZIP_ENTRY_NAME_LENGTH = 255;
+    private static final Set<String> ALLOWED_TYPES = Set.of(
+            "application/pdf", "text/plain", "text/csv", "application/octet-stream",
+            "image/jpeg", "image/png", "image/gif", "image/webp",
+            "audio/mpeg", "audio/wav", "video/mp4", "application/zip", "application/json",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
+    private static final Set<String> BLOCKED_EXTENSIONS = Set.of(
+            "exe", "dll", "com", "bat", "cmd", "ps1", "sh", "bash", "zsh", "jar", "class",
+            "msi", "scr", "vbs", "vbe", "js", "jse", "wsf", "wsh", "hta", "cpl", "apk", "appimage"
+    );
+
+    private AttachmentValidator() {}
+
+    public static String validateAndNormalizeName(String fileName) throws ValidationException {
+        if (fileName == null || fileName.isBlank()) throw new ValidationException("File name is required.");
+        String name = fileName.strip().replace('\\', '/');
+        int slash = name.lastIndexOf('/');
+        if (slash >= 0) name = name.substring(slash + 1);
+        name = name.replaceAll("[\\p{Cntrl}]", "_");
+        if (name.isBlank() || ".".equals(name) || "..".equals(name)) throw new ValidationException("Invalid file name.");
+        if (isBlockedExtension(name)) throw new ValidationException("Executable attachment types are not allowed.");
+        return name.length() > MAX_NAME_LENGTH ? name.substring(0, MAX_NAME_LENGTH) : name;
+    }
+
+    public static String validateAndNormalizeType(String value) throws ValidationException {
+        String type = value == null || value.isBlank() ? "application/octet-stream" : value.strip().toLowerCase(Locale.ROOT);
+        if (type.length() > MAX_CONTENT_TYPE_LENGTH || !ALLOWED_TYPES.contains(type)) {
+            throw new ValidationException("Unsupported attachment type.");
+        }
+        return type;
+    }
+
+    public static void validateContent(String type, byte[] bytes) throws ValidationException {
+        if (bytes == null || bytes.length == 0) throw new ValidationException("File is empty.");
+        switch (type) {
+            case "image/png" -> require(bytes, new byte[]{(byte) 0x89, 0x50, 0x4e, 0x47}, "PNG");
+            case "image/jpeg" -> require(bytes, new byte[]{(byte) 0xff, (byte) 0xd8, (byte) 0xff}, "JPEG");
+            case "image/gif" -> require(bytes, ascii("GIF8"), "GIF");
+            case "image/webp" -> requireWebp(bytes);
+            case "application/pdf" -> require(bytes, ascii("%PDF-"), "PDF");
+            case "application/zip" -> requireZip(bytes);
+            case "application/vnd.openxmlformats-officedocument.wordprocessingml.document" -> requireOoxml(bytes, "word/document.xml", "DOCX");
+            case "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" -> requireOoxml(bytes, "xl/workbook.xml", "XLSX");
+            case "audio/wav" -> requireRiff(bytes, "WAVE");
+            case "video/mp4" -> requireMp4(bytes);
+            case "audio/mpeg" -> requireMpeg(bytes);
+            case "application/json" -> requireJson(bytes);
+            case "text/plain", "text/csv", "application/octet-stream" -> { /* no reliable fixed signature */ }
+            default -> throw new ValidationException("Unsupported attachment type.");
+        }
+    }
+
+    private static boolean isBlockedExtension(String name) {
+        int dot = name.lastIndexOf('.');
+        if (dot < 0 || dot == name.length() - 1) return false;
+        return BLOCKED_EXTENSIONS.contains(name.substring(dot + 1).toLowerCase(Locale.ROOT));
+    }
+
+    private static void require(byte[] value, byte[] prefix, String type) throws ValidationException {
+        if (!startsWith(value, prefix)) throw new ValidationException("File content does not match its declared type: " + type + ".");
+    }
+
+    private static void requireZip(byte[] value) throws ValidationException {
+        if (!(startsWith(value, new byte[]{0x50, 0x4b, 0x03, 0x04})
+                || startsWith(value, new byte[]{0x50, 0x4b, 0x05, 0x06})
+                || startsWith(value, new byte[]{0x50, 0x4b, 0x07, 0x08}))) {
+            throw new ValidationException("File content does not match its declared ZIP-based type.");
+        }
+    }
+
+    private static void requireOoxml(byte[] value, String requiredEntry, String type) throws ValidationException {
+        if (!startsWith(value, new byte[]{0x50, 0x4b, 0x03, 0x04})) {
+            throw new ValidationException("File content does not match its declared " + type + " type.");
+        }
+
+        Set<String> entries = new HashSet<>();
+        Path temp = null;
+        try {
+            temp = Files.createTempFile("chatapp-attachment-", ".zip");
+            Files.write(temp, value, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+            try (ZipFile zip = new ZipFile(temp.toFile(), StandardCharsets.UTF_8)) {
+                Enumeration<? extends ZipEntry> enumeration = zip.entries();
+                int entryCount = 0;
+                while (enumeration.hasMoreElements()) {
+                    ZipEntry entry = enumeration.nextElement();
+                    entryCount++;
+                    if (entryCount > MAX_ZIP_ENTRIES) {
+                        throw new ValidationException("Archive contains too many entries.");
+                    }
+                    String name = entry.getName();
+                    if (name == null || name.isBlank() || name.length() > MAX_ZIP_ENTRY_NAME_LENGTH) {
+                        throw new ValidationException("Archive contains an invalid entry name.");
+                    }
+                    entries.add(name);
+                }
+            }
+        } catch (ValidationException e) {
+            throw e;
+        } catch (IOException | RuntimeException e) {
+            throw new ValidationException("Invalid " + type + " archive.");
+        } finally {
+            if (temp != null) {
+                try {
+                    Files.deleteIfExists(temp);
+                } catch (IOException ignored) {
+                    // Best-effort cleanup; the bounded byte array remains the authoritative input.
+                }
+            }
+        }
+
+        if (!entries.contains("[Content_Types].xml") || !entries.contains(requiredEntry)) {
+            throw new ValidationException("File content does not match its declared " + type + " structure.");
+        }
+    }
+
+    private static void requireJson(byte[] value) throws ValidationException {
+        try {
+            String json = decodeUtf8Strict(value);
+            com.google.gson.JsonParser.parseString(json);
+        } catch (CharacterCodingException | RuntimeException e) {
+            throw new ValidationException("File content is not valid JSON.");
+        }
+    }
+
+    private static String decodeUtf8Strict(byte[] value) throws CharacterCodingException {
+        CharBuffer decoded = StandardCharsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+                .decode(ByteBuffer.wrap(value));
+        return decoded.toString();
+    }
+
+    private static void requireWebp(byte[] value) throws ValidationException {
+        if (value.length < 12 || !startsWith(value, ascii("RIFF")) || !startsWithAt(value, ascii("WEBP"), 8)) {
+            throw new ValidationException("File content does not match its declared WebP type.");
+        }
+    }
+
+    private static void requireRiff(byte[] value, String format) throws ValidationException {
+        if (value.length < 12 || !startsWith(value, ascii("RIFF")) || !startsWithAt(value, ascii(format), 8)) {
+            throw new ValidationException("File content does not match its declared type.");
+        }
+    }
+
+    private static void requireMp4(byte[] value) throws ValidationException {
+        if (value.length < 12 || !startsWithAt(value, ascii("ftyp"), 4)) {
+            throw new ValidationException("File content does not match its declared MP4 type.");
+        }
+    }
+
+    private static void requireMpeg(byte[] value) throws ValidationException {
+        boolean id3 = startsWith(value, ascii("ID3"));
+        boolean frame = value.length >= 2 && (value[0] & 0xff) == 0xff && (value[1] & 0xe0) == 0xe0;
+        if (!id3 && !frame) throw new ValidationException("File content does not match its declared MPEG type.");
+    }
+
+    private static byte[] ascii(String value) { return value.getBytes(StandardCharsets.US_ASCII); }
+    private static boolean startsWith(byte[] value, byte[] prefix) { return startsWithAt(value, prefix, 0); }
+    private static boolean startsWithAt(byte[] value, byte[] prefix, int offset) {
+        if (offset < 0 || value.length < offset + prefix.length) return false;
+        for (int i = 0; i < prefix.length; i++) if (value[offset + i] != prefix[i]) return false;
+        return true;
+    }
+}
