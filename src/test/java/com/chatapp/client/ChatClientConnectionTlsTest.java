@@ -22,7 +22,7 @@ class ChatClientConnectionTlsTest {
         assertEquals("TLSv1.3", socket.getEnabledProtocols()[0]);
         assertEquals("TLSv1.2", socket.getEnabledProtocols()[1]);
 
-        socket.close();
+        
     }
 
     @Test
