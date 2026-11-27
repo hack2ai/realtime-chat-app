@@ -10,11 +10,9 @@
 
 ## Screenshots
 
-> Add screenshots here — drag and drop images into this file on GitHub
-
-| Sign In | Chat |
-|---|---|
-| ![Sign in screen](docs/screenshots/signin.png) | ![Chat screen](docs/screenshots/chat.png) |
+| Sign In | Chat (vision123) | Chat (vision456) |
+|---|---|---|
+| ![Sign in screen](docs/screenshots/signin.png) | ![Chat screen vision123](docs/screenshots/chat-vision123.png) | ![Chat screen vision456](docs/screenshots/chat-vision456.png) |
 
 ## Features
 
